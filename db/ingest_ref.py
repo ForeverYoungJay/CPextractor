@@ -12,6 +12,10 @@ def ingest_references(conn, paper_doi, extracted_json):
 
         for p in items:
             src = p.get("source", {})
+            source_type = src.get("origin_type") or src.get("type")
+            validation_targets = src.get("validation_targets")
+            if isinstance(validation_targets, list):
+                validation_targets = ",".join(str(x) for x in validation_targets)
             for c in src.get("citations", []):
                 ref_doi = c.get("doi")
                 if not ref_doi:
@@ -59,8 +63,8 @@ def ingest_references(conn, paper_doi, extracted_json):
                         block,
                         c.get("label"),
                         ref_doi,
-                        src.get("type"),
+                        source_type,
                         src.get("calibration_method"),
-                        src.get("validation_targets"),
+                        validation_targets,
                     ),
                 )

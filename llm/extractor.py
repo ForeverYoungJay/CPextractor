@@ -5,6 +5,44 @@ import time
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
+
+def _is_retryable_llm_error(exc: Exception) -> bool:
+    name = exc.__class__.__name__
+    if name in {"APIConnectionError", "APITimeoutError", "RateLimitError", "InternalServerError"}:
+        return True
+
+    status_code = getattr(exc, "status_code", None)
+    if status_code in {408, 409, 429, 500, 502, 503, 504}:
+        return True
+
+    resp = getattr(exc, "response", None)
+    if resp is not None and getattr(resp, "status_code", None) in {408, 409, 429, 500, 502, 503, 504}:
+        return True
+
+    return False
+
+
+def _chat_completion_with_retry(*, model: str, messages: List[Dict[str, str]], max_retries: int = 4):
+    delay = 1.0
+    last_exc: Exception | None = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            return client.chat.completions.create(
+                model=model,
+                temperature=0,
+                response_format={"type": "json_object"},
+                messages=messages,
+            )
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= max_retries or not _is_retryable_llm_error(exc):
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 20.0)
+
+    raise RuntimeError(f"LLM request failed after retries: {last_exc}")
+
 def trim_text(text: str, max_chars: int) -> str:
     text = text.strip()
     return text[:max_chars] + ("...[TRUNCATED]..." if len(text) > max_chars else "")
@@ -80,10 +118,8 @@ def llm_select_files(sections, tables, model: str, max_snippet_chars: int) -> Di
         tables_catalog=build_catalog(tables, max_snippet_chars),
     )
     start = time.perf_counter()
-    resp = client.chat.completions.create(
+    resp = _chat_completion_with_retry(
         model=model,
-        temperature=0,
-        response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": SELECTION_SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
@@ -309,9 +345,13 @@ Extract the following schema from the paper excerpt:
         }},
 
         "source": {{
-          "type": "original / adopted / calibrated / null",
-          "reference_ids": ["string"],
+          "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
+          "adopted_from_reference_ids": ["string"],
+          "calibration_based_on_reference_ids": ["string"],
           "calibration_method": "string or null",
+          "calibration_targets": ["string"],
+          "evidence_text": "string or null",
+          "evidence_section": "string or null",
           "validation_targets": ["string"]
         }},
 
@@ -449,10 +489,13 @@ Extract the following schema from the paper excerpt:
               "mechanism": "string or null"
             }},
             "source": {{
-              "type": "original / adopted / calibrated / null",
-              "reference_ids": ["string"],
+              "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
+              "adopted_from_reference_ids": ["string"],
+              "calibration_based_on_reference_ids": ["string"],
               "calibration_method": "string or null",
               "calibration_targets": ["string"],
+              "evidence_text": "string or null",
+              "evidence_section": "string or null",
               "validation_targets": ["string"]
             }},
             "extraction_location": "figure/table/section id or null",
@@ -523,10 +566,13 @@ Extract the following schema from the paper excerpt:
         "valid_range": "string or null",
 
         "source": {{
-          "type": "original / adopted / calibrated / null",
-          "reference_ids": ["string"],
+          "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
+          "adopted_from_reference_ids": ["string"],
+          "calibration_based_on_reference_ids": ["string"],
           "calibration_method": "manual_fitting / inverse_modeling / optimization / bayesian / null",
           "calibration_targets": ["stress_strain", "texture_evolution", "r_value", "twin_fraction", "yield_surface", "other", "null"],
+          "evidence_text": "string or null",
+          "evidence_section": "string or null",
           "validation_targets": ["string"]
         }},
 
@@ -711,6 +757,11 @@ def _validate_extracted_payload(payload: Dict[str, Any]) -> List[str]:
     return errors
 
 
+def _build_extract_prompt(context: str) -> str:
+    # Avoid str.format() here because the template contains literal braces such as crystallographic {111}.
+    return EXTRACT_USER_PROMPT_TEMPLATE.replace("{context}", context)
+
+
 
 
 def build_context(selected_sections, selected_tables, max_context_chars: int) -> str:
@@ -736,21 +787,20 @@ def build_context(selected_sections, selected_tables, max_context_chars: int) ->
     return "\n".join(parts).strip()
 
 def llm_extract(context: str, model: str, max_retries: int = 2) -> Tuple[Dict[str, Any], Any, float]:
-    prompt = EXTRACT_USER_PROMPT_TEMPLATE.format(context=context)
+    prompt = _build_extract_prompt(context)
     attempts = max(1, max_retries + 1)
     start_all = time.perf_counter()
     last_errors: List[str] = []
     last_usage = None
 
     for attempt in range(1, attempts + 1):
-        resp = client.chat.completions.create(
+        resp = _chat_completion_with_retry(
             model=model,
-            temperature=0,
-            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
             ],
+            max_retries=4,
         )
 
         last_usage = resp.usage
@@ -764,7 +814,7 @@ def llm_extract(context: str, model: str, max_retries: int = 2) -> Tuple[Dict[st
         last_errors = errors
         if attempt < attempts:
             prompt = (
-                EXTRACT_USER_PROMPT_TEMPLATE.format(context=context)
+                _build_extract_prompt(context)
                 + "\n\nValidation errors from your previous output:\n"
                 + "\n".join(f"- {e}" for e in errors)
                 + "\nPlease regenerate and return valid JSON only."
