@@ -13,10 +13,10 @@ def ingest_references(conn, paper_doi, extracted_json):
                 # references
                 conn.execute(
                     """
-                    INSERT INTO bib_references (doi, title)
+                    INSERT INTO references (doi, title)
                     VALUES (%s, %s)
                     ON CONFLICT (doi) DO UPDATE
-                    SET title = COALESCE(EXCLUDED.title, bib_references.title);
+                    SET title = COALESCE(EXCLUDED.title, references.title);
                     """,
                     (c["doi"], c.get("title")),
                 )

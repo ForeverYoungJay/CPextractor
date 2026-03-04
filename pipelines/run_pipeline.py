@@ -54,8 +54,6 @@ def main():
 
 
     print(f"Found {len(dois)} DOIs")
-
-    dois = ["10.1016/j.jmrt.2025.11.003"]
     
     # 2) for each doi: parse fulltext -> LLM extract -> ingest to DB
     for doi in dois:
