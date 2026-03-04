@@ -1,0 +1,32 @@
+elsevier:
+  api_key: "YOUR_ELSEVIER_API_KEY"
+  inst_token: null
+
+search:
+  query: 'TITLE-ABS-KEY("crystal plasticity" AND (simulation OR modeling OR model))'
+  count: 1
+  max_pages: 1
+
+paths:
+  scopus_export: "data/scopus_export"
+  fulltext: "data/fulltext"
+
+llm:
+  max_snippet_chars: 600
+  max_context_chars: 24000
+  model_select: "gpt-4.1-mini"
+  model_extract: "gpt-4.1-mini"
+
+db:
+  host: "localhost"
+  port: 55432
+  name: "cpdb"
+  user: "cpuser"
+  password: "cppassword"
+
+rag:
+  embedding_model: "text-embedding-3-small"
+  embedding_dim: 1536
+  chunk_chars: 1200
+  chunk_overlap: 200
+  batch_size: 64

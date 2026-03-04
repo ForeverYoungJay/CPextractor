@@ -1,0 +1,18 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: cp_pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cpuser
+      POSTGRES_PASSWORD: cppassword
+      POSTGRES_DB: cpdb
+    ports:
+      - "55432:5432"
+    volumes:
+      - cp_pgdata:/var/lib/postgresql/data
+
+volumes:
+  cp_pgdata:
+
+

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Local env/config
+.env
+.venv/
+venv/
+config.yaml
+
+# Generated outputs and datasets
+data/
+output/
+downloads/
+scopus_export/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
