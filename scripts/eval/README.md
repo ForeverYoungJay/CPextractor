@@ -47,3 +47,26 @@ python3 scripts/eval/cost_latency_report.py \
 ```bash
 python3 scripts/eval/error_bucket.py --gold gold_norm.json --pred pred_norm.json --output metrics_errors.json
 ```
+
+## One-click full run (9 scripts + paper CSV tables)
+
+```bash
+python3 scripts/eval/run_all.py \
+  --gold gold.jsonl \
+  --pred-root data/fulltext \
+  --qrels qrels.jsonl \
+  --runs runs.jsonl \
+  --pipeline-csv pipeline_runs.csv \
+  --outdir results/eval \
+  --method-name CPextractor \
+  --ks 5,10 \
+  --usd-per-1k-input 0.001 \
+  --usd-per-1k-output 0.004
+```
+
+Generated files:
+- `results/eval/metrics/*.json`
+- `results/eval/tables/table_main_results.csv`
+- `results/eval/tables/table_retrieval_results.csv`
+- `results/eval/tables/table_error_buckets.csv`
+- `results/eval/tables/table_field_by_prefix.csv`
