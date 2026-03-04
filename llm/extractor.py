@@ -95,30 +95,6 @@ def llm_select_files(sections, tables, model: str, max_snippet_chars: int) -> Di
     return json.loads(resp.choices[0].message.content), usage, elapsed
 
 
-def _validate_extracted_payload(payload: Dict[str, Any]) -> List[str]:
-    errors: List[str] = []
-    if not isinstance(payload, dict):
-        return ["payload is not an object"]
-
-    required_top = ["material", "elastic_parameters", "plastic_parameters"]
-    for k in required_top:
-        if k not in payload:
-            errors.append(f"missing top-level key: {k}")
-
-    elastic = payload.get("elastic_parameters", {})
-    if not isinstance(elastic, dict):
-        errors.append("elastic_parameters must be an object")
-    elif not isinstance(elastic.get("constants", []), list):
-        errors.append("elastic_parameters.constants must be a list")
-
-    plastic = payload.get("plastic_parameters", {})
-    if not isinstance(plastic, dict):
-        errors.append("plastic_parameters must be an object")
-    elif not isinstance(plastic.get("parameters", []), list):
-        errors.append("plastic_parameters.parameters must be a list")
-
-    return errors
-
 # ----------------------------
 # Stage 2: LLM Extraction
 # ----------------------------
@@ -670,6 +646,71 @@ Return JSON only.
 """
 
 
+def _schema_skeleton_from_prompt_template(template: str) -> Dict[str, Any]:
+    start_marker = "Extract the following schema from the paper excerpt:"
+    end_marker = "Paper excerpt:"
+
+    start = template.find(start_marker)
+    text = template[start + len(start_marker):] if start >= 0 else template
+    end = text.find(end_marker)
+    if end >= 0:
+        text = text[:end]
+
+    text = text.strip().replace("{{", "{").replace("}}", "}")
+    l = text.find("{")
+    r = text.rfind("}")
+    if l < 0 or r < 0 or r <= l:
+        raise RuntimeError("Failed to parse extraction schema template")
+    return json.loads(text[l:r + 1])
+
+
+def _coerce_to_schema_shape(schema_node: Any, payload_node: Any) -> Any:
+    if isinstance(schema_node, dict):
+        src = payload_node if isinstance(payload_node, dict) else {}
+        out: Dict[str, Any] = {}
+        for k, sv in schema_node.items():
+            out[k] = _coerce_to_schema_shape(sv, src.get(k))
+        # Keep extra keys from model output for audit/debug.
+        if isinstance(src, dict):
+            for k, v in src.items():
+                if k not in out:
+                    out[k] = v
+        return out
+
+    if isinstance(schema_node, list):
+        if not isinstance(payload_node, list):
+            return []
+        if not schema_node:
+            return payload_node
+        item_schema = schema_node[0]
+        return [_coerce_to_schema_shape(item_schema, item) for item in payload_node]
+
+    # Leaf placeholder in template (e.g., "string or null"): prefer payload value, else null.
+    if payload_node is None:
+        return None
+    return payload_node
+
+
+EXTRACT_SCHEMA_SKELETON = _schema_skeleton_from_prompt_template(EXTRACT_USER_PROMPT_TEMPLATE)
+
+
+def _validate_extracted_payload(payload: Dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+    if not isinstance(payload, dict):
+        return ["payload is not an object"]
+
+    for key in EXTRACT_SCHEMA_SKELETON.keys():
+        if key not in payload:
+            errors.append(f"missing top-level key: {key}")
+
+    if not isinstance(payload.get("elastic_parameters", {}).get("constants", []), list):
+        errors.append("elastic_parameters.constants must be a list")
+    if not isinstance(payload.get("plastic_parameters", {}).get("parameters", []), list):
+        errors.append("plastic_parameters.parameters must be a list")
+
+    return errors
+
+
 
 
 def build_context(selected_sections, selected_tables, max_context_chars: int) -> str:
@@ -713,7 +754,8 @@ def llm_extract(context: str, model: str, max_retries: int = 2) -> Tuple[Dict[st
         )
 
         last_usage = resp.usage
-        payload = json.loads(resp.choices[0].message.content)
+        raw_payload = json.loads(resp.choices[0].message.content)
+        payload = _coerce_to_schema_shape(EXTRACT_SCHEMA_SKELETON, raw_payload)
         errors = _validate_extracted_payload(payload)
         if not errors:
             elapsed = time.perf_counter() - start_all
