@@ -3,6 +3,7 @@
 import os
 import re
 import json
+import time
 import requests
 from urllib.parse import quote
 from bs4 import BeautifulSoup
@@ -59,7 +60,25 @@ def rows_to_markdown(rows):
 BASE_URL = "https://api.elsevier.com/content/article/doi/"
 
 
-def fetch_xml_by_doi(doi, api_key, inst_token=None):
+def _http_get_with_retry(url, *, headers=None, params=None, timeout=30, max_retries=3):
+    delay = 1.0
+    last_exc = None
+    for attempt in range(max_retries + 1):
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=timeout)
+            if r.status_code in (429, 500, 502, 503, 504):
+                raise requests.HTTPError(f"HTTP {r.status_code}", response=r)
+            return r
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= max_retries:
+                break
+            time.sleep(delay)
+            delay *= 2
+    raise RuntimeError(f"HTTP request failed after retries: {last_exc}")
+
+
+def fetch_xml_by_doi(doi, api_key, inst_token=None, max_retries=3):
     doi_safe = quote(doi, safe="")
     url = f"{BASE_URL}{doi_safe}"
 
@@ -70,7 +89,13 @@ def fetch_xml_by_doi(doi, api_key, inst_token=None):
     if inst_token:
         headers["X-ELS-Insttoken"] = inst_token
 
-    r = requests.get(url, headers=headers, params={"view": "FULL"}, timeout=30)
+    r = _http_get_with_retry(
+        url,
+        headers=headers,
+        params={"view": "FULL"},
+        timeout=30,
+        max_retries=max_retries,
+    )
     if r.ok and r.text.strip():
         return r.text
     return None
@@ -338,7 +363,7 @@ def build_bibliographic_string(journal=None, volume=None, year=None, article_num
     return " ".join(parts)
 
 
-def lookup_doi_crossref_biblio(journal=None, volume=None, year=None, article_number=None, mailto=None):
+def lookup_doi_crossref_biblio(journal=None, volume=None, year=None, article_number=None, mailto=None, max_retries=2):
     """
     Resolve DOI from bibliographic metadata using Crossref.
     Returns DOI string or None.
@@ -361,7 +386,13 @@ def lookup_doi_crossref_biblio(journal=None, volume=None, year=None, article_num
     }
 
     try:
-        r = requests.get(CROSSREF_URL, params=params, headers=headers, timeout=20)
+        r = _http_get_with_retry(
+            CROSSREF_URL,
+            params=params,
+            headers=headers,
+            timeout=20,
+            max_retries=max_retries,
+        )
         r.raise_for_status()
         items = r.json().get("message", {}).get("items", [])
         if items:
@@ -372,7 +403,7 @@ def lookup_doi_crossref_biblio(journal=None, volume=None, year=None, article_num
     return None
 
 
-def extract_references_from_xml(soup, crossref_mailto=None):
+def extract_references_from_xml(soup, crossref_mailto=None, resolve_missing_reference_doi=True):
     """
     Extract reference list from Elsevier XML.
     - Preserves paper-local reference numbering
@@ -404,7 +435,7 @@ def extract_references_from_xml(soup, crossref_mailto=None):
         doi = doi_tag.get_text(strip=True) if doi_tag else None
 
         # If DOI missing → Crossref lookup
-        if not doi:
+        if not doi and resolve_missing_reference_doi:
             journal = None
             volume = None
             year = None
@@ -456,6 +487,8 @@ def save_paper_as_markdown_and_tables(
     inst_token=None,
     outdir="data/fulltext",
     crossref_mailto=None,
+    resolve_missing_reference_doi=True,
+    http_max_retries=3,
 ):
     paper_id = safe_id(doi)
     base_dir = os.path.join(outdir, paper_id)
@@ -463,7 +496,7 @@ def save_paper_as_markdown_and_tables(
     # --------------------------------------------------
     # Fetch XML FIRST (no folders yet)
     # --------------------------------------------------
-    xml_text = fetch_xml_by_doi(doi, api_key, inst_token)
+    xml_text = fetch_xml_by_doi(doi, api_key, inst_token, max_retries=http_max_retries)
     if not xml_text:
         print(f"❌ Failed to fetch XML for DOI: {doi}")
         return
@@ -492,7 +525,11 @@ def save_paper_as_markdown_and_tables(
     # --------------------------------------------------
     # Extract and save references
     # --------------------------------------------------
-    references = extract_references_from_xml(soup, crossref_mailto=crossref_mailto)
+    references = extract_references_from_xml(
+        soup,
+        crossref_mailto=crossref_mailto,
+        resolve_missing_reference_doi=resolve_missing_reference_doi,
+    )
     if references:
         with open(os.path.join(base_dir, "references.json"), "w", encoding="utf-8") as f:
             json.dump(references, f, ensure_ascii=False, indent=2)

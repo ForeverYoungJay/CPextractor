@@ -1,11 +1,21 @@
 elsevier:
   api_key: "YOUR_ELSEVIER_API_KEY"
   inst_token: null
+  crossref_mailto: null
+  resolve_missing_reference_doi: true
+  http_max_retries: 3
 
 search:
   query: 'TITLE-ABS-KEY("crystal plasticity" AND (simulation OR modeling OR model))'
-  count: 1
-  max_pages: 1
+  count: 25
+  max_pages: 20
+  year_from: 2018
+  year_to: null
+  require_doi: true
+  allowed_doctypes: ["ar", "re"]
+  rank_keywords: ["crystal plasticity", "cpfe", "vpsc", "fft", "constitutive"]
+  http_max_retries: 3
+  dois_limit: 0
 
 paths:
   scopus_export: "data/scopus_export"
@@ -31,3 +41,4 @@ rag:
   chunk_chars: 1200
   chunk_overlap: 200
   batch_size: 64
+  embedding_max_retries: 3

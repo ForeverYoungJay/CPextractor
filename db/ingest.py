@@ -63,9 +63,20 @@ def insert_chunk_rows(conn, doi: str, source_type: str, source_name: str, chunks
         ids.append(int(row["chunk_id"]))
     return ids
 
-def embed_texts(client: OpenAI, model: str, texts: List[str]) -> List[List[float]]:
-    resp = client.embeddings.create(model=model, input=texts)
-    return [d.embedding for d in resp.data]
+def embed_texts(client: OpenAI, model: str, texts: List[str], max_retries: int = 3) -> List[List[float]]:
+    delay = 1.0
+    last_exc: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            resp = client.embeddings.create(model=model, input=texts)
+            return [d.embedding for d in resp.data]
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= max_retries:
+                break
+            time.sleep(delay)
+            delay *= 2
+    raise RuntimeError(f"Embedding request failed after retries: {last_exc}")
 
 def update_embeddings(conn, pairs: List[Tuple[int, List[float]]]):
     for chunk_id, emb in pairs:
@@ -85,6 +96,7 @@ def ingest_paper_dir_to_db(
     chunk_chars: int,
     chunk_overlap: int,
     batch_size: int,
+    embedding_max_retries: int = 3,
 ):
     # 1) papers + extractions
     title = None
@@ -93,6 +105,7 @@ def ingest_paper_dir_to_db(
     upsert_extraction(conn, doi=doi, extracted_json=extracted_json, model_select=model_select, model_extract=model_extract)
 
     # 2) chunks from sections + tables
+    conn.execute("DELETE FROM chunks WHERE doi = %s;", (doi,))
     to_embed: List[Tuple[int, str]] = []
 
     sec_dir = os.path.join(paper_dir, "sections")
@@ -121,7 +134,7 @@ def ingest_paper_dir_to_db(
     for i in range(0, len(to_embed), batch_size):
         sub = to_embed[i:i+batch_size]
         texts = [t for _, t in sub]
-        embs = embed_texts(openai_client, embedding_model, texts)
+        embs = embed_texts(openai_client, embedding_model, texts, max_retries=embedding_max_retries)
 
         if embs and len(embs[0]) != embedding_dim:
             raise RuntimeError(f"Embedding dim mismatch: got {len(embs[0])}, expected {embedding_dim}")

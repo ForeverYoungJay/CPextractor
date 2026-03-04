@@ -1,4 +1,7 @@
 def ingest_references(conn, paper_doi, extracted_json):
+    # Keep inserts idempotent across reruns.
+    conn.execute("DELETE FROM parameter_references WHERE paper_doi = %s;", (paper_doi,))
+
     for block, items_key in [
         ("plastic", "parameters"),
         ("elastic", "constants"),
@@ -10,6 +13,10 @@ def ingest_references(conn, paper_doi, extracted_json):
         for p in items:
             src = p.get("source", {})
             for c in src.get("citations", []):
+                ref_doi = c.get("doi")
+                if not ref_doi:
+                    continue
+
                 # references
                 conn.execute(
                     """
@@ -18,7 +25,7 @@ def ingest_references(conn, paper_doi, extracted_json):
                     ON CONFLICT (doi) DO UPDATE
                     SET title = COALESCE(EXCLUDED.title, references.title);
                     """,
-                    (c["doi"], c.get("title")),
+                    (ref_doi, c.get("title")),
                 )
 
                 # paper_references
@@ -28,7 +35,7 @@ def ingest_references(conn, paper_doi, extracted_json):
                     VALUES (%s, %s, %s)
                     ON CONFLICT DO NOTHING;
                     """,
-                    (paper_doi, c["label"], c["doi"]),
+                    (paper_doi, c.get("label"), ref_doi),
                 )
 
                 # parameter_references
@@ -48,10 +55,10 @@ def ingest_references(conn, paper_doi, extracted_json):
                     """,
                     (
                         paper_doi,
-                        p["symbol"],
+                        p.get("symbol"),
                         block,
-                        c["label"],
-                        c["doi"],
+                        c.get("label"),
+                        ref_doi,
                         src.get("type"),
                         src.get("calibration_method"),
                         src.get("validation_targets"),

@@ -4,6 +4,8 @@ import yaml
 from openai import OpenAI
 import sys
 import json
+import time
+from datetime import datetime, timezone
 
 sys.path.append(".")
 
@@ -23,8 +25,11 @@ def main():
         cfg = yaml.safe_load(f)
 
     # env keys
-    elsevier_key = cfg["elsevier"]["api_key"]
+    elsevier_key = os.environ.get("ELSEVIER_API_KEY") or cfg["elsevier"].get("api_key")
     inst_token = cfg["elsevier"].get("inst_token")
+    crossref_mailto = cfg["elsevier"].get("crossref_mailto")
+    resolve_missing_reference_doi = bool(cfg["elsevier"].get("resolve_missing_reference_doi", True))
+    fulltext_http_max_retries = int(cfg["elsevier"].get("http_max_retries", 3))
 
     if not elsevier_key:
         raise RuntimeError("Elsevier API key not found in config.yaml")
@@ -43,6 +48,8 @@ def main():
     llm_cfg = cfg["llm"]
     rag = cfg["rag"]
     paths = cfg["paths"]
+    os.makedirs(paths["fulltext"], exist_ok=True)
+    status_path = os.path.join(paths["fulltext"], "pipeline_status.jsonl")
 
     # 1) search scopus
     dois = scopus_search(
@@ -51,13 +58,24 @@ def main():
         count=qcfg["count"],
         max_pages=qcfg["max_pages"],
         outdir=paths["scopus_export"],
+        year_from=qcfg.get("year_from"),
+        year_to=qcfg.get("year_to"),
+        require_doi=bool(qcfg.get("require_doi", True)),
+        allowed_doctypes=qcfg.get("allowed_doctypes", []),
+        rank_keywords=qcfg.get("rank_keywords", []),
+        max_retries=int(qcfg.get("http_max_retries", 3)),
     )
 
 
     print(f"Found {len(dois)} DOIs")
+    dois_limit = int(qcfg.get("dois_limit", 0) or 0)
+    if dois_limit > 0:
+        dois = dois[:dois_limit]
+        print(f"Using first {len(dois)} DOIs due to search.dois_limit={dois_limit}")
     
     # 2) for each doi: parse fulltext -> LLM extract -> ingest to DB
     for doi in dois:
+        t0 = time.perf_counter()
         try:
             # parse
             save_paper_as_markdown_and_tables(
@@ -65,6 +83,9 @@ def main():
                 api_key=elsevier_key,
                 inst_token=inst_token,
                 outdir=paths["fulltext"],
+                crossref_mailto=crossref_mailto,
+                resolve_missing_reference_doi=resolve_missing_reference_doi,
+                http_max_retries=fulltext_http_max_retries,
             )
 
             paper_dir = os.path.join(paths["fulltext"], doi.replace("/", "_").replace(":", "_"))
@@ -128,12 +149,30 @@ def main():
                 chunk_chars=int(rag["chunk_chars"]),
                 chunk_overlap=int(rag["chunk_overlap"]),
                 batch_size=int(rag["batch_size"]),
+                embedding_max_retries=int(rag.get("embedding_max_retries", 3)),
             )
 
+            elapsed = time.perf_counter() - t0
+            with open(status_path, "a", encoding="utf-8") as sf:
+                sf.write(json.dumps({
+                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                    "doi": doi,
+                    "status": "success",
+                    "seconds": elapsed,
+                }, ensure_ascii=False) + "\n")
             print(f"✅ Done: {doi}")
 
         except Exception as e:
             conn.rollback()
+            elapsed = time.perf_counter() - t0
+            with open(status_path, "a", encoding="utf-8") as sf:
+                sf.write(json.dumps({
+                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                    "doi": doi,
+                    "status": "failed",
+                    "seconds": elapsed,
+                    "error": str(e),
+                }, ensure_ascii=False) + "\n")
             print(f"❌ Failed {doi}: {e}")
 
     conn.close()
