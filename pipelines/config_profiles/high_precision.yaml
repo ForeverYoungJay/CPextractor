@@ -1,0 +1,16 @@
+search:
+  query: 'TITLE-ABS-KEY("crystal plasticity" AND (cpfe OR vpsc OR fft) AND (parameter OR calibration OR constitutive))'
+  count: 25
+  max_pages: 12
+  year_from: 2018
+  year_to: null
+  require_doi: true
+  allowed_doctypes: ["ar", "re"]
+  rank_keywords: ["crystal plasticity", "cpfe", "vpsc", "fft", "calibration", "parameter", "hardening"]
+  http_max_retries: 3
+  dois_limit: 150
+
+llm:
+  max_snippet_chars: 600
+  max_context_chars: 22000
+  max_extract_retries: 2

@@ -1,0 +1,16 @@
+search:
+  query: 'TITLE-ABS-KEY(("crystal plasticity" OR CPFE OR VPSC OR "crystal plasticity finite element") AND (simulation OR modeling OR constitutive))'
+  count: 25
+  max_pages: 40
+  year_from: 2015
+  year_to: null
+  require_doi: true
+  allowed_doctypes: ["ar", "re", "cp"]
+  rank_keywords: ["crystal plasticity", "cpfe", "vpsc", "fft", "constitutive", "slip system", "hardening"]
+  http_max_retries: 4
+  dois_limit: 0
+
+llm:
+  max_snippet_chars: 700
+  max_context_chars: 28000
+  max_extract_retries: 3
