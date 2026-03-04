@@ -15,6 +15,7 @@ from scopus.scopus_search import scopus_search
 from elsevier.fulltext_parser import save_paper_as_markdown_and_tables, safe_id  # import safe_id from parser
 from llm.extractor import run_llm_on_paper_dir
 from postprocess.reference_resolver import resolve_references, load_references
+from postprocess.unit_normalizer import normalize_extracted_units
 
 def main():
 
@@ -75,21 +76,28 @@ def main():
                 model_extract=llm_cfg["model_extract"],
                 max_snippet_chars=int(llm_cfg["max_snippet_chars"]),
                 max_context_chars=int(llm_cfg["max_context_chars"]),
+                max_extract_retries=int(llm_cfg.get("max_extract_retries", 2)),
             )
             selection = llm_result["selection"]
             extracted = llm_result["extracted"]
             metrics = llm_result["metrics"]
+            reports = {}
 
             # Load references.json produced by fulltext_parser
             ref_path = os.path.join(paper_dir, "references.json")
             if os.path.exists(ref_path):
                 reference_map = load_references(ref_path)
-                extracted = resolve_references(extracted, reference_map)
+                extracted, reports["reference_resolution"] = resolve_references(extracted, reference_map)
+
+            extracted, reports["unit_normalization"] = normalize_extracted_units(extracted)
 
             out_path = os.path.join(paper_dir, "materials_extracted.json")
 
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(extracted, f, ensure_ascii=False, indent=2)
+
+            with open(os.path.join(paper_dir, "postprocess_report.json"), "w", encoding="utf-8") as f:
+                json.dump(reports, f, ensure_ascii=False, indent=2)
 
             # ensure DOI exists in papers BEFORE pipeline_runs insert
             upsert_paper(conn, doi=doi, title=None, year=None, journal=None)

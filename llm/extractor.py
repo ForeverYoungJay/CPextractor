@@ -1,5 +1,5 @@
 import os, re, json, glob
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from openai import OpenAI
 import time
 
@@ -93,6 +93,31 @@ def llm_select_files(sections, tables, model: str, max_snippet_chars: int) -> Di
     usage = resp.usage
 
     return json.loads(resp.choices[0].message.content), usage, elapsed
+
+
+def _validate_extracted_payload(payload: Dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+    if not isinstance(payload, dict):
+        return ["payload is not an object"]
+
+    required_top = ["material", "elastic_parameters", "plastic_parameters"]
+    for k in required_top:
+        if k not in payload:
+            errors.append(f"missing top-level key: {k}")
+
+    elastic = payload.get("elastic_parameters", {})
+    if not isinstance(elastic, dict):
+        errors.append("elastic_parameters must be an object")
+    elif not isinstance(elastic.get("constants", []), list):
+        errors.append("elastic_parameters.constants must be a list")
+
+    plastic = payload.get("plastic_parameters", {})
+    if not isinstance(plastic, dict):
+        errors.append("plastic_parameters must be an object")
+    elif not isinstance(plastic.get("parameters", []), list):
+        errors.append("plastic_parameters.parameters must be a list")
+
+    return errors
 
 # ----------------------------
 # Stage 2: LLM Extraction
@@ -669,22 +694,42 @@ def build_context(selected_sections, selected_tables, max_context_chars: int) ->
 
     return "\n".join(parts).strip()
 
-def llm_extract(context: str, model: str) -> Dict[str, Any]:
-    start = time.perf_counter()
+def llm_extract(context: str, model: str, max_retries: int = 2) -> Tuple[Dict[str, Any], Any, float]:
     prompt = EXTRACT_USER_PROMPT_TEMPLATE.format(context=context)
+    attempts = max(1, max_retries + 1)
+    start_all = time.perf_counter()
+    last_errors: List[str] = []
+    last_usage = None
 
-    resp = client.chat.completions.create(
-        model=model,
-        temperature=0,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
-        ],
-    )
-    elapsed = time.perf_counter() - start
-    usage = resp.usage
-    return json.loads(resp.choices[0].message.content), usage, elapsed
+    for attempt in range(1, attempts + 1):
+        resp = client.chat.completions.create(
+            model=model,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ],
+        )
+
+        last_usage = resp.usage
+        payload = json.loads(resp.choices[0].message.content)
+        errors = _validate_extracted_payload(payload)
+        if not errors:
+            elapsed = time.perf_counter() - start_all
+            return payload, resp.usage, elapsed
+
+        last_errors = errors
+        if attempt < attempts:
+            prompt = (
+                EXTRACT_USER_PROMPT_TEMPLATE.format(context=context)
+                + "\n\nValidation errors from your previous output:\n"
+                + "\n".join(f"- {e}" for e in errors)
+                + "\nPlease regenerate and return valid JSON only."
+            )
+
+    elapsed = time.perf_counter() - start_all
+    raise RuntimeError(f"Extraction JSON validation failed after {attempts} attempts: {last_errors}")
 
 def run_llm_on_paper_dir(
     paper_dir: str,
@@ -692,6 +737,7 @@ def run_llm_on_paper_dir(
     model_extract: str,
     max_snippet_chars: int,
     max_context_chars: int,
+    max_extract_retries: int = 2,
 ):
     sections_dir = os.path.join(paper_dir, "sections")
     tables_dir = os.path.join(paper_dir, "tables")
@@ -711,11 +757,21 @@ def run_llm_on_paper_dir(
     selected_sections = [s for s in sections if s["name"] in selected_section_names]
     selected_tables = [t for t in tables if t["name"] in selected_table_names]
 
+    # Fallback for robustness when selection stage returns empty.
+    if not selected_sections and sections:
+        selected_sections = sections[:2]
+    if not selected_tables and tables:
+        selected_tables = tables[:1]
+
     with open(os.path.join(paper_dir, "llm_selected_files.json"), "w", encoding="utf-8") as f:
         json.dump(selection, f, ensure_ascii=False, indent=2)
 
     context = build_context(selected_sections, selected_tables, max_context_chars=max_context_chars)
-    extracted, ext_usage, ext_time = llm_extract(context, model=model_extract)
+    extracted, ext_usage, ext_time = llm_extract(
+        context,
+        model=model_extract,
+        max_retries=max_extract_retries,
+    )
 
     with open(os.path.join(paper_dir, "materials_extracted.json"), "w", encoding="utf-8") as f:
         json.dump(extracted, f, ensure_ascii=False, indent=2)

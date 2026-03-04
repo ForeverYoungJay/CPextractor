@@ -14,6 +14,7 @@ paths:
 llm:
   max_snippet_chars: 600
   max_context_chars: 24000
+  max_extract_retries: 2
   model_select: "gpt-4.1-mini"
   model_extract: "gpt-4.1-mini"
 

@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Tuple
+
+
+_STRESS_FACTORS = {
+    "pa": 1.0,
+    "kpa": 1e3,
+    "mpa": 1e6,
+    "gpa": 1e9,
+}
+
+
+def _to_float(v: Any) -> float | None:
+    try:
+        if v is None:
+            return None
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_param_items(items: List[Dict[str, Any]], block: str) -> Dict[str, int]:
+    converted = 0
+    skipped = 0
+
+    for p in items:
+        value = _to_float(p.get("value"))
+        unit = str(p.get("unit") or "").strip().lower()
+
+        if value is None or unit not in _STRESS_FACTORS:
+            skipped += 1
+            continue
+
+        p["value"] = value
+        p["value_SI"] = value * _STRESS_FACTORS[unit]
+        p["unit_SI"] = "Pa"
+        converted += 1
+
+    return {
+        "block": block,
+        "converted": converted,
+        "skipped": skipped,
+    }
+
+
+def normalize_extracted_units(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    Add SI fields for commonly seen stress-like parameters.
+    This preserves original value/unit while adding value_SI/unit_SI.
+    """
+    report: Dict[str, Any] = {"items": []}
+
+    elastic = extracted_json.get("elastic_parameters", {}).get("constants", [])
+    if isinstance(elastic, list):
+        report["items"].append(_normalize_param_items(elastic, "elastic"))
+
+    plastic = extracted_json.get("plastic_parameters", {}).get("parameters", [])
+    if isinstance(plastic, list):
+        report["items"].append(_normalize_param_items(plastic, "plastic"))
+
+    report["converted_total"] = sum(i["converted"] for i in report["items"])
+    report["skipped_total"] = sum(i["skipped"] for i in report["items"])
+    return extracted_json, report
