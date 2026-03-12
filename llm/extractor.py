@@ -154,62 +154,83 @@ EXTRACT_USER_PROMPT_TEMPLATE = """
 Extract the following schema from the paper excerpt:
 
 {{
-  "schema_version": "1.1.0",
-  "record_id": "string or null",
-
-  "applicability": {{
-    "primary_intent": "crystal_plasticity_parameter_extraction",
-    "crystal_plasticity_applicable": "yes / partial / no / null",
-    "why_not_applicable": "string or null",
-    "notes": "string or null"
-  }},
-
-  "source_document": {{
-    "title": "string or null",
-    "authors": ["string"],
-    "year": "number or null",
-    "journal_or_venue": "string or null",
-    "doi": "string or null",
-    "url": "string or null",
-    "extraction_method": "manual / semi_automatic / automatic / null",
-    "extraction_notes": "string or null"
-  }},
 
   "material": {{
     "name": "string or null",
+    "common_name": "string or null",
     "chemical_formula": "string or null",
-    "phase": "single / multi / null",
+    "material_class": "metal / ceramic / polymer / mineral / intermetallic / composite / other / null",
+
+    "composition": {{
+      "basis": "wt% / at% / mol% / fraction / null",
+      "elements": [
+        {{
+          "element": "string",
+          "reported_value": "number or null",
+          "reported_unit": "wt% / at% / mol% / fraction / null",
+          "value_SI": "number or null",
+          "unit_SI": "fraction",
+          "uncertainty": {{
+            "reported_value": "number or null",
+            "reported_unit": "same_as_reported / null",
+            "notes": "string or null"
+          }},
+          "notes": "string or null"
+        }}
+      ],
+      "notes": "string or null"
+    }},
+
+    "phase_state": "single / multi / unknown / null",
+
     "phases": [
       {{
         "phase_id": "string",
         "phase_name": "string or null",
-        "role": "matrix / precipitate / inclusion / transformed_product / other / null",
+        "role": "matrix / precipitate / second_phase / inclusion / pore / null",
 
         "volume_fraction": {{
-          "value_SI": "number or null",
-          "unit_SI": "fraction",
           "reported_value": "number or null",
           "reported_unit": "fraction / % / null",
+          "value_SI": "number or null",
+          "unit_SI": "fraction",
+          "uncertainty": {{
+            "reported_value": "number or null",
+            "reported_unit": "same_as_reported / null",
+            "notes": "string or null"
+          }},
           "notes": "string or null"
         }},
 
         "crystal_structure": {{
-          "crystal_system": "cubic / hexagonal / tetragonal / orthorhombic / trigonal_rhombohedral / monoclinic / triclinic / null",
-          "lattice_type": "FCC / BCC / HCP / other / null",
+          "crystal_system": "cubic / hexagonal / tetragonal / orthorhombic / trigonal_rhombohedral / monoclinic / triclinic / unknown / null",
+          "bravais_lattice": "P / I / F / R / A / B / C / unknown / null",
+
+          "lattice_family_hint": "FCC / BCC / HCP / diamond_cubic / zincblende / rocksalt_like / fluorite_like / perovskite_like / other / unknown / null",
+          "structure_prototype": "fluorite / rocksalt / perovskite / spinel / wurtzite / zincblende / corundum / olivine / laves / custom / unknown / null",
           "space_group": "string or null",
 
           "lattice_parameters": {{
-            "a": {{ "value_SI": "number or null", "unit_SI": "m", "reported_value": "number or null", "reported_unit": "m / nm / angstrom / null", "notes": "string or null" }},
-            "b": {{ "value_SI": "number or null", "unit_SI": "m", "reported_value": "number or null", "reported_unit": "m / nm / angstrom / null", "notes": "string or null" }},
-            "c": {{ "value_SI": "number or null", "unit_SI": "m", "reported_value": "number or null", "reported_unit": "m / nm / angstrom / null", "notes": "string or null" }},
-            "alpha": {{ "value_SI": "number or null", "unit_SI": "rad", "reported_value": "number or null", "reported_unit": "deg / rad / null", "notes": "string or null" }},
-            "beta":  {{ "value_SI": "number or null", "unit_SI": "rad", "reported_value": "number or null", "reported_unit": "deg / rad / null", "notes": "string or null" }},
-            "gamma": {{ "value_SI": "number or null", "unit_SI": "rad", "reported_value": "number or null", "reported_unit": "deg / rad / null", "notes": "string or null" }}
+            "a": {{ "reported_value": "number or null", "reported_unit": "angstrom / nm / m / null", "value_SI": "number or null", "unit_SI": "m" }},
+            "b": {{ "reported_value": "number or null", "reported_unit": "angstrom / nm / m / null", "value_SI": "number or null", "unit_SI": "m" }},
+            "c": {{ "reported_value": "number or null", "reported_unit": "angstrom / nm / m / null", "value_SI": "number or null", "unit_SI": "m" }},
+            "alpha_deg": {{ "reported_value": "number or null", "reported_unit": "deg / null", "value_SI": "number or null", "unit_SI": "rad" }},
+            "beta_deg": {{ "reported_value": "number or null", "reported_unit": "deg / null", "value_SI": "number or null", "unit_SI": "rad" }},
+            "gamma_deg": {{ "reported_value": "number or null", "reported_unit": "deg / null", "value_SI": "number or null", "unit_SI": "rad" }},
+            "c_over_a": {{ "value": "number or null", "notes": "string or null" }},
+            "temperature": {{
+              "reported_value": "number or null",
+              "reported_unit": "K / C / null",
+              "value_SI": "number or null",
+              "unit_SI": "K"
+            }},
+            "notes": "string or null"
           }},
 
-          "hcp_geometry": {{
-            "miller_convention": "miller / miller_bravais / null",
-            "c_over_a": {{ "value": "number or null", "notes": "string or null" }},
+          "orientation_convention": {{
+            "miller_indexing": "miller / miller_bravais / cartesian / unknown / null",
+            "axis_definition": "string or null",
+            "handedness": "right / left / unknown / null",
             "notes": "string or null"
           }},
 
@@ -219,49 +240,63 @@ Extract the following schema from the paper excerpt:
         "notes": "string or null"
       }}
     ],
+
     "notes": "string or null"
   }},
 
   "microstructure": {{
-    "grain_structure": "single_crystal / polycrystal / bicrystal / null",
+    "grain_structure": "single_crystal / polycrystal / bicrystal / oligocrystal / unknown / null",
 
-    "grain_size": {{
-      "value_SI": "number or null",
-      "unit_SI": "m",
-      "reported_value": "number or null",
-      "reported_unit": "micrometer / mm / m / null",
-      "distribution": "string or null",
-      "measurement_method": "EBSD / optical / TEM / XRD / other / null",
-      "extraction_location": "figure/table/section id or null",
+    "specimen_geometry": {{
+      "type": "bulk / sheet / foil / wire / pillar / film / powder / coated / composite / unknown / null",
+      "dimensions": "string or null",
+      "surface_finish": "polished / etched / as_received / unknown / null",
       "notes": "string or null"
     }},
 
-    "orientation_texture": {{
-      "description": "string or null",
-      "texture_type": "ODF / pole_figure / EBSD / none / null",
-      "texture_data_available": "yes / no / null",
-      "orientation_representation": "euler_bunge / quaternion / rodrigues / axis_angle / null",
-      "sample_frame_definition": "RD/TD/ND definition or null",
-      "data_location": "figure/table/section id or null",
+    "grain_size": {{
+      "reported_value": "number or null",
+      "reported_unit": "nm / micrometer / mm / m / null",
+      "value_SI": "number or null",
+      "unit_SI": "m",
+      "distribution": "normal / lognormal / bimodal / unknown / null",
+      "std_dev": {{ "reported_value": "number or null", "reported_unit": "nm / micrometer / mm / m / null", "value_SI": "number or null", "unit_SI": "m" }},
+      "measurement_method": "EBSD / optical / SEM / TEM / XRD / unknown / null",
+      "notes": "string or null"
+    }},
+
+    "texture_or_orientation": {{
+      "type": "single_crystal_orientation / polycrystal_texture / none / unknown / null",
+      "method": "XRD / Laue / EBSD / neutron / synchrotron / unknown / null",
+      "representation": "euler_bunge / quaternion / axis_angle / rodrigues / pole_figure / ODF / unknown / null",
+      "accuracy_deg": "number or null",
+      "data_available": "yes / no / partial / null",
       "notes": "string or null"
     }},
 
     "initial_defect_state": {{
       "dislocation_density": {{
+        "reported_value": "number or null",
+        "reported_unit": "m^-2 / null",
         "value_SI": "number or null",
         "unit_SI": "m^-2",
-        "reported_value": "number or null",
-        "reported_unit": "m^-2 / cm^-2 / null",
-        "measurement_method": "XRD / TEM / EBSD-KAM / assumed / other / null",
+        "measurement_method": "TEM / XRD_line_profile / etch_pits / assumed / unknown / null",
         "notes": "string or null"
       }},
       "precipitate_state": "string or null",
       "solute_state": "string or null",
-      "prestrain": {{
+      "porosity": {{
+        "reported_value": "number or null",
+        "reported_unit": "fraction / % / null",
         "value_SI": "number or null",
-        "unit_SI": "strain",
+        "unit_SI": "fraction",
+        "notes": "string or null"
+      }},
+      "prestrain": {{
         "reported_value": "number or null",
         "reported_unit": "strain / % / null",
+        "value_SI": "number or null",
+        "unit_SI": "strain",
         "notes": "string or null"
       }},
       "notes": "string or null"
@@ -271,35 +306,52 @@ Extract the following schema from the paper excerpt:
   }},
 
   "constitutive_model": {{
-    "class": "crystal_plasticity / phase_field / continuum_damage / other / null",
-    "framework": "CPFE / FFT / EVPFFT / DAMASK / VPSC / UMAT / other / null",
+    "class": "crystal_plasticity / viscoplasticity / continuum_damage / phase_field / cohesive_zone / null",
+
+    "framework": "CPFE / FFT / EVPFFT / VPSC / DAMASK / UMAT / custom / null",
 
     "implementation": {{
       "code_name": "string or null",
       "platform": "Abaqus / DAMASK / VPSC / custom / other / null",
-      "subroutine_or_solver": "UMAT / VUMAT / spectral / FEM / other / null",
+      "solver_type": "FEM / FFT / spectral / mean_field / null",
+      "subroutine": "UMAT / VUMAT / user_material / built_in / null",
       "version": "string or null",
       "repository_or_link": "string or null",
+      "element_or_grid": "string or null",
       "notes": "string or null"
     }},
 
     "kinematics": "finite_strain / small_strain / null",
 
     "flow_kinetics": {{
-      "rate_dependence": "rate_dependent / rate_independent / null",
-      "flow_rule_form": "power_law / overstress / arrhenius / tabulated / user_defined / null",
-      "uses_m_or_n": "m / n / both / unclear / null",
+      "rate_dependence": "rate_dependent / rate_independent / unknown / null",
+      "flow_rule_form": "power_law / overstress / sinh / custom / unknown / null",
+
+      "parameter_convention": {{
+        "uses_m": "yes / no / unknown / null",
+        "uses_n": "yes / no / unknown / null",
+        "notes": "string or null"
+      }},
+
+      "equation": "string or null",
       "notes": "string or null"
     }},
 
     "hardening": {{
-      "isotropic_hardening_law": "Voce / Kocks_Mecking / MTS / Bassani_Wu / tabulated / user_defined / null",
-      "kinematic_hardening_law": "none / Armstrong_Frederick / Chaboche / user_defined / null",
-      "latent_hardening_form": "none / q_ratio / interaction_matrix / user_defined / null",
+      "isotropic_hardening_law": "Voce / Kocks_Mecking / MTS / Bassani_Wu / user_defined / unknown / null",
+      "kinematic_hardening_law": "none / Armstrong_Frederick / Chaboche / user_defined / unknown / null",
+      "latent_hardening_form": "none / q_ratio / interaction_matrix / user_defined / unknown / null",
+      "equation": "string or null",
       "notes": "string or null"
     }},
 
-    "homogenization_assumption": "Taylor / self_consistent / full_field / mean_field / null",
+    "damage_or_fracture": {{
+      "included": "yes / no / partial / null",
+      "type": "cleavage / cohesive / phase_field / continuum_damage / custom / null",
+      "planes": ["string"],
+      "equation_or_criterion": "string or null",
+      "notes": "string or null"
+    }},
 
     "state_variables": {{
       "includes_dislocation_density": "yes / no / null",
@@ -312,50 +364,104 @@ Extract the following schema from the paper excerpt:
     "notes": "string or null"
   }},
 
-  "elastic_parameters": {{
-    "context": "single_crystal / effective_polycrystal / null",
-    "symmetry": "isotropic / cubic / hexagonal / tetragonal / orthorhombic / monoclinic / triclinic / null",
+  "mechanisms": {{
+    "conventions": {{
+      "indices": "miller / miller_bravais / cartesian / unknown / null",
+      "sign_convention": "standard / author_defined / unknown / null",
+      "string_preservation": "keep_as_written / normalize_and_keep / unknown / null",
+      "notes": "string or null"
+    }},
 
-    "constants": [
+    "by_phase": [
       {{
-        "phase_id": "string or null",
-        "canonical_name": "C11 / C12 / C13 / C33 / C44 / C55 / C66 / E / nu / G / K / null",
-        "symbol": "string or null",
-        "description": "string or null",
+        "phase_id": "string",
 
-        "value_SI": "number or null",
-        "unit_SI": "Pa",
-        "reported_value": "number or null",
-        "reported_unit": "Pa / MPa / GPa / null",
+        "slip": {{
+          "lattice": "FCC / BCC / HCP / cubic_other / tetragonal / orthorhombic / other / unknown / null",
 
-        "temperature_dependence": {{
-          "type": "none / constant / linear / arrhenius / table / piecewise / user_defined / null",
-          "parameters": [
+          "families": [
             {{
-              "name": "string or null",
-              "value_SI": "number or null",
-              "unit_SI": "string or null",
-              "reported_value": "number or null",
-              "reported_unit": "string or null",
+              "family_id": "string",
+              "family_name": "string or null",
+
+              "shorthand": "basal / prismatic / pyramidal_ca / {111}<110> / {110}<111> / {100}<110> / custom / unknown / null",
+
+              "system_count": {{
+                "theoretical_full": "number or null",
+                "reported": "number or null",
+                "modeled": "number or null",
+                "counting_rule": "unique_by_sign / unique_by_plane / unique_by_direction / author_defined / unknown / null",
+                "notes": "string or null"
+              }},
+
+              "systems": [
+                {{
+                  "system_id": "string",
+                  "plane": {{
+                    "as_written": "string or null",
+                    "indices": ["number"],
+                    "basis": "hkl / hkil / unknown / null"
+                  }},
+                  "direction": {{
+                    "as_written": "string or null",
+                    "indices": ["number"],
+                    "basis": "uvw / uvtw / unknown / null"
+                  }},
+                  "burgers_vector": {{
+                    "reported_value": "number or null",
+                    "reported_unit": "m / nm / angstrom / null",
+                    "value_SI": "number or null",
+                    "unit_SI": "m",
+                    "notes": "string or null"
+                  }},
+                  "schmid_tensor_available": "yes / no / null",
+                  "notes": "string or null"
+                }}
+              ],
+
+              "active": "yes / no / partial / null",
               "notes": "string or null"
             }}
           ],
-          "table_location": "figure/table/section id or null",
+
           "notes": "string or null"
         }},
 
-        "source": {{
-          "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
-          "adopted_from_reference_ids": ["string"],
-          "calibration_based_on_reference_ids": ["string"],
-          "calibration_method": "string or null",
-          "calibration_targets": ["string"],
-          "evidence_text": "string or null",
-          "evidence_section": "string or null",
-          "validation_targets": ["string"]
+        "twinning": {{
+          "families": [
+            {{
+              "family_id": "string",
+              "family_name": "string or null",
+              "plane_direction_as_written": "string or null",
+              "system_count": {{
+                "theoretical_full": "number or null",
+                "reported": "number or null",
+                "modeled": "number or null",
+                "counting_rule": "author_defined / unknown / null",
+                "notes": "string or null"
+              }},
+              "twin_shear": {{
+                "reported_value": "number or null",
+                "reported_unit": "dimensionless / null",
+                "value_SI": "number or null",
+                "unit_SI": "dimensionless"
+              }},
+              "reorientation_rule": "instantaneous / kinetics_based / user_defined / unknown / null",
+              "active": "yes / no / partial / null",
+              "notes": "string or null"
+            }}
+          ],
+          "notes": "string or null"
         }},
 
-        "extraction_location": "figure/table/section id or null",
+        "cleavage": {{
+          "included": "yes / no / partial / null",
+          "planes": ["string"],
+          "criterion": "max_principal_stress / energy_release / cohesive / user_defined / unknown / null",
+          "active": "yes / no / partial / null",
+          "notes": "string or null"
+        }},
+
         "notes": "string or null"
       }}
     ],
@@ -363,223 +469,310 @@ Extract the following schema from the paper excerpt:
     "notes": "string or null"
   }},
 
-  "deformation_conditions": {{
-    "loading_mode": "uniaxial_tension / compression / shear / indentation / cyclic / creep / torsion / bending / null",
-    "stress_state": "uniaxial / plane_strain / biaxial / triaxial / multiaxial / null",
-
-    "strain_measure": "engineering / true / logarithmic / null",
-    "stress_measure": "engineering / true / cauchy / pk1 / pk2 / null",
-
-    "loading_path": {{
-      "control": "strain_controlled / stress_controlled / displacement_controlled / mixed / null",
-      "loading_direction": "RD / TD / ND / crystal_axis / custom / null",
-      "crystal_axis": "e.g., [001] / [011] / null",
-      "description": "string or null"
+  "parameters": {{
+    "canonical_dictionary": {{
+      "elastic": ["C11", "C12", "C13", "C33", "C44", "C55", "C66", "E", "nu", "G", "K"],
+      "flow": ["gamma0_ref", "rate_sensitivity_m", "exponent_n", "drag_stress", "drag_coefficient"],
+      "strength_and_hardening": ["crss_initial", "crss_saturation", "hardening_h0", "hardening_h1", "hardening_rate", "latent_ratio_q", "interaction_matrix_qab", "backstress_C", "backstress_gamma"],
+      "dislocation_based": ["dislocation_density_initial", "hardening_k1", "hardening_k2", "activation_energy_Q", "thermal_softening_beta"],
+      "twinning": ["twin_crss_initial", "twin_hardening_h0", "twin_saturation", "twin_reorientation_rate"],
+      "fracture_or_damage": ["cleavage_strength", "cohesive_strength", "fracture_energy_Gc", "critical_energy_release_rate", "damage_threshold"],
+      "numerical": ["time_step", "tolerance", "max_iterations", "viscosity_regularization"]
     }},
 
-    "strain_rate": {{
-      "value_SI": "number or null",
-      "unit_SI": "s^-1",
-      "reported_value": "number or null",
-      "reported_unit": "s^-1 / null",
-      "range": "string or null"
-    }},
-
-    "temperature": {{
-      "value_SI": "number or null",
-      "unit_SI": "K",
-      "reported_value": "number or null",
-      "reported_unit": "K / C / null",
-      "history": "isothermal / non_isothermal / null"
-    }},
-
-    "environment": {{
-      "pressure": {{
-        "value_SI": "number or null",
-        "unit_SI": "Pa",
-        "reported_value": "number or null",
-        "reported_unit": "Pa / MPa / bar / null",
-        "notes": "string or null"
-      }},
-      "medium": "air / vacuum / liquid / inert_gas / hydrogen / null",
-      "notes": "string or null"
-    }},
-
-    "calibration_strain_range": {{
-      "min": "number or null",
-      "max": "number or null",
-      "unit": "strain / % / null",
-      "notes": "string or null"
-    }},
-
-    "notes": "string or null"
-  }},
-
-  "mechanisms": {{
-    "slip_twin": {{
-      "by_phase": [
-        {{
-          "phase_id": "string",
-          "lattice": "FCC / BCC / HCP / other / null",
-          "crystal_frame_definition": "string or null",
-
-          "slip_families": [
-            {{
-              "family_id": "string or null",
-              "family_name": "basal / prismatic / pyramidal_ca / {111}<110> / {110}<111> / other / null",
-              "plane_direction": "string or null",
-              "num_systems": "number or null",
-              "active": "yes / no / null",
-
-              "systems_explicit": [
-                {{
-                  "system_id": "string or null",
-                  "plane": "string or null",
-                  "direction": "string or null",
-                  "notes": "string or null"
-                }}
-              ],
-
-              "notes": "string or null"
-            }}
-          ],
-
-          "twinning_families": [
-            {{
-              "family_id": "string or null",
-              "family_name": "extension_twin / contraction_twin / other / null",
-              "plane_direction": "string or null",
-              "num_systems": "number or null",
-              "active": "yes / no / null",
-              "reorientation_rule": "string or null",
-
-              "twin_shear": {{
-                "value_SI": "number or null",
-                "unit_SI": "dimensionless",
-                "reported_value": "number or null",
-                "reported_unit": "dimensionless / null",
-                "notes": "string or null"
-              }},
-
-              "notes": "string or null"
-            }}
-          ],
-
-          "notes": "string or null"
-        }}
-      ],
-      "notes": "string or null"
-    }},
-
-    "extensions": [
+    "registry": [
       {{
-        "type": "creep / transformation / damage / diffusion_climb / irradiation / user_defined / null",
-        "description": "string or null",
-        "parameters": [
-          {{
-            "name": "string or null",
-            "symbol": "string or null",
-            "definition": "string or null",
-            "value_SI": "number or string or null",
-            "unit_SI": "string or null",
-            "reported_value": "number or string or null",
-            "reported_unit": "string or null",
-            "applies_to": {{
-              "phase_id": "string or null",
-              "mechanism": "string or null"
-            }},
-            "source": {{
-              "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
-              "adopted_from_reference_ids": ["string"],
-              "calibration_based_on_reference_ids": ["string"],
-              "calibration_method": "string or null",
-              "calibration_targets": ["string"],
-              "evidence_text": "string or null",
-              "evidence_section": "string or null",
-              "validation_targets": ["string"]
-            }},
-            "extraction_location": "figure/table/section id or null",
-            "notes": "string or null"
-          }}
-        ],
-        "notes": "string or null"
-      }}
-    ]
-  }},
+        "parameter_id": "string",
 
-  "plastic_parameters": {{
-    "parameters": [
-      {{
-        "canonical_name": "gamma0_ref / rate_sensitivity_m / exponent_n / crss_initial / crss_saturation / hardening_h0 / hardening_h1 / hardening_rate / latent_ratio_q / interaction_matrix_qab / backstress_C / backstress_gamma / drag_stress / drag_coefficient / twin_crss_initial / twin_hardening_h0 / twin_saturation / twin_reorientation_rate / dislocation_density_initial / hardening_k1 / hardening_k2 / activation_energy_Q / thermal_softening_beta / user_defined / null",
+        "domain": "elastic / plastic / twinning / damage / thermal / numerical / other",
+
+        "canonical_name": "string or null",
         "user_defined_name": "string or null",
-
         "symbol": "string or null",
         "definition": "string or null",
-        "description": "string or null",
+        "equation_context": "string or null",
 
-        "value_SI": "number or string or null",
-        "unit_SI": "string or null",
         "reported_value": "number or string or null",
         "reported_unit": "string or null",
+        "value_SI": "number or string or null",
+        "unit_SI": "string or null",
 
         "applies_to": {{
           "phase_id": "string or null",
-          "mechanism": "slip / twinning / all_slip / all_twin / all_mechanisms / user_defined / null",
+
+          "scope": "all / mechanism_type / family / system / group / null",
+
+          "mechanism_type": "slip / twinning / cleavage / damage / null",
+
           "family_id": "string or null",
-          "family_name": "string or null",
           "system_ids": ["string"],
-          "system_count": "number or null"
-        }},
 
-        "temperature_dependence": {{
-          "type": "none / constant / linear / arrhenius / table / piecewise / user_defined / null",
-          "parameters": [
-            {{
-              "name": "string or null",
-              "value_SI": "number or null",
-              "unit_SI": "string or null",
-              "reported_value": "number or null",
-              "reported_unit": "string or null",
-              "notes": "string or null"
-            }}
-          ],
-          "table_location": "figure/table/section id or null",
+          "group_id": "string or null",
+
           "notes": "string or null"
         }},
 
-        "strain_rate_dependence": {{
-          "type": "none / power_law / table / piecewise / user_defined / null",
-          "parameters": [
-            {{
-              "name": "string or null",
-              "value_SI": "number or null",
-              "unit_SI": "string or null",
-              "reported_value": "number or null",
-              "reported_unit": "string or null",
+        "dependence": {{
+          "temperature": {{
+            "type": "none / arrhenius / table / piecewise / custom / unknown / null",
+            "parameters": [
+              {{
+                "name": "string",
+                "reported_value": "number or null",
+                "reported_unit": "string or null",
+                "value_SI": "number or null",
+                "unit_SI": "string or null",
+                "notes": "string or null"
+              }}
+            ],
+            "table_location": {{
+              "kind": "figure / table / section / supplement / dataset / code / null",
+              "id": "string or null",
+              "page": "number or null",
               "notes": "string or null"
-            }}
-          ],
-          "table_location": "figure/table/section id or null",
-          "notes": "string or null"
+            }},
+            "notes": "string or null"
+          }},
+
+          "strain_rate": {{
+            "type": "none / power_law / table / piecewise / custom / unknown / null",
+            "parameters": [
+              {{
+                "name": "string",
+                "reported_value": "number or null",
+                "reported_unit": "string or null",
+                "value_SI": "number or null",
+                "unit_SI": "string or null",
+                "notes": "string or null"
+              }}
+            ],
+            "table_location": {{
+              "kind": "figure / table / section / supplement / dataset / code / null",
+              "id": "string or null",
+              "page": "number or null",
+              "notes": "string or null"
+            }},
+            "notes": "string or null"
+          }}
         }},
 
         "valid_range": "string or null",
 
         "source": {{
-          "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
+          "type": "original / adopted / calibrated / inferred / mixed / null",
+          "reference_ids": ["string"],
           "adopted_from_reference_ids": ["string"],
-          "calibration_based_on_reference_ids": ["string"],
+          "calibrated_against_reference_ids": ["string"],
           "calibration_method": "manual_fitting / inverse_modeling / optimization / bayesian / null",
-          "calibration_targets": ["stress_strain", "texture_evolution", "r_value", "twin_fraction", "yield_surface", "other", "null"],
-          "evidence_text": "string or null",
-          "evidence_section": "string or null",
-          "validation_targets": ["string"]
+          "calibration_targets": ["load_displacement / stress_strain / texture_evolution / r_value / twin_fraction / yield_surface / lattice_strain / damage_metric / null"],
+          "validation_targets": ["string"],
+          "evidence": {{
+            "text": "string or null",
+            "location": {{
+              "kind": "figure / table / section / supplement / dataset / code / null",
+              "id": "string or null",
+              "page": "number or null",
+              "notes": "string or null"
+            }}
+          }},
+          "notes": "string or null"
         }},
 
-        "extraction_location": "figure/table/section id or null",
+        "location": {{
+          "kind": "figure / table / section / supplement / dataset / code / null",
+          "id": "string or null",
+          "page": "number or null",
+          "notes": "string or null"
+        }},
+
+        "confidence": "high / medium / low / null",
         "notes": "string or null"
       }}
     ],
+
+    "groups": [
+      {{
+        "group_id": "string",
+        "name": "string or null",
+        "description": "string or null",
+
+        "mapping_rule": {{
+          "type": "family_wise / system_wise / matrix / user_defined / null",
+          "details": "string or null"
+        }},
+
+        "members": {{
+          "phase_id": "string or null",
+          "mechanism_type": "slip / twinning / null",
+          "family_id": "string or null",
+          "system_ids": ["string"],
+          "notes": "string or null"
+        }},
+
+        "notes": "string or null"
+      }}
+    ],
+
+    "notes": "string or null"
+  }},
+
+  "code_compatibility": {{
+    "targets": [
+      {{
+        "code": "DAMASK / VPSC / Abaqus_UMAT / Abaqus_VUMAT / FFT_CP / custom / null",
+        "version": "string or null",
+
+        "parameter_mapping": [
+          {{
+            "parameter_id": "string",
+            "code_parameter_name": "string",
+            "code_scope": "global / phase / family / system / group / unknown / null",
+            "expected_units": "string or null",
+            "transform": {{
+              "type": "identity / unit_convert / invert / scale / custom / null",
+              "expression": "string or null",
+              "notes": "string or null"
+            }},
+            "notes": "string or null"
+          }}
+        ],
+
+        "mechanism_mapping": {{
+          "slip_family_map": [
+            {{
+              "family_id": "string",
+              "code_family_name": "string",
+              "notes": "string or null"
+            }}
+          ],
+          "system_map": [
+            {{
+              "system_id": "string",
+              "code_system_index": "number or string",
+              "notes": "string or null"
+            }}
+          ],
+          "notes": "string or null"
+        }},
+
+        "known_gaps": ["string"],
+        "notes": "string or null"
+      }}
+    ],
+
+    "notes": "string or null"
+  }},
+
+  "loading_and_environment": {{
+    "loading_mode": "uniaxial_tension / compression / shear / indentation / cyclic / creep / torsion / bending / null",
+    "stress_state": "uniaxial / plane_strain / biaxial / triaxial / multiaxial / unknown / null",
+    "control": "strain_controlled / stress_controlled / displacement_controlled / mixed / unknown / null",
+    "strain_measure": "engineering / true / logarithmic / unknown / null",
+    "stress_measure": "engineering / true / cauchy / PK1 / PK2 / unknown / null",
+
+    "loading_path": {{
+      "loading_direction": "RD / TD / ND / crystal_axis / arbitrary_vector / unknown / null",
+      "crystal_axis": "string or null",
+      "description": "string or null"
+    }},
+
+    "strain_rate": {{
+      "reported_value": "number or null",
+      "reported_unit": "s^-1 / null",
+      "value_SI": "number or null",
+      "unit_SI": "s^-1",
+      "notes": "string or null"
+    }},
+
+    "temperature": {{
+      "reported_value": "number or null",
+      "reported_unit": "K / C / null",
+      "value_SI": "number or null",
+      "unit_SI": "K",
+      "history": "isothermal / non_isothermal / unknown / null",
+      "notes": "string or null"
+    }},
+
+    "environment": {{
+      "medium": "air / vacuum / liquid / inert_gas / hydrogen / unknown / null",
+      "pressure": {{
+        "reported_value": "number or null",
+        "reported_unit": "Pa / MPa / bar / null",
+        "value_SI": "number or null",
+        "unit_SI": "Pa"
+      }},
+      "humidity": {{
+        "reported_value": "number or null",
+        "reported_unit": "%RH / null"
+      }},
+      "notes": "string or null"
+    }},
+
+    "indentation": {{
+      "indenter_type": "berkovich / spherical / cono_spherical / vickers / knoop / custom / unknown / null",
+
+      "tip_radius": {{
+        "reported_value": "number or null",
+        "reported_unit": "nm / micrometer / null",
+        "value_SI": "number or null",
+        "unit_SI": "m"
+      }},
+
+      "max_depth": {{
+        "reported_value": "number or null",
+        "reported_unit": "nm / micrometer / null",
+        "value_SI": "number or null",
+        "unit_SI": "m"
+      }},
+
+      "max_load": {{
+        "reported_value": "number or null",
+        "reported_unit": "mN / N / null",
+        "value_SI": "number or null",
+        "unit_SI": "N"
+      }},
+
+      "hold_time_at_peak": {{
+        "reported_value": "number or null",
+        "reported_unit": "s / null",
+        "value_SI": "number or null",
+        "unit_SI": "s"
+      }},
+
+      "loading_rate": {{
+        "type": "displacement_rate / load_rate / strain_rate / unknown / null",
+        "reported_value": "number or null",
+        "reported_unit": "nm/s / um/s / mN/s / N/s / s^-1 / null",
+        "value_SI": "number or null",
+        "unit_SI": "m/s / N/s / s^-1 / null",
+        "notes": "string or null"
+      }},
+
+      "friction_coefficient": {{
+        "value": "number or null",
+        "notes": "string or null"
+      }},
+
+      "notes": "string or null"
+    }},
+
+    "calibration_domain": {{
+      "primary_measured_response": "load_displacement / stress_strain / creep_curve / cyclic_hysteresis / null",
+      "calibration_strain_range": {{
+        "min": "number or null",
+        "max": "number or null",
+        "unit": "strain / % / null"
+      }},
+      "notes": "string or null"
+    }},
+
+    "location": {{
+      "kind": "figure / table / section / supplement / dataset / code / null",
+      "id": "string or null",
+      "page": "number or null",
+      "notes": "string or null"
+    }},
+
     "notes": "string or null"
   }},
 
@@ -587,22 +780,23 @@ Extract the following schema from the paper excerpt:
     "rve_type": "single_element / taylor / voronoi_grains / fft_voxels / fe_mesh / null",
 
     "boundary_conditions": {{
-      "type": "PBC / mixed / free_surface / null",
+      "type": "PBC / mixed / free_surface / unknown / null",
       "description": "string or null"
     }},
 
     "discretization": {{
-      "orientation_representation": "euler_bunge / quaternion / rodrigues / axis_angle / null",
+      "method": "FEM / FFT / mean_field / unknown / null",
+      "orientation_representation": "euler_bunge / quaternion / rodrigues / unknown / null",
       "mesh_element_type": "string or null",
       "element_count": "number or null",
-      "voxel_resolution": "string or null",
       "integration_points_per_element": "number or null",
+      "voxel_resolution": "string or null",
       "num_grains": "number or null",
       "notes": "string or null"
     }},
 
     "solver": {{
-      "integration_scheme": "implicit / explicit / semi_implicit / null",
+      "integration_scheme": "implicit / explicit / semi_implicit / unknown / null",
       "time_step_or_increment": "string or null",
       "max_increments": "number or null",
       "convergence_tolerance": "string or null",
@@ -612,10 +806,12 @@ Extract the following schema from the paper excerpt:
     }},
 
     "outputs_requested": {{
+      "load_displacement": "yes / no / null",
       "stress_strain": "yes / no / null",
       "lattice_rotation": "yes / no / null",
       "texture_evolution": "yes / no / null",
       "twin_fraction": "yes / no / null",
+      "damage_indicators": "yes / no / null",
       "other": ["string"],
       "notes": "string or null"
     }},
@@ -623,56 +819,90 @@ Extract the following schema from the paper excerpt:
     "notes": "string or null"
   }},
 
-  "experimental_data_links": {{
+  "data_links": {{
     "stress_strain_data": {{
-      "available": "yes / no / null",
+      "available": "yes / no / partial / null",
       "type": "engineering / true / null",
-      "format": "csv / xlsx / json / digitized / null",
-      "location": "supplement/figure/table/section id or null",
-      "digitized_from_figure": "yes / no / null",
+      "format": "csv / table / image / digitized / null",
+      "location": {{
+        "kind": "figure / table / section / supplement / dataset / code / null",
+        "id": "string or null",
+        "page": "number or null",
+        "notes": "string or null"
+      }},
       "notes": "string or null"
     }},
+
+    "load_displacement_data": {{
+      "available": "yes / no / partial / null",
+      "format": "csv / table / image / digitized / null",
+      "location": {{
+        "kind": "figure / table / section / supplement / dataset / code / null",
+        "id": "string or null",
+        "page": "number or null",
+        "notes": "string or null"
+      }},
+      "notes": "string or null"
+    }},
+
     "texture_data": {{
-      "available": "yes / no / null",
-      "type": "ODF / pole_figure / EBSD / null",
-      "format": "ctf / ang / odf / image / null",
-      "location": "supplement/figure/table/section id or null",
+      "available": "yes / no / partial / null",
+      "format": "ODF / pole_figure / EBSD / XRD / null",
+      "location": {{
+        "kind": "figure / table / section / supplement / dataset / code / null",
+        "id": "string or null",
+        "page": "number or null",
+        "notes": "string or null"
+      }},
       "notes": "string or null"
     }},
+
     "other_data": [
       {{
-        "name": "string or null",
-        "available": "yes / no / null",
+        "name": "string",
+        "available": "yes / no / partial / null",
         "format": "string or null",
-        "location": "string or null",
+        "location": {{
+          "kind": "figure / table / section / supplement / dataset / code / null",
+          "id": "string or null",
+          "page": "number or null",
+          "notes": "string or null"
+        }},
         "notes": "string or null"
       }}
     ],
+
     "notes": "string or null"
   }},
 
   "fit_quality": {{
-    "fit_targets": ["stress_strain", "texture_evolution", "r_value", "twin_fraction", "yield_surface", "other", "null"],
+    "fit_targets": ["load_displacement / stress_strain / texture_evolution / r_value / yield_surface / twin_fraction / lattice_strain / damage_metric / null"],
     "reported_metrics": [
       {{
-        "name": "RMSE / R2 / MAE / max_error / null",
+        "name": "RMSE / R2 / MAE / max_error / NRMSE / null",
         "value": "number or string or null",
         "unit": "string or null",
-        "extraction_location": "table/figure/section id or null",
+        "location": {{
+          "kind": "figure / table / section / supplement / dataset / code / null",
+          "id": "string or null",
+          "page": "number or null",
+          "notes": "string or null"
+        }},
         "notes": "string or null"
       }}
     ],
-    "qualitative_assessment": "good / medium / poor / null",
-    "validated_on_independent_case": "yes / no / null",
+    "qualitative_assessment": "good / medium / poor / mixed / null",
+    "validated_on_independent_case": "yes / no / partial / null",
     "validation_cases": ["string"],
     "notes": "string or null"
   }},
 
   "references": [
     {{
-      "reference_id": "string",
-      "type": "paper / dataset / thesis / report / code / other / null",
-      "citation": "string or null",
+      "ref_id_in_paper": "string",
+      "global_key": "doi_or_bibkey_or_null",
+      "type": "paper / book / dataset / code / thesis / standard / null",
+      "citation_string": "string or null",
       "doi": "string or null",
       "url": "string or null",
       "notes": "string or null"
@@ -867,7 +1097,12 @@ def run_llm_on_paper_dir(
 
     with open(os.path.join(paper_dir, "materials_extracted.json"), "w", encoding="utf-8") as f:
         json.dump(extracted, f, ensure_ascii=False, indent=2)
-
+    print(
+        "Extraction complete with "
+        f"{ext_usage.total_tokens} total tokens, "
+        f"{ext_usage.completion_tokens} completion tokens, "
+        f"in {ext_time:.2f} seconds."
+    )
     return {
         "selection": selection,
         "extracted": extracted,

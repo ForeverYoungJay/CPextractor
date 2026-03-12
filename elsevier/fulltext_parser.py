@@ -257,6 +257,18 @@ def compress_numeric_citation_groups(text: str) -> str:
             break
         text = new
 
+    # Flatten nested citation brackets:
+    #   "[ [12,19] ]" or "[[12,19]]" -> "[12,19]"
+    while True:
+        new = re.sub(
+            r"\[\s*\[\s*((?:\d+\s*[,;]\s*)*\d+)\s*\]\s*\]",
+            r"[\1]",
+            text
+        )
+        if new == text:
+            break
+        text = new
+
     return text
 
 

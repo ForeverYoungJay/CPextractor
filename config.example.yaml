@@ -42,3 +42,9 @@ rag:
   chunk_overlap: 200
   batch_size: 64
   embedding_max_retries: 3
+
+pipeline:
+  skip_fulltext_download: false
+  prefer_local_fulltext: true
+  use_local_fulltext_dois: false
+  dois: []

@@ -5,7 +5,9 @@ from openai import OpenAI
 import sys
 import json
 import time
+import re
 from datetime import datetime, timezone
+from pathlib import Path
 
 sys.path.append(".")
 
@@ -18,6 +20,50 @@ from elsevier.fulltext_parser import save_paper_as_markdown_and_tables, safe_id 
 from llm.extractor import run_llm_on_paper_dir
 from postprocess.reference_resolver import resolve_references, load_references
 from postprocess.unit_normalizer import normalize_extracted_units
+
+
+DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", re.IGNORECASE)
+
+
+def infer_doi_from_paper_dir(paper_dir: str) -> str | None:
+    xml_path = os.path.join(paper_dir, "paper.xml")
+    if os.path.exists(xml_path):
+        try:
+            text = Path(xml_path).read_text(encoding="utf-8", errors="ignore")
+            m = DOI_PATTERN.search(text)
+            if m:
+                return m.group(0)
+        except Exception:
+            pass
+    return None
+
+
+def discover_local_fulltext_dois(fulltext_root: str) -> list[str]:
+    root = Path(fulltext_root)
+    dois = []
+    seen = set()
+
+    if not root.exists():
+        return []
+
+    for d in sorted(root.iterdir()):
+        if not d.is_dir():
+            continue
+        if not ((d / "paper.xml").exists() or (d / "sections").exists()):
+            continue
+
+        doi = infer_doi_from_paper_dir(str(d))
+        if not doi:
+            continue
+
+        low = doi.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        dois.append(doi)
+
+    return dois
+
 
 def main():
 
@@ -48,23 +94,36 @@ def main():
     llm_cfg = cfg["llm"]
     rag = cfg["rag"]
     paths = cfg["paths"]
+    pipeline_cfg = cfg.get("pipeline", {})
     os.makedirs(paths["fulltext"], exist_ok=True)
     status_path = os.path.join(paths["fulltext"], "pipeline_status.jsonl")
 
-    # 1) search scopus
-    dois = scopus_search(
-        api_key=elsevier_key,
-        query=qcfg["query"],
-        count=qcfg["count"],
-        max_pages=qcfg["max_pages"],
-        outdir=paths["scopus_export"],
-        year_from=qcfg.get("year_from"),
-        year_to=qcfg.get("year_to"),
-        require_doi=bool(qcfg.get("require_doi", True)),
-        allowed_doctypes=qcfg.get("allowed_doctypes", []),
-        rank_keywords=qcfg.get("rank_keywords", []),
-        max_retries=int(qcfg.get("http_max_retries", 3)),
-    )
+    skip_fulltext_download = bool(pipeline_cfg.get("skip_fulltext_download", False))
+    prefer_local_fulltext = bool(pipeline_cfg.get("prefer_local_fulltext", True))
+    local_dois_mode = bool(pipeline_cfg.get("use_local_fulltext_dois", skip_fulltext_download))
+    configured_dois = pipeline_cfg.get("dois", []) or []
+
+    # 1) collect target DOIs
+    if configured_dois:
+        dois = configured_dois
+        print(f"Using {len(dois)} DOIs from pipeline.dois")
+    elif local_dois_mode:
+        dois = discover_local_fulltext_dois(paths["fulltext"])
+        print(f"Using {len(dois)} DOIs discovered from local fulltext directory")
+    else:
+        dois = scopus_search(
+            api_key=elsevier_key,
+            query=qcfg["query"],
+            count=qcfg["count"],
+            max_pages=qcfg["max_pages"],
+            outdir=paths["scopus_export"],
+            year_from=qcfg.get("year_from"),
+            year_to=qcfg.get("year_to"),
+            require_doi=bool(qcfg.get("require_doi", True)),
+            allowed_doctypes=qcfg.get("allowed_doctypes", []),
+            rank_keywords=qcfg.get("rank_keywords", []),
+            max_retries=int(qcfg.get("http_max_retries", 3)),
+        )
 
 
     print(f"Found {len(dois)} DOIs")
@@ -72,23 +131,31 @@ def main():
     if dois_limit > 0:
         dois = dois[:dois_limit]
         print(f"Using first {len(dois)} DOIs due to search.dois_limit={dois_limit}")
-    
+
     # 2) for each doi: parse fulltext -> LLM extract -> ingest to DB
     for doi in dois:
         t0 = time.perf_counter()
         try:
-            # parse
-            save_paper_as_markdown_and_tables(
-                doi=doi,
-                api_key=elsevier_key,
-                inst_token=inst_token,
-                outdir=paths["fulltext"],
-                crossref_mailto=crossref_mailto,
-                resolve_missing_reference_doi=resolve_missing_reference_doi,
-                http_max_retries=fulltext_http_max_retries,
-            )
+            paper_dir = os.path.join(paths["fulltext"], safe_id(doi))
 
-            paper_dir = os.path.join(paths["fulltext"], doi.replace("/", "_").replace(":", "_"))
+            # parse/download
+            local_exists = os.path.isdir(paper_dir)
+            if skip_fulltext_download:
+                if not os.path.isdir(paper_dir):
+                    raise RuntimeError(f"Local paper directory not found for DOI: {doi} ({paper_dir})")
+                print(f"↪ Skip download, use local fulltext: {paper_dir}")
+            elif prefer_local_fulltext and local_exists:
+                print(f"↪ Local fulltext exists, skip download: {paper_dir}")
+            else:
+                save_paper_as_markdown_and_tables(
+                    doi=doi,
+                    api_key=elsevier_key,
+                    inst_token=inst_token,
+                    outdir=paths["fulltext"],
+                    crossref_mailto=crossref_mailto,
+                    resolve_missing_reference_doi=resolve_missing_reference_doi,
+                    http_max_retries=fulltext_http_max_retries,
+                )
 
             # llm extraction (writes json files too, but returns extracted json)
             llm_result = run_llm_on_paper_dir(

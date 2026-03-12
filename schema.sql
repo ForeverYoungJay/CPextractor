@@ -62,7 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_runs_doi
 ON pipeline_runs (doi);
 
 
-CREATE TABLE IF NOT EXISTS references (
+CREATE TABLE IF NOT EXISTS "references" (
   ref_pk BIGSERIAL PRIMARY KEY,
   doi TEXT UNIQUE,
   title TEXT,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS references (
 CREATE TABLE IF NOT EXISTS paper_references (
   paper_doi TEXT REFERENCES papers(doi) ON DELETE CASCADE,
   ref_label TEXT,
-  reference_doi TEXT REFERENCES references(doi),
+  reference_doi TEXT REFERENCES "references"(doi),
   PRIMARY KEY (paper_doi, ref_label)
 );
 
@@ -85,7 +85,7 @@ CREATE TABLE parameter_references (
   parameter_block TEXT,        -- "plastic" / "elastic"
 
   ref_label TEXT,
-  reference_doi TEXT REFERENCES references(doi),
+  reference_doi TEXT REFERENCES "references"(doi),
 
   source_type TEXT,            -- adopted / calibrated / original
   calibration_method TEXT,

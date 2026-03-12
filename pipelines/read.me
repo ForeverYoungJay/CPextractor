@@ -11,3 +11,7 @@ python pipelines/run_pipeline.py
 # - Pipeline status log: data/fulltext/pipeline_status.jsonl
 # - Preset configs: pipelines/config_profiles/high_recall.yaml, pipelines/config_profiles/high_precision.yaml
 # - Apply preset: python pipelines/apply_profile.py --profile pipelines/config_profiles/high_precision.yaml
+# - Run full pipeline without download:
+#     set pipeline.skip_fulltext_download=true and pipeline.use_local_fulltext_dois=true in config.yaml
+# - Hybrid mode (recommended): set pipeline.prefer_local_fulltext=true
+#     -> local exists: skip download; local missing: auto download
