@@ -145,6 +145,296 @@ Extract only stated facts; do not guess.
 Return JSON only.
 """
 
+EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
+{
+  "schema_version": "2.1.1",
+  "record_id": "string or null",
+  "source_document": {
+    "title": "string or null",
+    "authors": ["string"],
+    "year": "number or null",
+    "journal_or_venue": "string or null",
+    "doi": "string or null"
+  },
+  "material": {
+    "name": "string or null",
+    "chemical_formula": "string or null",
+    "crystal_structure": {
+      "crystal_system": "cubic / hexagonal / tetragonal / orthorhombic / trigonal_rhombohedral / monoclinic / triclinic / null",
+      "bravais_lattice": "P / I / F / R / A / B / C / null",
+      "lattice_type": "fcc / bcc / hcp / diamond_cubic / simple_cubic / other / null",
+      "structure_prototype": "fluorite / rocksalt / perovskite / spinel / wurtzite / zincblende / corundum / other / null",
+      "space_group": "string or null",
+      "notes": "string or null"
+    },
+    "phase": "single / multi / null",
+    "phases": [
+      {
+        "phase_id": "string",
+        "phase_name": "string or null",
+        "role": "matrix / precipitate / inclusion / transformed_product / pore / other / null",
+        "volume_fraction": {
+          "value_SI": "number or null",
+          "unit_SI": "fraction",
+          "reported_value": "number or null",
+          "reported_unit": "fraction / % / null",
+          "notes": "string or null"
+        },
+        "notes": "string or null"
+      }
+    ],
+    "notes": "string or null"
+  },
+  "microstructure": {
+    "grain_structure": "single_crystal / polycrystal / bicrystal / null",
+    "grain_size": {
+      "value": "number or null",
+      "unit": "um / mm / null",
+      "distribution": "string or null",
+      "notes": "string or null"
+    },
+    "orientation_texture": {
+      "description": "string or null",
+      "texture_type": "odf / pole_figure / ebsd / none / null",
+      "texture_data_available": "yes / no / null",
+      "data_location": "string or null",
+      "notes": "string or null"
+    },
+    "initial_defect_state": {
+      "dislocation_density": {
+        "value": "number or null",
+        "unit": "m^-2 / null",
+        "notes": "string or null"
+      },
+      "precipitate_state": "string or null",
+      "solute_state": "string or null",
+      "prestrain": {
+        "value": "number or null",
+        "unit": "strain / percent / null",
+        "notes": "string or null"
+      },
+      "notes": "string or null"
+    },
+    "notes": "string or null"
+  },
+  "constitutive_model": {
+    "class": "crystal_plasticity / phase_field / continuum_damage / null",
+    "framework": "cpfe / fft / evpfft / vpsc / damask / umat / custom / null",
+    "implementation": {
+      "code_name": "string or null",
+      "platform": "abaqus / damask / vpsc / custom / other / null",
+      "subroutine_or_solver": "umat / vumat / spectral / fem / null",
+      "version": "string or null",
+      "notes": "string or null"
+    },
+    "kinematics": "finite_strain / small_strain / null",
+    "rate_dependence": "rate_dependent / rate_independent / null",
+    "single_or_poly": "single_crystal / polycrystal / null",
+    "homogenization_assumption": "taylor / self_consistent / full_field / mean_field / null",
+    "notes": "string or null"
+  },
+  "parameters": {
+    "registry": [
+      {
+        "parameter_id": "string or null",
+        "domain": "elastic / plastic / twinning / damage / thermal / numerical / other / null",
+        "canonical_name": "string or null",
+        "symbol": "string or null",
+        "description": "string or null",
+        "value": "number or string or null",
+        "unit": "string or null",
+        "value_SI": "number or string or null",
+        "unit_SI": "string or null",
+        "applies_to": {
+          "scope": "global / phase / family / system / all_slip / all_twin / all_mechanisms / null",
+          "phase_id": "string or null",
+          "mechanism": "slip / twinning / cleavage / damage / basal_slip / prismatic_slip / pyramidal_slip / all_slip / all_twin / all_mechanisms / null",
+          "family_id": "string or null",
+          "family_name": "string or null",
+          "system_ids": ["string"],
+          "system_count": "number or null",
+          "notes": "string or null"
+        },
+        "temperature_dependent": "yes / no / null",
+        "strain_rate_dependent": "yes / no / null",
+        "valid_range": "string or null",
+        "source": {
+          "origin_type": "original / adopted / calibrated / adopted_then_calibrated / null",
+          "reference_ids": ["string"],
+          "adopted_from_reference_ids": ["string"],
+          "calibration_based_on_reference_ids": ["string"],
+          "calibration_in_this_study": "yes / no / null",
+          "calibration_method": "manual_fitting / inverse_modeling / optimization / bayesian / null",
+          "evidence_text": "string or null",
+          "evidence_location": {
+            "kind": "figure / table / section / supplement / code / null",
+            "id": "string or null",
+            "page": "number or null"
+          },
+          "notes": "string or null"
+        },
+        "notes": "string or null",
+        "confidence": "high / medium / low / null"
+      }
+    ],
+    "notes": "string or null"
+  },
+  "deformation_conditions": {
+    "loading_mode": "uniaxial_tension / compression / shear / indentation / cyclic / creep / torsion / bending / null",
+    "stress_state": "uniaxial / plane_strain / biaxial / triaxial / multiaxial / null",
+    "loading_path": {
+      "control": "strain_controlled / stress_controlled / displacement_controlled / mixed / null",
+      "loading_direction": "rd / td / nd / crystal_axis / null",
+      "crystal_axis": "string or null",
+      "description": "string or null"
+    },
+    "strain_rate": {"value": "number or null", "unit": "s^-1 / null", "range": "string or null"},
+    "temperature": {"value": "number or null", "unit": "K / C / null", "history": "isothermal / non_isothermal / null"},
+    "environment": {
+      "pressure": {"value": "number or null", "unit": "Pa / MPa / bar / null", "notes": "string or null"},
+      "medium": "air / vacuum / liquid / inert_gas / hydrogen / null",
+      "notes": "string or null"
+    },
+    "indentation": {
+      "indenter_type": "berkovich / spherical / cono_spherical / vickers / knoop / custom / null",
+      "tip_radius": {"value": "number or null", "unit": "nm / um / mm / null", "notes": "string or null"},
+      "target_depths": ["number"],
+      "target_depth_unit": "nm / um / mm / null",
+      "max_load": {"value": "number or null", "unit": "mN / N / null", "notes": "string or null"},
+      "loading_rate": {"type": "displacement_rate / load_rate / indentation_strain_rate / unknown / null", "value": "number or null", "unit": "nm/s / um/s / mN/s / N/s / s^-1 / null", "notes": "string or null"},
+      "hold_time_at_peak": {"value": "number or null", "unit": "s / null", "notes": "string or null"},
+      "contact_assumption": "frictionless / frictional / unknown / null",
+      "notes": "string or null"
+    },
+    "calibration_strain_range": {"min": "number or null", "max": "number or null", "unit": "strain / percent / null", "notes": "string or null"},
+    "notes": "string or null"
+  },
+  "deformation_mechanisms": {
+    "slip_families": [
+      {
+        "family_id": "string or null",
+        "family_name": "basal / prismatic / pyramidal_ca / cubic_100_110 / cubic_110_111 / cubic_111_110 / other / null",
+        "plane_direction": "string or null",
+        "num_systems": "number or null",
+        "systems": [
+          {
+            "system_id": "string or null",
+            "plane": {"as_written": "string or null", "indices": ["number"], "basis": "hkl / hkil / null"},
+            "direction": {"as_written": "string or null", "indices": ["number"], "basis": "uvw / uvtw / null"}
+          }
+        ],
+        "active": "yes / no / null",
+        "notes": "string or null"
+      }
+    ],
+    "twinning_families": [
+      {
+        "family_id": "string or null",
+        "family_name": "extension_twin / contraction_twin / other / null",
+        "plane_direction": "string or null",
+        "num_systems": "number or null",
+        "systems": [
+          {
+            "system_id": "string or null",
+            "plane": {"as_written": "string or null", "indices": ["number"], "basis": "hkl / hkil / null"},
+            "direction": {"as_written": "string or null", "indices": ["number"], "basis": "uvw / uvtw / null"}
+          }
+        ],
+        "active": "yes / no / null",
+        "reorientation_rule": "string or null",
+        "notes": "string or null"
+      }
+    ],
+    "cleavage_families": [
+      {
+        "family_id": "string or null",
+        "family_name": "string or null",
+        "plane_direction": "string or null",
+        "num_systems": "number or null",
+        "systems": [
+          {
+            "system_id": "string or null",
+            "plane": {"as_written": "string or null", "indices": ["number"], "basis": "hkl / hkil / null"},
+            "direction": {"as_written": "string or null", "indices": ["number"], "basis": "uvw / uvtw / null"}
+          }
+        ],
+        "active": "yes / no / null",
+        "notes": "string or null"
+      }
+    ],
+    "damage_mechanisms": [
+      {
+        "mechanism_id": "string or null",
+        "name": "string or null",
+        "description": "string or null",
+        "active": "yes / no / null",
+        "notes": "string or null"
+      }
+    ],
+    "transformation_mechanisms": [
+      {
+        "mechanism_id": "string or null",
+        "name": "string or null",
+        "description": "string or null",
+        "active": "yes / no / null",
+        "notes": "string or null"
+      }
+    ],
+    "other_mechanisms": [
+      {
+        "mechanism_id": "string or null",
+        "name": "string or null",
+        "description": "string or null",
+        "active": "yes / no / null",
+        "notes": "string or null"
+      }
+    ],
+    "notes": "string or null"
+  },
+  "numerical_settings": {
+    "rve_type": "single_element / taylor / voronoi_grains / fft_voxels / fe_mesh / null",
+    "boundary_conditions": {"type": "pbc / mixed / free_surface / null", "description": "string or null"},
+    "mesh_or_voxels": {"element_type": "string or null", "element_count": "number or null", "voxel_resolution": "string or null", "notes": "string or null"},
+    "num_grains": "number or null",
+    "integration_scheme": "implicit / explicit / semi_implicit / null",
+    "time_step_or_increment": "string or null",
+    "convergence_settings": "string or null",
+    "notes": "string or null"
+  },
+  "code_compatibility": {
+    "targets": [
+      {
+        "code": "damask / vpsc / abaqus_umat / abaqus_vumat / custom / null",
+        "version": "string or null",
+        "parameter_map": [{"canonical_name": "string or null", "code_parameter_name": "string or null", "expected_unit": "string or null", "scope": "global / phase / family / system / null", "notes": "string or null"}],
+        "family_map": [{"family_id": "string or null", "code_family_name": "string or null", "notes": "string or null"}],
+        "system_map": [{"system_id": "string or null", "code_system_index": "number or string or null", "notes": "string or null"}],
+        "notes": "string or null"
+      }
+    ],
+    "notes": "string or null"
+  },
+  "fit_quality": {
+    "reported_metrics": [{"name": "rmse / r2 / mae / max_error / null", "value": "number or string or null", "unit": "string or null", "extraction_location": "string or null", "notes": "string or null"}],
+    "qualitative_assessment": "good / medium / poor / null",
+    "validated_on_independent_case": "yes / no / null",
+    "validation_cases": ["string"],
+    "notes": "string or null"
+  },
+  "references": [
+    {
+      "reference_id": "string or null",
+      "type": "paper / dataset / thesis / report / code / other / null",
+      "citation": "string or null",
+      "doi": "string or null",
+      "url": "string or null",
+      "notes": "string or null"
+    }
+  ],
+  "global_notes": "string or null"
+}
+"""
+
 EXTRACT_USER_PROMPT_TEMPLATE = """
 1 Task description
 Extract crystal-plasticity information from the provided paper excerpt into a CP schema.
@@ -154,150 +444,20 @@ Extract crystal-plasticity information from the provided paper excerpt into a CP
 - If unknown, return null or empty list.
 - Keep parameter provenance carefully (adopted references vs calibration references).
 - Extract the following schema from the paper excerpt:
-{{
-  "schema_version": "2.0.0",
-  "record_id": "string or null",
-  "source_document": {{
-    "title": "string or null",
-    "authors": ["string"],
-    "year": "number or null",
-    "journal_or_venue": "string or null",
-    "doi": "string or null",
-    "url": "string or null"
-  }},
-  "material": {{
-    "name": "string or null",
-    "chemical_formula": "string or null",
-    "phase": "single / multi / null",
-    "crystal_structure": "string or null",
-    "notes": "string or null"
-  }},
-  "microstructure": {{
-    "grain_structure": "single_crystal / polycrystal / bicrystal / null",
-    "grain_size": {{
-      "value": "number or null",
-      "unit": "string or null"
-    }},
-    "texture_or_orientation": "string or null",
-    "notes": "string or null"
-  }},
-  "constitutive_model": {{
-    "framework": "CPFE / FFT / EVPFFT / VPSC / DAMASK / UMAT / custom / null",
-    "kinematics": "finite_strain / small_strain / null",
-    "rate_dependence": "rate_dependent / rate_independent / unknown / null",
-    "flow_rule": "string or null",
-    "hardening_law": "string or null",
-    "notes": "string or null"
-  }},
-  "elastic_parameters": {{
-    "symmetry": "isotropic / cubic / hexagonal / orthotropic / unknown / null",
-    "constants": [
-      {{
-        "canonical_name": "string or null",
-        "symbol": "string or null",
-        "description": "string or null",
-        "value": "number or null",
-        "unit": "string or null",
-        "temperature_dependent": "yes / no / null",
-        "source": {{
-          "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
-          "adopted_from_reference_ids": ["string"],
-          "calibration_based_on_reference_ids": ["string"],
-          "reference_ids": ["string"],
-          "calibration_method": "string or null",
-          "calibration_targets": ["string"],
-          "validation_targets": ["string"],
-          "evidence_text": "string or null",
-          "evidence_section": "string or null"
-        }},
-        "notes": "string or null",
-        "confidence": "high / medium / low / null"
-      }}
-    ],
-    "notes": "string or null"
-  }},
-  "plastic_parameters": {{
-    "flow_rule": "string or null",
-    "parameters": [
-      {{
-        "canonical_name": "string or null",
-        "symbol": "string or null",
-        "description": "string or null",
-        "value": "number or null",
-        "unit": "string or null",
-        "applies_to": {{
-          "phase_id": "string or null",
-          "mechanism": "slip / twinning / all_slip / all_twin / all_mechanisms / null",
-          "family_name": "string or null",
-          "system_count": "number or null"
-        }},
-        "temperature_dependent": "yes / no / null",
-        "strain_rate_dependent": "yes / no / null",
-        "valid_range": "string or null",
-        "source": {{
-          "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
-          "adopted_from_reference_ids": ["string"],
-          "calibration_based_on_reference_ids": ["string"],
-          "reference_ids": ["string"],
-          "calibration_method": "manual_fitting / inverse_modeling / optimization / bayesian / null",
-          "calibration_targets": ["string"],
-          "validation_targets": ["string"],
-          "evidence_text": "string or null",
-          "evidence_section": "string or null"
-        }},
-        "notes": "string or null",
-        "confidence": "high / medium / low / null"
-      }}
-    ],
-    "notes": "string or null"
-  }},
-  "loading_and_environment": {{
-    "loading_mode": "uniaxial_tension / compression / shear / indentation / cyclic / creep / null",
-    "strain_rate": {{
-      "value": "number or null",
-      "unit": "string or null"
-    }},
-    "temperature": {{
-      "value": "number or null",
-      "unit": "string or null"
-    }},
-    "notes": "string or null"
-  }},
-  "fit_quality": {{
-    "fit_targets": ["string"],
-    "reported_metrics": [
-      {{
-        "name": "string or null",
-        "value": "number or string or null",
-        "unit": "string or null"
-      }}
-    ],
-    "qualitative_assessment": "good / medium / poor / null",
-    "validated_on_independent_case": "yes / no / null",
-    "notes": "string or null"
-  }},
-  "references": [
-    {{
-      "reference_id": "string or null",
-      "type": "paper / dataset / thesis / report / code / other / null",
-      "citation": "string or null",
-      "doi": "string or null",
-      "url": "string or null",
-      "notes": "string or null"
-    }}
-  ],
-  "global_notes": "string or null"
-}}
+__SCHEMA_JSON__
 
 3 Processing suggestions
 - Prefer table values over narrative values when both are present.
-- Keep the original unit in value/unit; do not force SI conversion here.
-- If both adopted and calibrated are stated, use origin_type as mixed_adopted_and_calibrated.
+- Keep the original reported unit in value/unit; do not force SI conversion here.
+- If both adopted and calibrated are stated, use origin_type as adopted_then_calibrated.
 - Put bracketed citation labels like 12, 60, 61 into reference id arrays.
+- For source, only output reference ID arrays; do not fabricate reference title/doi.
+- Do not use placeholders like this_study/present_study as reference IDs; put such info in evidence_text.
+- Use snake_case enum values exactly.
 
 4 Few-shot examples
 Example A: Text says parameters adopted from [12,13] and calibrated against stress-strain curves.
-Expected behavior: source.origin_type is mixed_adopted_and_calibrated, adopted_from_reference_ids includes 12 and 13, calibration_targets includes stress-strain.
+Expected behavior: source.origin_type is adopted_then_calibrated, adopted_from_reference_ids includes 12 and 13, and evidence_text mentions calibration target.
 
 Example B: Text states a parameter value but no source citation.
 Expected behavior: parameter extracted with null/empty source reference arrays and confidence as low or medium.
@@ -311,17 +471,8 @@ Return JSON only.
 """
 
 
-def _schema_skeleton_from_prompt_template(template: str) -> Dict[str, Any]:
-    start_marker = "Extract the following schema from the paper excerpt:"
-    end_marker = "Paper excerpt:"
-
-    start = template.find(start_marker)
-    text = template[start + len(start_marker):] if start >= 0 else template
-    end = text.find(end_marker)
-    if end >= 0:
-        text = text[:end]
-
-    text = text.strip().replace("{{", "{").replace("}}", "}")
+def _schema_skeleton_from_json_template(template: str) -> Dict[str, Any]:
+    text = template.strip().replace("{{", "{").replace("}}", "}")
     l = text.find("{")
     r = text.rfind("}")
     if l < 0 or r < 0 or r <= l:
@@ -356,7 +507,7 @@ def _coerce_to_schema_shape(schema_node: Any, payload_node: Any) -> Any:
     return payload_node
 
 
-EXTRACT_SCHEMA_SKELETON = _schema_skeleton_from_prompt_template(EXTRACT_USER_PROMPT_TEMPLATE)
+EXTRACT_SCHEMA_SKELETON = _schema_skeleton_from_json_template(EXTRACT_SCHEMA_JSON_TEMPLATE)
 
 
 def _validate_extracted_payload(payload: Dict[str, Any]) -> List[str]:
@@ -368,10 +519,12 @@ def _validate_extracted_payload(payload: Dict[str, Any]) -> List[str]:
         if key not in payload:
             errors.append(f"missing top-level key: {key}")
 
-    if not isinstance(payload.get("elastic_parameters", {}).get("constants", []), list):
-        errors.append("elastic_parameters.constants must be a list")
-    if not isinstance(payload.get("plastic_parameters", {}).get("parameters", []), list):
-        errors.append("plastic_parameters.parameters must be a list")
+    has_registry = isinstance(payload.get("parameters", {}).get("registry", []), list)
+    if not has_registry:
+        if not isinstance(payload.get("elastic_parameters", {}).get("constants", []), list):
+            errors.append("elastic_parameters.constants must be a list")
+        if not isinstance(payload.get("plastic_parameters", {}).get("parameters", []), list):
+            errors.append("plastic_parameters.parameters must be a list")
 
     def _walk(schema_node: Any, value_node: Any, path: str):
         if isinstance(schema_node, dict):
@@ -397,7 +550,8 @@ def _validate_extracted_payload(payload: Dict[str, Any]) -> List[str]:
 
 def _build_extract_prompt(context: str) -> str:
     # Avoid str.format() here because the template contains literal braces such as crystallographic {111}.
-    return EXTRACT_USER_PROMPT_TEMPLATE.replace("{context}", context)
+    prompt = EXTRACT_USER_PROMPT_TEMPLATE.replace("__SCHEMA_JSON__", EXTRACT_SCHEMA_JSON_TEMPLATE)
+    return prompt.replace("{context}", context)
 
 
 SOURCE_ENRICH_SYSTEM_PROMPT = """
@@ -419,15 +573,19 @@ Refine and complete parameter source/provenance fields using the excerpt.
     {{
       "index": "number",
       "source": {{
-        "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
+        "origin_type": "original / adopted / calibrated / adopted_then_calibrated / null",
+        "reference_ids": ["string"],
         "adopted_from_reference_ids": ["string"],
         "calibration_based_on_reference_ids": ["string"],
-        "reference_ids": ["string"],
+        "calibration_in_this_study": "yes / no / null",
         "calibration_method": "string or null",
-        "calibration_targets": ["string"],
-        "validation_targets": ["string"],
         "evidence_text": "string or null",
-        "evidence_section": "string or null"
+        "evidence_location": {{
+          "kind": "figure / table / section / supplement / code / null",
+          "id": "string or null",
+          "page": "number or null"
+        }},
+        "notes": "string or null"
       }},
       "confidence": "high / medium / low / null"
     }}
@@ -436,15 +594,19 @@ Refine and complete parameter source/provenance fields using the excerpt.
     {{
       "index": "number",
       "source": {{
-        "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
+        "origin_type": "original / adopted / calibrated / adopted_then_calibrated / null",
+        "reference_ids": ["string"],
         "adopted_from_reference_ids": ["string"],
         "calibration_based_on_reference_ids": ["string"],
-        "reference_ids": ["string"],
+        "calibration_in_this_study": "yes / no / null",
         "calibration_method": "string or null",
-        "calibration_targets": ["string"],
-        "validation_targets": ["string"],
         "evidence_text": "string or null",
-        "evidence_section": "string or null"
+        "evidence_location": {{
+          "kind": "figure / table / section / supplement / code / null",
+          "id": "string or null",
+          "page": "number or null"
+        }},
+        "notes": "string or null"
       }},
       "confidence": "high / medium / low / null"
     }}
@@ -452,8 +614,9 @@ Refine and complete parameter source/provenance fields using the excerpt.
 }}
 
 3 Processing suggestions
-- If text says both adopted and calibrated, use mixed_adopted_and_calibrated.
+- If text says both adopted and calibrated, use adopted_then_calibrated.
 - Copy citation labels (numbers) into the reference id arrays.
+- Do not put this_study/present_study/current_study into reference id arrays.
 
 4 Few-shot examples
 If text says adopted from [60,61] then fitted to curves, then include both adopted and calibration refs.
@@ -478,26 +641,64 @@ def _build_source_enrich_prompt(context: str, extracted: Dict[str, Any]) -> str:
 
 
 def _merge_source_enrichment(extracted: Dict[str, Any], enrich: Dict[str, Any]) -> Dict[str, Any]:
-    elastic = extracted.get("elastic_parameters", {}).get("constants", [])
-    plastic = extracted.get("plastic_parameters", {}).get("parameters", [])
+    registry = extracted.get("parameters", {}).get("registry", [])
+    if not isinstance(registry, list):
+        return extracted
+
+    elastic_idx = []
+    plastic_idx = []
+    for i, it in enumerate(registry):
+        if not isinstance(it, dict):
+            continue
+        domain = str(it.get("domain") or "").strip().lower()
+        cname = str(it.get("canonical_name") or "").strip().lower()
+        if domain == "elastic" or cname in _ELASTIC_CANONICALS:
+            elastic_idx.append(i)
+        else:
+            plastic_idx.append(i)
 
     for item in enrich.get("elastic_sources", []) or []:
         idx = item.get("index")
-        if isinstance(idx, int) and 0 <= idx < len(elastic):
+        if isinstance(idx, int) and 0 <= idx < len(elastic_idx):
+            ridx = elastic_idx[idx]
             if isinstance(item.get("source"), dict):
-                elastic[idx]["source"] = item["source"]
+                registry[ridx]["source"] = item["source"]
             if item.get("confidence") is not None:
-                elastic[idx]["confidence"] = item.get("confidence")
+                registry[ridx]["confidence"] = item.get("confidence")
 
     for item in enrich.get("plastic_sources", []) or []:
         idx = item.get("index")
-        if isinstance(idx, int) and 0 <= idx < len(plastic):
+        if isinstance(idx, int) and 0 <= idx < len(plastic_idx):
+            ridx = plastic_idx[idx]
             if isinstance(item.get("source"), dict):
-                plastic[idx]["source"] = item["source"]
+                registry[ridx]["source"] = item["source"]
             if item.get("confidence") is not None:
-                plastic[idx]["confidence"] = item.get("confidence")
+                registry[ridx]["confidence"] = item.get("confidence")
 
     return extracted
+
+
+_ELASTIC_CANONICALS = {"c11", "c12", "c13", "c33", "c44", "c55", "c66", "e", "nu", "g", "k"}
+
+
+def _strip_internal_keys(node: Any) -> Any:
+    if isinstance(node, dict):
+        out = {}
+        for k, v in node.items():
+            if isinstance(k, str) and k.startswith("_"):
+                continue
+            out[k] = _strip_internal_keys(v)
+        return out
+    if isinstance(node, list):
+        return [_strip_internal_keys(x) for x in node]
+    return node
+
+
+def _drop_legacy_parameter_blocks(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(payload, dict):
+        payload.pop("elastic_parameters", None)
+        payload.pop("plastic_parameters", None)
+    return payload
 
 
 
@@ -620,13 +821,14 @@ def run_llm_on_paper_dir(
             # Keep pipeline robust: provenance enrichment is optional.
             pass
 
+    extracted = _strip_internal_keys(extracted)
+    extracted = _drop_legacy_parameter_blocks(extracted)
     with open(os.path.join(paper_dir, "materials_extracted.json"), "w", encoding="utf-8") as f:
         json.dump(extracted, f, ensure_ascii=False, indent=2)
     print(
         "Extraction complete with "
-        f"{ext_usage.total_tokens} total tokens, "
-        f"{ext_usage.completion_tokens} completion tokens, "
-        f"in {ext_time:.2f} seconds."
+        f"{ext_usage.total_tokens+sel_usage.total_tokens} total tokens, "
+        f"in {sel_time+ext_time:.2f} seconds."
     )
     return {
         "selection": selection,

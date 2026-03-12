@@ -19,7 +19,11 @@ from scopus.scopus_search import scopus_search
 from elsevier.fulltext_parser import save_paper_as_markdown_and_tables, safe_id  # import safe_id from parser
 from llm.extractor import run_llm_on_paper_dir
 from postprocess.reference_resolver import resolve_references, load_references
+from postprocess.parameter_normalizer import normalize_parameters
 from postprocess.unit_normalizer import normalize_extracted_units
+from postprocess.provenance_normalizer import normalize_provenance
+from postprocess.document_backfill import backfill_document_metadata
+from postprocess.quality_checks import run_quality_checks
 
 
 DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", re.IGNORECASE)
@@ -171,6 +175,12 @@ def main():
             extracted = llm_result["extracted"]
             metrics = llm_result["metrics"]
             reports = {}
+            reports["lineage"] = {
+                "prompt_version": str(llm_cfg.get("prompt_version", "v2.0.0")),
+                "schema_version": str(llm_cfg.get("schema_version", "2.0.0")),
+                "extractor_version": str(llm_cfg.get("extractor_version", "extractor_v2")),
+                "postprocess_version": "post_v2.2",
+            }
 
             # Load references.json produced by fulltext_parser
             ref_path = os.path.join(paper_dir, "references.json")
@@ -178,7 +188,15 @@ def main():
                 reference_map = load_references(ref_path)
                 extracted, reports["reference_resolution"] = resolve_references(extracted, reference_map)
 
+            extracted, reports["parameter_normalization"] = normalize_parameters(extracted)
             extracted, reports["unit_normalization"] = normalize_extracted_units(extracted)
+            extracted, reports["provenance_normalization"] = normalize_provenance(extracted)
+            extracted, reports["document_backfill"] = backfill_document_metadata(
+                extracted,
+                paper_dir=paper_dir,
+                doi_hint=doi,
+            )
+            extracted, reports["quality_checks"] = run_quality_checks(extracted)
 
             out_path = os.path.join(paper_dir, "materials_extracted.json")
 

@@ -48,6 +48,15 @@ python3 scripts/eval/cost_latency_report.py \
 python3 scripts/eval/error_bucket.py --gold gold_norm.json --pred pred_norm.json --output metrics_errors.json
 ```
 
+## 6) Quality gate (paper-grade pass/fail)
+
+```bash
+python3 scripts/eval/quality_gate.py \
+  --metrics-dir results/eval/metrics \
+  --postprocess-report data/fulltext/<doi>/postprocess_report.json \
+  --output results/eval/metrics/quality_gate.json
+```
+
 ## One-click full run (9 scripts + paper CSV tables)
 
 ```bash
@@ -70,3 +79,4 @@ Generated files:
 - `results/eval/tables/table_retrieval_results.csv`
 - `results/eval/tables/table_error_buckets.csv`
 - `results/eval/tables/table_field_by_prefix.csv`
+- `results/eval/tables/table_quality_gate.csv`

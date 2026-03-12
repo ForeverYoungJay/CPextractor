@@ -62,6 +62,7 @@ def main() -> None:
     retrieval_json = metrics_dir / "metrics_retrieval.json"
     cost_json = metrics_dir / "metrics_cost.json"
     error_json = metrics_dir / "metrics_errors.json"
+    gate_json = metrics_dir / "quality_gate.json"
 
     # 1) normalize gold
     _run([
@@ -171,6 +172,20 @@ def main() -> None:
         str(error_json),
     ])
 
+    # 10) quality gate (optional hard gate for paper-grade reporting)
+    postprocess_report = Path(args.pred_root) / "postprocess_report.json"
+    cmd = [
+        py,
+        str(eval_dir / "quality_gate.py"),
+        "--metrics-dir",
+        str(metrics_dir),
+        "--output",
+        str(gate_json),
+    ]
+    if postprocess_report.exists():
+        cmd.extend(["--postprocess-report", str(postprocess_report)])
+    _run(cmd)
+
     field = _load_json(field_json)
     numeric = _load_json(numeric_json)
     unit = _load_json(unit_json)
@@ -178,6 +193,7 @@ def main() -> None:
     retrieval = _load_json(retrieval_json)
     cost = _load_json(cost_json)
     errors = _load_json(error_json)
+    gate = _load_json(gate_json)
 
     # Table 1: main extraction result table
     table_main = [
@@ -238,6 +254,12 @@ def main() -> None:
             }
         )
     _write_csv(tables_dir / "table_field_by_prefix.csv", by_prefix_rows)
+
+    # Optional table: gate summary
+    _write_csv(
+        tables_dir / "table_quality_gate.csv",
+        [{"method": args.method_name, "pass": gate.get("pass"), "failed_count": len(gate.get("failed", []))}],
+    )
 
     print("\nDone. Outputs:")
     print(f"- metrics json: {metrics_dir}")

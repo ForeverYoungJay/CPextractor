@@ -23,5 +23,7 @@ python pipelines/run_pipeline.py
 
 # Utilities for the 7-layer workflow
 # - Hybrid retrieval: python scripts/rag/hybrid_retrieve.py --query "C11 in Mg alloy"
+# - Evidence-grounded answer synthesis: python scripts/rag/answer_with_evidence.py --query "What is tau0 for CaF2?"
 # - Analytics: python scripts/analytics/materials_insight.py
 # - Human review queue: python scripts/review/build_review_queue.py
+# - Quality gate (after eval): python scripts/eval/quality_gate.py --metrics-dir results/eval/metrics --output results/eval/metrics/quality_gate.json

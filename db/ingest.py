@@ -171,6 +171,7 @@ def insert_pipeline_run(
         metrics["extract"]["time_seconds"],
         metrics["select"]["time_seconds"] + metrics["extract"]["time_seconds"],
     )
+    conn.execute("SAVEPOINT sp_pipeline_run;")
     try:
         conn.execute(
             """
@@ -195,8 +196,10 @@ def insert_pipeline_run(
             """,
             params,
         )
+        conn.execute("RELEASE SAVEPOINT sp_pipeline_run;")
     except Exception:
         # Backward compatibility for existing DBs not yet migrated with lineage columns.
+        conn.execute("ROLLBACK TO SAVEPOINT sp_pipeline_run;")
         conn.execute(
             """
             INSERT INTO pipeline_runs (
@@ -230,3 +233,4 @@ def insert_pipeline_run(
                 metrics["select"]["time_seconds"] + metrics["extract"]["time_seconds"],
             ),
         )
+        conn.execute("RELEASE SAVEPOINT sp_pipeline_run;")

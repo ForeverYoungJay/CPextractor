@@ -2,6 +2,7 @@ import argparse
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
+from postprocess.param_iter import iter_parameter_items
 
 
 def iter_docs(root: Path):
@@ -38,12 +39,7 @@ def main() -> None:
         if framework:
             framework_counter[str(framework)] += 1
 
-        for p in (doc.get("elastic_parameters", {}) or {}).get("constants", []) or []:
-            if p.get("symbol"):
-                symbol_counter[str(p.get("symbol"))] += 1
-            source_counter[source_bucket(p.get("source", {}))] += 1
-
-        for p in (doc.get("plastic_parameters", {}) or {}).get("parameters", []) or []:
+        for _, p in iter_parameter_items(doc):
             if p.get("symbol"):
                 symbol_counter[str(p.get("symbol"))] += 1
             source_counter[source_bucket(p.get("source", {}))] += 1

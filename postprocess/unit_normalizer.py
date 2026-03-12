@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
+from postprocess.param_iter import iter_parameter_items
 
 
 _STRESS_FACTORS = {
@@ -61,13 +62,12 @@ def normalize_extracted_units(extracted_json: Dict[str, Any]) -> Tuple[Dict[str,
     """
     report: Dict[str, Any] = {"items": []}
 
-    elastic = extracted_json.get("elastic_parameters", {}).get("constants", [])
-    if isinstance(elastic, list):
-        report["items"].append(_normalize_param_items(elastic, "elastic"))
+    by_block = {"elastic": [], "plastic": []}
+    for block, item in iter_parameter_items(extracted_json):
+        by_block.setdefault(block, []).append(item)
 
-    plastic = extracted_json.get("plastic_parameters", {}).get("parameters", [])
-    if isinstance(plastic, list):
-        report["items"].append(_normalize_param_items(plastic, "plastic"))
+    for block in ("elastic", "plastic"):
+        report["items"].append(_normalize_param_items(by_block.get(block, []), block))
 
     report["converted_total"] = sum(i["converted"] for i in report["items"])
     report["skipped_total"] = sum(i["skipped"] for i in report["items"])
