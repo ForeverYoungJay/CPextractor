@@ -150,43 +150,83 @@ def insert_pipeline_run(
     model_select: str,
     model_extract: str,
     metrics: dict,
+    prompt_version: str | None = None,
+    schema_version: str | None = None,
+    extractor_version: str | None = None,
 ):
-    conn.execute(
-        """
-        INSERT INTO pipeline_runs (
-            doi,
-            model_select,
-            model_extract,
-
-            llm_select_input_tokens,
-            llm_select_output_tokens,
-            llm_select_total_tokens,
-
-            llm_extract_input_tokens,
-            llm_extract_output_tokens,
-            llm_extract_total_tokens,
-
-            time_select_seconds,
-            time_extract_seconds,
-            time_total_seconds
-        )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
-        """,
-        (
-            doi,
-            model_select,
-            model_extract,
-
-            metrics["select"]["input_tokens"],
-            metrics["select"]["output_tokens"],
-            metrics["select"]["total_tokens"],
-
-            metrics["extract"]["input_tokens"],
-            metrics["extract"]["output_tokens"],
-            metrics["extract"]["total_tokens"],
-
-            metrics["select"]["time_seconds"],
-            metrics["extract"]["time_seconds"],
-            metrics["select"]["time_seconds"] + metrics["extract"]["time_seconds"],
-        ),
+    params = (
+        doi,
+        model_select,
+        model_extract,
+        prompt_version,
+        schema_version,
+        extractor_version,
+        metrics["select"]["input_tokens"],
+        metrics["select"]["output_tokens"],
+        metrics["select"]["total_tokens"],
+        metrics["extract"]["input_tokens"],
+        metrics["extract"]["output_tokens"],
+        metrics["extract"]["total_tokens"],
+        metrics["select"]["time_seconds"],
+        metrics["extract"]["time_seconds"],
+        metrics["select"]["time_seconds"] + metrics["extract"]["time_seconds"],
     )
+    try:
+        conn.execute(
+            """
+            INSERT INTO pipeline_runs (
+                doi,
+                model_select,
+                model_extract,
+                prompt_version,
+                schema_version,
+                extractor_version,
+                llm_select_input_tokens,
+                llm_select_output_tokens,
+                llm_select_total_tokens,
+                llm_extract_input_tokens,
+                llm_extract_output_tokens,
+                llm_extract_total_tokens,
+                time_select_seconds,
+                time_extract_seconds,
+                time_total_seconds
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+            """,
+            params,
+        )
+    except Exception:
+        # Backward compatibility for existing DBs not yet migrated with lineage columns.
+        conn.execute(
+            """
+            INSERT INTO pipeline_runs (
+                doi,
+                model_select,
+                model_extract,
+                llm_select_input_tokens,
+                llm_select_output_tokens,
+                llm_select_total_tokens,
+                llm_extract_input_tokens,
+                llm_extract_output_tokens,
+                llm_extract_total_tokens,
+                time_select_seconds,
+                time_extract_seconds,
+                time_total_seconds
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+            """,
+            (
+                doi,
+                model_select,
+                model_extract,
+                metrics["select"]["input_tokens"],
+                metrics["select"]["output_tokens"],
+                metrics["select"]["total_tokens"],
+                metrics["extract"]["input_tokens"],
+                metrics["extract"]["output_tokens"],
+                metrics["extract"]["total_tokens"],
+                metrics["select"]["time_seconds"],
+                metrics["extract"]["time_seconds"],
+                metrics["select"]["time_seconds"] + metrics["extract"]["time_seconds"],
+            ),
+        )

@@ -165,6 +165,7 @@ def main():
                 max_snippet_chars=int(llm_cfg["max_snippet_chars"]),
                 max_context_chars=int(llm_cfg["max_context_chars"]),
                 max_extract_retries=int(llm_cfg.get("max_extract_retries", 2)),
+                enable_source_enrichment=bool(llm_cfg.get("enable_source_enrichment", True)),
             )
             selection = llm_result["selection"]
             extracted = llm_result["extracted"]
@@ -196,6 +197,9 @@ def main():
                 model_select=llm_cfg["model_select"],
                 model_extract=llm_cfg["model_extract"],
                 metrics=metrics,
+                prompt_version=str(llm_cfg.get("prompt_version", "v2.0.0")),
+                schema_version=str(llm_cfg.get("schema_version", "2.0.0")),
+                extractor_version=str(llm_cfg.get("extractor_version", "extractor_v2")),
             )
 
             ingest_references(conn, doi, extracted)

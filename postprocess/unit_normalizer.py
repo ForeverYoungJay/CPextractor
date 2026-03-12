@@ -25,14 +25,24 @@ def _normalize_param_items(items: List[Dict[str, Any]], block: str) -> Dict[str,
     skipped = 0
 
     for p in items:
+        # Normalize both legacy fields (value/unit) and schema-v2 style (reported_value/reported_unit).
         value = _to_float(p.get("value"))
         unit = str(p.get("unit") or "").strip().lower()
+        if value is None:
+            value = _to_float(p.get("reported_value"))
+        if not unit:
+            unit = str(p.get("reported_unit") or "").strip().lower()
+
+        if value is not None and p.get("value") is None:
+            p["value"] = value
+        if unit and p.get("unit") is None:
+            p["unit"] = unit
 
         if value is None or unit not in _STRESS_FACTORS:
             skipped += 1
             continue
 
-        p["value"] = value
+        p["value"] = float(value)
         p["value_SI"] = value * _STRESS_FACTORS[unit]
         p["unit_SI"] = "Pa"
         converted += 1

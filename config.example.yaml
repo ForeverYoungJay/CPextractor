@@ -25,6 +25,10 @@ llm:
   max_snippet_chars: 600
   max_context_chars: 24000
   max_extract_retries: 2
+  enable_source_enrichment: true
+  prompt_version: "v2.0.0"
+  schema_version: "2.0.0"
+  extractor_version: "extractor_v2"
   model_select: "gpt-4.1-mini"
   model_extract: "gpt-4.1-mini"
 

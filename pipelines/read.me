@@ -15,3 +15,13 @@ python pipelines/run_pipeline.py
 #     set pipeline.skip_fulltext_download=true and pipeline.use_local_fulltext_dois=true in config.yaml
 # - Hybrid mode (recommended): set pipeline.prefer_local_fulltext=true
 #     -> local exists: skip download; local missing: auto download
+# - Optional DB migration for lineage columns (run once):
+#     ALTER TABLE pipeline_runs
+#       ADD COLUMN IF NOT EXISTS prompt_version TEXT,
+#       ADD COLUMN IF NOT EXISTS schema_version TEXT,
+#       ADD COLUMN IF NOT EXISTS extractor_version TEXT;
+
+# Utilities for the 7-layer workflow
+# - Hybrid retrieval: python scripts/rag/hybrid_retrieve.py --query "C11 in Mg alloy"
+# - Analytics: python scripts/analytics/materials_insight.py
+# - Human review queue: python scripts/review/build_review_queue.py

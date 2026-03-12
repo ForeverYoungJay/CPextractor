@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 
   model_select TEXT,
   model_extract TEXT,
+  prompt_version TEXT,
+  schema_version TEXT,
+  extractor_version TEXT,
 
   llm_select_input_tokens INT,
   llm_select_output_tokens INT,
