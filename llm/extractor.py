@@ -253,8 +253,8 @@ def _table_semantic_hint(table: Dict[str, Any]) -> str:
     semantic_type = _table_semantic_type(table)
     hints = {
         "composition_matrix": "Interpret this as a material-composition matrix. Prefer populating materials[].composition rather than creating parameter claims.",
-        "phase_fraction_matrix": "Interpret this as a sample or condition profile table. Prefer populating samples[] and linked materials[].phases[] phase-fraction context.",
-        "sample_profile_matrix": "Interpret this as a sample-profile table. Prefer populating samples[] with grain size, texture, orientation, or processing-state facts.",
+        "phase_fraction_matrix": "Interpret this as a process-state or condition profile table. Prefer populating microstructure_features[] and linking them to process_states[] or conditions[].",
+        "sample_profile_matrix": "Interpret this as a process-state profile table. Prefer populating process_states[] and microstructure_features[] with grain size, texture, orientation, or processing-state facts.",
         "comparative_parameter_matrix": "Interpret this as a comparative parameter matrix spanning multiple materials or phases. Keep material/sample identity explicit and avoid collapsing all columns into one material.",
         "parameter_bundle_table": "Interpret this as a multi-condition parameter table. Expand rows or columns into separate parameter claims and link them through sample_id and condition_id when conditions are explicit.",
         "parameter_table": "Interpret this as a parameter table. Extract all explicit parameter values completely into parameter_claims[].",
@@ -299,8 +299,7 @@ def _should_skip_extraction_no_explicit_parameters(
 
 def _empty_extraction_payload(reason: str) -> Dict[str, Any]:
     payload = _coerce_to_schema_shape(EXTRACT_SCHEMA_SKELETON, {})
-    payload.setdefault("study", {})
-    payload["study"]["notes"] = reason
+    payload["global_notes"] = reason
     return payload
 
 
@@ -512,17 +511,13 @@ Return JSON only.
 
 EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
 {
-  "schema_version": "3.0.0",
+  "schema_version": "3.1.0",
   "document": {
     "doi": "string or null",
     "title": "string or null",
     "authors": ["string"],
     "year": "number or null",
     "journal": "string or null"
-  },
-  "study": {
-    "study_type": "single_material / multi_material / comparative / multi_condition / null",
-    "notes": "string or null"
   },
   "materials": [
     {
@@ -571,71 +566,28 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
             "reported_unit": "fraction / % / null",
             "notes": "string or null"
           },
-          "microstructure": {
-            "grain_structure": "single_crystal / polycrystal / bicrystal / null",
-            "grain_size": {
-              "value": "number or null",
-              "unit": "um / mm / nm / null",
-              "distribution": "string or null",
-              "notes": "string or null"
-            },
-            "texture": {
-              "description": "string or null",
-              "method": "odf / pole_figure / ebsd / none / null",
-              "notes": "string or null"
-            },
-            "morphology": "string or null",
-            "defect_state": {
-              "dislocation_density": {
-                "value": "number or null",
-                "unit": "m^-2 / null",
-                "notes": "string or null"
-              },
-              "precipitates": "string or null",
-              "porosity": "string or null",
-              "notes": "string or null"
-            },
-            "notes": "string or null"
-          },
           "notes": "string or null"
         }
       ],
-      "material_level_microstructure": {
-        "summary": "string or null",
-        "notes": "string or null"
-      },
       "notes": "string or null"
     }
   ],
-  "samples": [
+  "process_states": [
     {
-      "sample_id": "string or null",
+      "process_state_id": "string or null",
       "material_id": "string or null",
       "label": "string or null",
-      "processing_state": "string or null",
-      "condition_ids": ["string"],
-      "microstructure_overrides": {
-        "phase_microstructure_overrides": [
-          {
-            "phase_id": "string or null",
-            "grain_size": {"value": "number or null", "unit": "um / mm / nm / null", "notes": "string or null"},
-            "texture_or_orientation": "string or null",
-            "phase_fraction": {"value": "number or string or null", "unit": "fraction / % / null", "notes": "string or null"},
-            "notes": "string or null"
-          }
-        ],
-        "selected_grains": [
-          {
-            "grain_id": "string or null",
-            "label": "string or null",
-            "phase_id": "string or null",
-            "grain_size": {"value": "number or null", "unit": "um / mm / nm / null", "notes": "string or null"},
-            "orientation_notes": "string or null",
-            "notes": "string or null"
-          }
-        ],
-        "notes": "string or null"
-      },
+      "processing_steps": [
+        {
+          "step_id": "string or null",
+          "step_type": "casting / rolling / forging / annealing / solution_treatment / aging / quenching / extrusion / additive_manufacturing / machining / polishing / other / null",
+          "temperature": {"value": "number or null", "unit": "K / C / null", "notes": "string or null"},
+          "time": {"value": "number or null", "unit": "s / min / h / null", "notes": "string or null"},
+          "strain": {"value": "number or null", "unit": "strain / % / null", "notes": "string or null"},
+          "notes": "string or null"
+        }
+      ],
+      "linked_condition_ids": ["string"],
       "notes": "string or null"
     }
   ],
@@ -695,6 +647,14 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
       "rate_dependence": "rate_dependent / rate_independent / null",
       "single_or_poly": "single_crystal / polycrystal / null",
       "homogenization_assumption": "taylor / self_consistent / full_field / mean_field / null",
+      "constitutive_laws": {
+        "slip_kinetics": "power_law / thermal_activation / other / null",
+        "hardening": "voce / kalidindi / dislocation_based / other / null",
+        "twinning": "detwinning_enabled / ptr / other / null",
+        "elasticity": "anisotropic / isotropic / other / null",
+        "damage": "none / phenomenological / continuum_damage / other / null",
+        "notes": "string or null"
+      },
       "notes": "string or null"
     }
   ],
@@ -783,31 +743,62 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
     ],
     "notes": "string or null"
   },
+  "microstructure_features": [
+    {
+      "feature_id": "string or null",
+      "type": "grain_structure / grain_size / texture / orientation / phase_fraction / precipitates / porosity / dislocation_density / selected_grain / morphology / other / null",
+      "description": "string or null",
+      "value": "number or string or null",
+      "unit": "string or null",
+      "method": "ebsd / xrd / sem / tem / om / narrative / table / other / null",
+      "applies_to": {
+        "material_id": "string or null",
+        "phase_id": "string or null",
+        "process_state_id": "string or null",
+        "condition_id": "string or null",
+        "notes": "string or null"
+      },
+      "notes": "string or null"
+    }
+  ],
   "parameter_claims": [
     {
       "claim_id": "string or null",
       "model_id": "string or null",
-      "canonical_name": "string or null",
-      "symbol": "string or null",
-      "domain": "elastic / plastic / twinning / damage / thermal / numerical / other / null",
-      "description": "string or null",
-      "value": "number or string or null",
-      "unit": "string or null",
-      "value_SI": "number or string or null",
-      "unit_SI": "string or null",
-      "applies_to": {
-        "scope": "global / phase / family / system / all_slip / all_twin / all_mechanisms / null",
+      "parameter": {
+        "canonical_name": "string or null",
+        "symbol": "string or null",
+        "domain": "elastic / plastic / twinning / damage / thermal / numerical / other / null",
+        "description": "string or null",
+        "units": {
+          "reported_unit": "string or null",
+          "si_unit": "string or null"
+        }
+      },
+      "assertion": {
+        "value": "number or string or null",
+        "reported_value": "number or string or null",
+        "reported_unit": "string or null",
+        "value_si": "number or string or null",
+        "si_unit": "string or null",
+        "qualifier": "string or null",
+        "valid_range": "string or null"
+      },
+      "context": {
         "material_id": "string or null",
-        "sample_id": "string or null",
-        "condition_id": "string or null",
         "phase_id": "string or null",
-        "family_id": "string or null",
-        "system_ids": ["string"],
+        "process_state_id": "string or null",
+        "condition_id": "string or null",
+        "mechanism_scope": {
+          "level": "global / phase / family / system / null",
+          "mechanism_type": "slip / twinning / cleavage / damage / mixed / null",
+          "family_id": "string or null",
+          "family_name": "string or null",
+          "system_ids": ["string"],
+          "notes": "string or null"
+        },
         "notes": "string or null"
       },
-      "temperature_dependent": "yes / no / null",
-      "strain_rate_dependent": "yes / no / null",
-      "valid_range": "string or null",
       "provenance": {
         "origin_type": "original / adopted / calibrated / adopted_then_calibrated / null",
         "reference_ids": ["string"],
@@ -818,7 +809,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         "notes": "string or null"
       },
       "evidence": {
-        "evidence_text": "string or null",
+        "text": "string or null",
         "table_evidence": {
           "row_name": "string or null",
           "column_name": "string or null",
@@ -827,23 +818,30 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         },
         "notes": "string or null"
       },
+      "confidence": {
+        "label": "high / medium / low / null",
+        "score": "number or null"
+      },
       "notes": "string or null"
     }
-  ]
+  ],
+  "global_notes": "string or null"
 }
 """
 
 EXTRACT_USER_PROMPT_TEMPLATE = """
 1 Task description
-Extract crystal-plasticity information from the provided paper excerpt into the v3 hierarchical CP schema.
+Extract crystal-plasticity information from the provided paper excerpt into the v3.1 hierarchical CP schema.
 
 2 Task requirements
 - Use only explicit evidence in the excerpt.
 - If unknown, return null or empty list.
 - Keep parameter provenance carefully (adopted references vs calibration references).
 - Keep the hierarchy explicit: `phase` belongs inside its parent `materials[]` item as a sub-item.
-- Put multi-material facts in `materials[]`, sample-specific facts in `samples[]`, loading/testing facts in `conditions[]`, and model facts in `models[]`.
-- Put parameter facts in `parameter_claims[]`; use `applies_to.material_id`, `sample_id`, `condition_id`, and `phase_id` to bind each claim.
+- Do not output a top-level `study` block.
+- Do not use `samples[]`; use `process_states[]` for material processing-state variants and `conditions[]` for loading/testing conditions.
+- Express microstructure as `microstructure_features[]`, not as fixed nested microstructure trees.
+- Keep `parameter_claims[]` claim-centric: separate `parameter`, `assertion`, `context`, `provenance`, and `evidence`.
 - Extract the following schema from the paper excerpt:
 __SCHEMA_JSON__
 
@@ -855,22 +853,29 @@ __SCHEMA_JSON__
 - If both adopted and calibrated are stated, use origin_type as adopted_then_calibrated.
 - Put bracketed citation labels like 12, 60, 61 into reference id arrays.
 - For provenance, only output reference ID arrays; do not fabricate reference title/doi.
-- Do not use placeholders like this_study/present_study as reference IDs; put such info in `provenance.notes` or `evidence.evidence_text`.
+- Do not use placeholders like this_study/present_study as reference IDs; put such info in `provenance.notes` or `evidence.text`.
 - For comparative or multi-material papers, populate `materials[]` instead of collapsing everything into one material name.
-- For papers with multiple samples, temperatures, grain sizes, or processing states, populate `samples[]`.
-- When a parameter is clearly tied to one material or sample, fill `applies_to.material_id` and `applies_to.sample_id`.
+- For papers with multiple heat treatments, processing routes, or initial states, populate `process_states[]`.
+- Use `conditions[]` only for deformation/testing context such as temperature, strain rate, fatigue mode, indentation settings, or loading mode.
+- Use `microstructure_features[]` for grain size, texture, phase fraction, precipitates, porosity, selected grains, and other structure descriptors.
+- When a parameter is clearly tied to one material/process/condition, fill `context.material_id`, `context.process_state_id`, and `context.condition_id`.
+- Split context scope into two dimensions:
+  `context.mechanism_scope.level` is the hierarchy level.
+  `context.mechanism_scope.mechanism_type` is the mechanism category.
+- Keep the parameter identity in `parameter`, the numeric statement in `assertion`, and the applicability in `context`.
+- Put range/bounds or qualifiers inside `assertion`, not at top level.
 - If the claim comes from a table or image-backed table, fill `evidence.table_evidence` when possible.
 - Tables may be row-oriented, column-oriented, transposed, matrix-like, multi-level-header, grouped-row, or image-backed. Interpret all of these as valid parameter sources.
 - Resolve units from the nearest reliable source: the value cell, row label, column header, section header, or shared table note. Do not duplicate or invent units.
-- Preserve table structure instead of flattening it. Keep row/column identity, grouped headers, section headers, and shared values explicit in `evidence.table_evidence` and `applies_to`.
+- Preserve table structure instead of flattening it. Keep row/column identity, grouped headers, section headers, and shared values explicit in `evidence.table_evidence` and `context`.
 - `evidence.table_evidence.row_name/column_name/value` should be human-readable labels. Do not emit row_index, column_index, or evidence_location.
 - `evidence.table_evidence.excerpt` should be the smallest self-contained supporting snippet: usually one table row or one grouped-row segment with the parameter label and value together. Do not dump the whole table, and do not reduce it to a naked number.
-- If you know the literature source or table section but not the exact numeric cell span, still provide `evidence.evidence_text` and `evidence.table_evidence` rather than leaving evidence blank.
-- `canonical_name` should already use the project-standard canonical name when it is clear from symbol/description/context. Avoid verbose phrase-like names if a stable canonical label is available.
+- If you know the literature source or table section but not the exact numeric cell span, still provide `evidence.text` and `evidence.table_evidence` rather than leaving evidence blank.
+- `parameter.canonical_name` should already use the project-standard canonical name when it is clear from symbol/description/context. Avoid verbose phrase-like names if a stable canonical label is available.
 - Use snake_case enum values exactly.
-- Only emit a parameter record when you can bind it to an explicit numeric/string value in the excerpt or to a concrete grouped table row with one-to-one value mapping.
+- Only emit a parameter claim when you can bind it to an explicit numeric/string value in the excerpt or to a concrete grouped table row with one-to-one value mapping.
 - If the excerpt only gives a definition, equation form, literature provenance, or says a parameter was calibrated/adopted without stating its value, omit that parameter from `parameter_claims`.
-- For grouped rows such as `c11, c12, c44 -> 183.9 GPa, 123.4 GPa, 91.5 GPa`, emit separate parameter records for each value instead of one null-valued grouped shell.
+- For grouped rows such as `c11, c12, c44 -> 183.9 GPa, 123.4 GPa, 91.5 GPa`, emit separate parameter claims for each value instead of one null-valued grouped shell.
 - For comparison tables spanning many materials or slip modes, only extract entries that can be bound to the focal studied material/phase/slip family from context; otherwise omit them rather than producing a generic null-valued parameter.
 - If a grouped row gives a numeric value but omits a unit for one segment, still emit that parameter with the explicit value and set unit to null; do not fabricate a unit.
 - Missing unit alone is not a reason to omit a parameter when the value itself is explicit and the parameter identity is clear.
@@ -879,35 +884,35 @@ __SCHEMA_JSON__
 - Treat `0` as a valid explicit parameter value. Never omit a parameter solely because its value is zero.
 - Extract elastic constants from parameter tables with the same priority as plastic parameters.
 - Extract auxiliary calibrated constants and numerical/material constants from selected parameter tables when they have explicit values, including items like `R`, `T`, `A`, `d`, `h`, and `hD`.
-- If one table row covers multiple scopes, expand it into multiple parameter records when the mapping is explicit.
-- Example: `Prism and Basal slip systems | γ̇0 | 3.5e-4` should become two records if the value is shared by both prism and basal.
-- Example: `Prism and Basal slip systems | n | 20` should become two records, not one ambiguous shared record.
+- If one table row covers multiple scopes, expand it into multiple parameter claims when the mapping is explicit.
+- Example: `Prism and Basal slip systems | γ̇0 | 3.5e-4` should become two claims if the value is shared by both prism and basal.
+- Example: `Prism and Basal slip systems | n | 20` should become two claims, not one ambiguous shared record.
 - For grouped rows with multiple labels and multiple values, preserve order and map each label to the corresponding value segment.
-- For chemical-composition matrices, each column/sample/material should become a separate entry in `materials[]` or `samples[]`; do not flatten the entire table into one material string.
-- For grain-size / phase-fraction / texture tables, populate `samples[]` and `materials[].phases[].microstructure` even if the table contains no CP parameters.
-- For selected-grain tables, populate `samples[].microstructure_overrides.selected_grains` with one entry per selected grain when explicit IDs, sizes, or orientations are given.
-- Keep material-level hierarchy explicit: detailed per-material composition/phase data belongs in `materials[]`; detailed per-sample / per-condition data belongs in `samples[]` and `conditions[]`.
-- For multiple deformation conditions in one paper, populate `conditions[]` and link `samples[]` and `parameter_claims[]` through `condition_id` when explicit.
-- For parameter tables organized by temperature, grain size, sample, or method, expand each condition row into distinct parameter claims and link them to the right `sample_id` / `condition_id`.
-- Distinguish calibration bounds from final calibrated parameters. If a table gives bounds or search ranges, do not convert the bound itself into a standalone calibrated parameter. Preserve it as `valid_range` on the corresponding parameter when the mapping is explicit.
+- For chemical-composition matrices, each column/material should become a separate entry in `materials[]`; do not flatten the entire table into one material string.
+- For grain-size / phase-fraction / texture tables, populate `microstructure_features[]` even if the table contains no CP parameters.
+- For selected-grain tables, populate `microstructure_features[]` with `type=selected_grain` and keep the grain identity in `description` or `notes`.
+- Keep material-state hierarchy explicit: detailed per-material composition/phase data belongs in `materials[]`; per-process-state variation belongs in `process_states[]`; loading/test variation belongs in `conditions[]`.
+- For multiple deformation conditions in one paper, populate `conditions[]` and link `parameter_claims[]` through `context.condition_id` when explicit.
+- For parameter tables organized by temperature, grain size, process state, or method, expand each condition row into distinct parameter claims and link them to the right `process_state_id` / `condition_id`.
+- Distinguish calibration bounds from final calibrated parameters. If a table gives bounds or search ranges, do not convert the bound itself into a standalone calibrated parameter. Preserve it in `assertion.valid_range` when the mapping is explicit.
 - For image-backed parameter tables, apply the same completeness rule as text tables: recover all explicit numeric entries, including zeros, shared rows, and elastic blocks.
 - Do not omit a tail row of a selected parameter table merely because earlier rows already provided more prominent parameters.
 
 4 Few-shot examples
 Example A: Text says parameters adopted from [12,13] and calibrated against stress-strain curves.
-Expected behavior: provenance.origin_type is adopted_then_calibrated, adopted_from_reference_ids includes 12 and 13, and evidence_text mentions calibration target.
+Expected behavior: provenance.origin_type is adopted_then_calibrated, adopted_from_reference_ids includes 12 and 13, and `evidence.text` mentions calibration target.
 
 Example B: Text states a parameter value but no source citation.
 Expected behavior: parameter extracted with null/empty provenance reference arrays.
 
 Example C: Table row says `c11, c12, c44` and value cell says `183.9 GPa, 123.4 GPa, 91.5 GPa`.
-Expected behavior: emit three separate elastic parameter records with explicit values, not one `elastic_constants` record with null subfields.
+Expected behavior: emit three separate elastic parameter claims with explicit values.
 
 Example D: Section says `Slip shear rate equation from Ref. [47]` but gives no numeric parameter value.
 Expected behavior: do not emit a parameter record for slip shear rate.
 
 Example E: Table row says `h, hD` and value cell says `3555 MPa, 245`.
-Expected behavior: emit two parameter records. `h` keeps unit `MPa`; `hD` keeps value `245` with `unit=null` if no explicit unit is given for the second value.
+Expected behavior: emit two parameter claims. `h` keeps unit `MPa`; `hD` keeps value `245` with unit null if no explicit unit is given for the second value.
 
 Example F: Table row says `Prism and Basal slip systems | n | 20`.
 Expected behavior: emit one `n=20` record for prism and one `n=20` record for basal.
@@ -919,22 +924,22 @@ Example H: A selected parameter table contains elastic constants at the top and 
 Expected behavior: extract all of them if explicit values are shown; do not stop at the first few plastic parameters.
 
 Example I: A composition table lists materials as columns and elements as rows.
-Expected behavior: populate `materials[]` with one material entry per column and keep composition rows under each material, rather than collapsing everything into one material name.
+Expected behavior: populate `materials[]` with one material entry per column and keep composition rows under each material.
 
-Example J: A parameter table is indexed by temperature and grain size for one alloy.
-Expected behavior: create one sample entry per temperature/grain-size condition when the condition is explicit, and link the corresponding parameter claims with `sample_id`.
+Example J: A parameter table is indexed by temperature and grain size for one alloy after different heat treatments.
+Expected behavior: create one `process_states[]` entry per heat-treatment state when explicit, store the grain-size fact in `microstructure_features[]`, and link the corresponding parameter claims with `process_state_id`.
 
-Example K: A table lists samples as rows and phase fractions as columns for room temperature and cryogenic temperature.
-Expected behavior: populate `samples[]` with one entry per sample-condition pair and store phase-fraction or phase-level facts there or under the linked material phase; do not convert phase fractions into CP parameter records.
+Example K: A table lists process states as rows and phase fractions as columns for room temperature and cryogenic temperature.
+Expected behavior: populate `conditions[]` for room temperature and cryogenic temperature, store phase-fraction observations in `microstructure_features[]`, and do not convert phase fractions into CP parameter claims.
 
 Example L: A comparative table lists many materials as rows or columns, with elastic constants and slip strengths for each material.
 Expected behavior: preserve one material entry per material and keep parameter claims tied to the correct material_id or phase_id instead of mixing all values into one generic phase.
 
 Example M: A selected-grain table lists grain IDs, phase labels, and grain sizes for a nanoindentation study.
-Expected behavior: populate `samples[].microstructure_overrides.selected_grains` instead of collapsing the information into a free-text note.
+Expected behavior: populate `microstructure_features[]` with `type=selected_grain` entries instead of collapsing the information into a free-text note.
 
 Example N: One table gives GA calibration bounds, and later tables give GA/T&E final calibrated parameters.
-Expected behavior: keep the bounds as `valid_range` for the corresponding parameter when the mapping is explicit; do not create standalone `*_bound` parameters unless the paper explicitly treats the bound as a model quantity.
+Expected behavior: keep the bounds as `assertion.valid_range` for the corresponding parameter when the mapping is explicit; do not create standalone `*_bound` parameters unless the paper explicitly treats the bound as a model quantity.
 
 Paper excerpt:
 ----------------
@@ -1031,36 +1036,39 @@ def _first_non_empty(*values: Any) -> Any:
 
 def _project_v3_claim_to_legacy_registry_item(claim: Dict[str, Any]) -> Dict[str, Any]:
     claim = _safe_dict(claim)
-    applies_to = _safe_dict(claim.get("applies_to"))
+    parameter = _safe_dict(claim.get("parameter"))
+    assertion = _safe_dict(claim.get("assertion"))
+    context = _safe_dict(claim.get("context"))
+    mechanism_scope = _safe_dict(context.get("mechanism_scope"))
     provenance = _safe_dict(claim.get("provenance"))
     evidence = _safe_dict(claim.get("evidence"))
     legacy_item = {
         "claim_id": claim.get("claim_id"),
-        "domain": claim.get("domain"),
-        "canonical_name": claim.get("canonical_name"),
-        "symbol": claim.get("symbol"),
-        "description": claim.get("description"),
-        "value": claim.get("value"),
-        "unit": claim.get("unit"),
-        "value_SI": claim.get("value_SI"),
-        "unit_SI": claim.get("unit_SI"),
+        "domain": parameter.get("domain"),
+        "canonical_name": parameter.get("canonical_name"),
+        "symbol": parameter.get("symbol"),
+        "description": parameter.get("description"),
+        "value": assertion.get("reported_value", assertion.get("value")),
+        "unit": assertion.get("reported_unit", _safe_dict(parameter.get("units")).get("reported_unit")),
+        "value_SI": assertion.get("value_si"),
+        "unit_SI": assertion.get("si_unit", _safe_dict(parameter.get("units")).get("si_unit")),
         "applies_to": {
-            "scope": applies_to.get("scope"),
-            "material_id": applies_to.get("material_id"),
-            "sample_id": applies_to.get("sample_id"),
-            "bundle_id": applies_to.get("bundle_id"),
-            "condition_id": applies_to.get("condition_id"),
-            "phase_id": applies_to.get("phase_id"),
-            "mechanism": applies_to.get("mechanism"),
-            "family_id": applies_to.get("family_id"),
-            "family_name": applies_to.get("family_name"),
-            "system_ids": _safe_list(applies_to.get("system_ids")),
-            "system_count": len(_safe_list(applies_to.get("system_ids"))) or applies_to.get("system_count"),
-            "notes": applies_to.get("notes"),
+            "scope": mechanism_scope.get("level"),
+            "material_id": context.get("material_id"),
+            "sample_id": context.get("process_state_id"),
+            "bundle_id": None,
+            "condition_id": context.get("condition_id"),
+            "phase_id": context.get("phase_id"),
+            "mechanism": mechanism_scope.get("mechanism_type"),
+            "family_id": mechanism_scope.get("family_id"),
+            "family_name": mechanism_scope.get("family_name"),
+            "system_ids": _safe_list(mechanism_scope.get("system_ids")),
+            "system_count": len(_safe_list(mechanism_scope.get("system_ids"))),
+            "notes": _first_non_empty(context.get("notes"), mechanism_scope.get("notes")),
         },
         "temperature_dependent": claim.get("temperature_dependent"),
         "strain_rate_dependent": claim.get("strain_rate_dependent"),
-        "valid_range": claim.get("valid_range"),
+        "valid_range": assertion.get("valid_range"),
         "source": {
             "origin_type": provenance.get("origin_type"),
             "reference_ids": _safe_list(provenance.get("reference_ids")),
@@ -1071,7 +1079,7 @@ def _project_v3_claim_to_legacy_registry_item(claim: Dict[str, Any]) -> Dict[str
             "notes": provenance.get("notes"),
         },
         "evidence": {
-            "evidence_text": evidence.get("evidence_text"),
+            "evidence_text": evidence.get("text"),
             "table_evidence": _safe_dict(evidence.get("table_evidence")) or None,
             "notes": evidence.get("notes"),
         },
@@ -1080,17 +1088,46 @@ def _project_v3_claim_to_legacy_registry_item(claim: Dict[str, Any]) -> Dict[str
     return legacy_item
 
 
+def _feature_matches(feature: Dict[str, Any], *, material_id: Any = None, phase_id: Any = None, process_state_id: Any = None) -> bool:
+    applies_to = _safe_dict(feature.get("applies_to"))
+    if material_id and applies_to.get("material_id") not in (None, material_id):
+        return False
+    if phase_id and applies_to.get("phase_id") not in (None, phase_id):
+        return False
+    if process_state_id and applies_to.get("process_state_id") not in (None, process_state_id):
+        return False
+    return True
+
+
+def _first_feature(
+    features: List[Dict[str, Any]],
+    feature_type: str,
+    *,
+    material_id: Any = None,
+    phase_id: Any = None,
+    process_state_id: Any = None,
+) -> Dict[str, Any]:
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        if str(feature.get("type") or "").strip().lower() != feature_type:
+            continue
+        if _feature_matches(feature, material_id=material_id, phase_id=phase_id, process_state_id=process_state_id):
+            return feature
+    return {}
+
+
 def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return payload
 
     document = _safe_dict(payload.get("document"))
-    study = _safe_dict(payload.get("study"))
     materials = [m for m in _safe_list(payload.get("materials")) if isinstance(m, dict)]
-    samples = [s for s in _safe_list(payload.get("samples")) if isinstance(s, dict)]
+    process_states = [s for s in _safe_list(payload.get("process_states")) if isinstance(s, dict)]
     conditions = [c for c in _safe_list(payload.get("conditions")) if isinstance(c, dict)]
     models = [m for m in _safe_list(payload.get("models")) if isinstance(m, dict)]
     mechanisms = _safe_dict(payload.get("mechanisms"))
+    microstructure_features = [f for f in _safe_list(payload.get("microstructure_features")) if isinstance(f, dict)]
     claims = [c for c in _safe_list(payload.get("parameter_claims")) if isinstance(c, dict)]
 
     primary_material = materials[0] if materials else {}
@@ -1098,7 +1135,42 @@ def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, An
     primary_phase = primary_phases[0] if primary_phases else {}
     primary_model = models[0] if models else {}
     primary_condition = conditions[0] if conditions else {}
-    primary_micro = _safe_dict(primary_phase.get("microstructure"))
+    primary_process_state = process_states[0] if process_states else {}
+    primary_grain_feature = _first_feature(
+        microstructure_features,
+        "grain_size",
+        material_id=primary_material.get("material_id"),
+        phase_id=primary_phase.get("phase_id"),
+        process_state_id=primary_process_state.get("process_state_id"),
+    )
+    primary_texture_feature = _first_feature(
+        microstructure_features,
+        "texture",
+        material_id=primary_material.get("material_id"),
+        phase_id=primary_phase.get("phase_id"),
+        process_state_id=primary_process_state.get("process_state_id"),
+    )
+    primary_grain_structure_feature = _first_feature(
+        microstructure_features,
+        "grain_structure",
+        material_id=primary_material.get("material_id"),
+        phase_id=primary_phase.get("phase_id"),
+        process_state_id=primary_process_state.get("process_state_id"),
+    )
+    primary_dislocation_feature = _first_feature(
+        microstructure_features,
+        "dislocation_density",
+        material_id=primary_material.get("material_id"),
+        phase_id=primary_phase.get("phase_id"),
+        process_state_id=primary_process_state.get("process_state_id"),
+    )
+    primary_precip_feature = _first_feature(
+        microstructure_features,
+        "precipitates",
+        material_id=primary_material.get("material_id"),
+        phase_id=primary_phase.get("phase_id"),
+        process_state_id=primary_process_state.get("process_state_id"),
+    )
 
     payload["record_id"] = payload.get("record_id")
     payload["source_document"] = {
@@ -1164,60 +1236,76 @@ def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, An
         ],
         "sample_profiles": [
             {
-                "sample_id": sample.get("sample_id"),
-                "material_id": sample.get("material_id"),
-                "condition_id": _safe_list(sample.get("condition_ids"))[0] if _safe_list(sample.get("condition_ids")) else None,
-                "label": sample.get("label"),
-                "processing_state": sample.get("processing_state"),
+                "sample_id": process_state.get("process_state_id"),
+                "material_id": process_state.get("material_id"),
+                "condition_id": _safe_list(process_state.get("linked_condition_ids"))[0] if _safe_list(process_state.get("linked_condition_ids")) else None,
+                "label": process_state.get("label"),
+                "processing_state": process_state.get("label"),
                 "temperature": None,
-                "grain_size": _safe_dict(_safe_list(_safe_dict(sample.get("microstructure_overrides")).get("phase_microstructure_overrides"))[0]).get("grain_size") if _safe_list(_safe_dict(sample.get("microstructure_overrides")).get("phase_microstructure_overrides")) else None,
+                "grain_size": {
+                    "value": _first_feature(microstructure_features, "grain_size", material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id")).get("value"),
+                    "unit": _first_feature(microstructure_features, "grain_size", material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id")).get("unit"),
+                    "notes": _first_feature(microstructure_features, "grain_size", material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id")).get("notes"),
+                } if _first_feature(microstructure_features, "grain_size", material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id")) else None,
                 "phase_fractions": [
                     {
-                        "phase_id": override.get("phase_id"),
-                        "value": _safe_dict(override.get("phase_fraction")).get("value"),
-                        "unit": _safe_dict(override.get("phase_fraction")).get("unit"),
-                        "notes": _safe_dict(override.get("phase_fraction")).get("notes"),
+                        "phase_id": _safe_dict(feature.get("applies_to")).get("phase_id"),
+                        "value": feature.get("value"),
+                        "unit": feature.get("unit"),
+                        "notes": feature.get("notes"),
                     }
-                    for override in _safe_list(_safe_dict(sample.get("microstructure_overrides")).get("phase_microstructure_overrides"))
-                    if isinstance(override, dict) and _safe_dict(override.get("phase_fraction"))
+                    for feature in microstructure_features
+                    if isinstance(feature, dict)
+                    and str(feature.get("type") or "").strip().lower() == "phase_fraction"
+                    and _feature_matches(feature, material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id"))
                 ],
                 "selected_grains": [
                     {
-                        "grain_id": grain.get("grain_id"),
-                        "label": grain.get("label"),
-                        "phase_id": grain.get("phase_id"),
-                        "grain_size": _safe_dict(grain.get("grain_size")) or None,
-                        "orientation_notes": grain.get("orientation_notes"),
-                        "notes": grain.get("notes"),
+                        "grain_id": feature.get("feature_id"),
+                        "label": feature.get("description"),
+                        "phase_id": _safe_dict(feature.get("applies_to")).get("phase_id"),
+                        "grain_size": {"value": feature.get("value"), "unit": feature.get("unit"), "notes": feature.get("notes")} if feature.get("value") not in (None, "") else None,
+                        "orientation_notes": feature.get("description"),
+                        "notes": feature.get("notes"),
                     }
-                    for grain in _safe_list(_safe_dict(sample.get("microstructure_overrides")).get("selected_grains"))
-                    if isinstance(grain, dict)
+                    for feature in microstructure_features
+                    if isinstance(feature, dict)
+                    and str(feature.get("type") or "").strip().lower() == "selected_grain"
+                    and _feature_matches(feature, material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id"))
                 ],
-                "texture_or_orientation": _safe_dict(_safe_list(_safe_dict(sample.get("microstructure_overrides")).get("phase_microstructure_overrides"))[0]).get("texture_or_orientation") if _safe_list(_safe_dict(sample.get("microstructure_overrides")).get("phase_microstructure_overrides")) else None,
-                "notes": _first_non_empty(sample.get("notes"), _safe_dict(sample.get("microstructure_overrides")).get("notes")),
+                "texture_or_orientation": _first_feature(microstructure_features, "texture", material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id")).get("description"),
+                "notes": process_state.get("notes"),
             }
-            for sample in samples
+            for process_state in process_states
         ],
-        "notes": study.get("notes"),
+        "notes": payload.get("global_notes"),
     }
     payload["microstructure"] = {
-        "grain_structure": primary_micro.get("grain_structure"),
-        "grain_size": _safe_dict(primary_micro.get("grain_size")) or None,
+        "grain_structure": primary_grain_structure_feature.get("value"),
+        "grain_size": {
+            "value": primary_grain_feature.get("value"),
+            "unit": primary_grain_feature.get("unit"),
+            "notes": primary_grain_feature.get("notes"),
+        } if primary_grain_feature else None,
         "orientation_texture": {
-            "description": _safe_dict(primary_micro.get("texture")).get("description"),
-            "texture_type": _safe_dict(primary_micro.get("texture")).get("method"),
+            "description": primary_texture_feature.get("description"),
+            "texture_type": primary_texture_feature.get("method"),
             "texture_data_available": None,
             "data_location": None,
-            "notes": _safe_dict(primary_micro.get("texture")).get("notes"),
+            "notes": primary_texture_feature.get("notes"),
         },
         "initial_defect_state": {
-            "dislocation_density": _safe_dict(_safe_dict(primary_micro.get("defect_state")).get("dislocation_density")) or None,
-            "precipitate_state": _safe_dict(primary_micro.get("defect_state")).get("precipitates"),
+            "dislocation_density": {
+                "value": primary_dislocation_feature.get("value"),
+                "unit": primary_dislocation_feature.get("unit"),
+                "notes": primary_dislocation_feature.get("notes"),
+            } if primary_dislocation_feature else None,
+            "precipitate_state": primary_precip_feature.get("description") or primary_precip_feature.get("value"),
             "solute_state": None,
             "prestrain": None,
-            "notes": _safe_dict(primary_micro.get("defect_state")).get("notes"),
+            "notes": _first_non_empty(primary_dislocation_feature.get("notes"), primary_precip_feature.get("notes")),
         },
-        "notes": _first_non_empty(primary_micro.get("notes"), _safe_dict(primary_material.get("material_level_microstructure")).get("notes")),
+        "notes": payload.get("global_notes"),
     }
     payload["constitutive_model"] = {
         "class": primary_model.get("class"),
@@ -1282,7 +1370,6 @@ def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, An
         "other_mechanisms": _safe_list(mechanisms.get("other_mechanisms")),
         "notes": mechanisms.get("notes"),
     }
-    payload["global_notes"] = study.get("notes")
     return payload
 
 
@@ -1409,8 +1496,8 @@ def _merge_source_enrichment(extracted: Dict[str, Any], enrich: Dict[str, Any]) 
     for i, it in enumerate(registry):
         if not isinstance(it, dict):
             continue
-        domain = str(it.get("domain") or "").strip().lower()
-        cname = str(it.get("canonical_name") or "").strip().lower()
+        domain = str(it.get("domain") or _safe_dict(_safe_dict(it.get("parameter")).get("domain")) or "").strip().lower()
+        cname = str(it.get("canonical_name") or _safe_dict(it.get("parameter")).get("canonical_name") or "").strip().lower()
         if domain == "elastic" or cname in _ELASTIC_CANONICALS:
             elastic_idx.append(i)
         else:
@@ -1423,6 +1510,8 @@ def _merge_source_enrichment(extracted: Dict[str, Any], enrich: Dict[str, Any]) 
             if isinstance(item.get("source"), dict):
                 target_key = "provenance" if claim_mode else "source"
                 registry[ridx][target_key] = _merge_source_payload(registry[ridx].get(target_key), item["source"])
+            if claim_mode and item.get("confidence") not in (None, "", [], {}):
+                registry[ridx]["confidence"] = _merge_source_payload(registry[ridx].get("confidence"), {"label": item.get("confidence")})
 
     for item in enrich.get("plastic_sources", []) or []:
         idx = item.get("index")
@@ -1431,6 +1520,8 @@ def _merge_source_enrichment(extracted: Dict[str, Any], enrich: Dict[str, Any]) 
             if isinstance(item.get("source"), dict):
                 target_key = "provenance" if claim_mode else "source"
                 registry[ridx][target_key] = _merge_source_payload(registry[ridx].get(target_key), item["source"])
+            if claim_mode and item.get("confidence") not in (None, "", [], {}):
+                registry[ridx]["confidence"] = _merge_source_payload(registry[ridx].get("confidence"), {"label": item.get("confidence")})
 
     return extracted
 
