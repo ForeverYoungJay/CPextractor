@@ -1,0 +1,1 @@
+{"doi":"10.1016/j.actamat.2024.120250","bundle_id":"main_cp_parameter_set","required_claim_ids":["claim_0001","claim_0002","claim_0003","claim_0016","claim_0017"],"required_groups":["elastic_constants","rate_parameters","hardening_parameters"],"notes":"Example bundle for completeness scoring."}

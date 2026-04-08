@@ -48,22 +48,51 @@ def main() -> None:
         (vec, vec, args.k),
     ).fetchall()
 
-    param_rows = conn.execute(
+    table_row_rows = conn.execute(
         """
-        SELECT doi,
-               extracted_json->'material'->>'name' AS material,
-               extracted_json->'constitutive_model'->>'framework' AS framework,
-               extracted_json->'plastic_parameters'->>'flow_rule' AS flow_rule
-        FROM extractions
-        WHERE extracted_json::text ILIKE %s
+        SELECT doi, table_file, row_key, left(row_text, 280) AS snippet,
+               1 - (embedding <=> %s::vector) AS score
+        FROM table_row_vectors
+        WHERE embedding IS NOT NULL
+        ORDER BY embedding <=> %s::vector
         LIMIT %s;
         """,
-        (f"%{args.query}%", args.k),
+        (vec, vec, args.k),
+    ).fetchall()
+
+    param_rows = conn.execute(
+        """
+        SELECT
+          doi,
+          claim_id,
+          material_id,
+          material_name,
+          sample_id,
+          sample_label,
+          condition_id,
+          condition_label,
+          canonical_name,
+          symbol,
+          phase_id,
+          phase_name,
+          family_name,
+          value_text,
+          unit,
+          origin_type,
+          left(evidence_snippet, 280) AS snippet,
+          1 - (embedding <=> %s::vector) AS score
+        FROM parameter_vectors
+        WHERE embedding IS NOT NULL
+        ORDER BY embedding <=> %s::vector
+        LIMIT %s;
+        """,
+        (vec, vec, args.k),
     ).fetchall()
 
     out = {
         "query": args.query,
         "chunk_hits": chunk_rows,
+        "table_row_hits": table_row_rows,
         "parameter_hits": param_rows,
     }
     print(json.dumps(out, ensure_ascii=False, indent=2))

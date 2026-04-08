@@ -10,6 +10,8 @@ import psycopg
 from psycopg.rows import dict_row
 from openai import OpenAI
 
+from db.ingest import ingest_paper_dir_to_db
+
 
 # ----------------------------
 # Config + Utilities
@@ -169,81 +171,25 @@ def infer_doi_from_dirname(dirname: str) -> str:
 
 def ingest_one_paper(conn: psycopg.Connection, client: OpenAI, rag: RagConfig,
                      paper_dir: str, doi: str):
-    # 1) extracted JSON (optional)
     extracted_path = os.path.join(paper_dir, "materials_extracted.json")
-    extracted_json = None
-    if os.path.exists(extracted_path):
-        extracted_json = read_json(extracted_path)
+    if not os.path.exists(extracted_path):
+        raise FileNotFoundError(f"Missing extracted JSON: {extracted_path}")
 
-    # 2) minimal metadata
-    title = None
-    year = None
-    journal = None
-    if extracted_json:
-        # best-effort; safe if missing
-        title = extracted_json.get("title") or None
-        # year/journal often not in your extraction schema; keep placeholders
-
-    upsert_paper(conn, doi=doi, title=title, year=year, journal=journal)
-
-    if extracted_json:
-        upsert_extraction(conn, doi=doi, extracted_json=extracted_json)
-
-    # 3) insert chunk rows from sections + tables
-    all_pairs_for_embedding: List[Tuple[int, str]] = []  # (chunk_id, text)
-
-    # sections
-    sec_dir = os.path.join(paper_dir, "sections")
-    if os.path.isdir(sec_dir):
-        for p in list_md_files(sec_dir):
-            text = read_text(p)
-            chunks = chunk_text(text, rag.chunk_chars, rag.chunk_overlap)
-            ids = insert_chunks(
-                conn, doi=doi, source_type="section",
-                source_name=os.path.basename(p),
-                chunks=chunks,
-                metadata={"path": os.path.relpath(p, start=paper_dir)},
-            )
-            for cid, ch in zip(ids, chunks):
-                all_pairs_for_embedding.append((cid, ch))
-
-    # tables
-    tab_dir = os.path.join(paper_dir, "tables")
-    if os.path.isdir(tab_dir):
-        for p in list_md_files(tab_dir):
-            text = read_text(p)
-            chunks = chunk_text(text, rag.chunk_chars, rag.chunk_overlap)
-            ids = insert_chunks(
-                conn, doi=doi, source_type="table",
-                source_name=os.path.basename(p),
-                chunks=chunks,
-                metadata={"path": os.path.relpath(p, start=paper_dir)},
-            )
-            for cid, ch in zip(ids, chunks):
-                all_pairs_for_embedding.append((cid, ch))
-
-    # 4) embeddings in batches
-    if not all_pairs_for_embedding:
-        return
-
-    # Avoid re-embedding if some are already embedded (optional optimization)
-    # For now, embed everything inserted in this run.
-    batch = rag.batch_size
-    for i in range(0, len(all_pairs_for_embedding), batch):
-        sub = all_pairs_for_embedding[i:i+batch]
-        texts = [t for _, t in sub]
-        embs = embed_texts(client, rag.embedding_model, texts)
-
-        # dimension check
-        if embs and len(embs[0]) != rag.embedding_dim:
-            raise RuntimeError(
-                f"Embedding dim mismatch: got {len(embs[0])}, expected {rag.embedding_dim}. "
-                f"Check schema VECTOR({rag.embedding_dim}) and config rag.embedding_dim."
-            )
-
-        update_embeddings(conn, [(cid, emb) for (cid, _), emb in zip(sub, embs)])
-        conn.commit()
-        time.sleep(0.05)
+    extracted_json = read_json(extracted_path)
+    ingest_paper_dir_to_db(
+        conn=conn,
+        openai_client=client,
+        doi=doi,
+        paper_dir=paper_dir,
+        extracted_json=extracted_json,
+        model_select=str(extracted_json.get("model_select") or ""),
+        model_extract=str(extracted_json.get("model_extract") or ""),
+        embedding_model=rag.embedding_model,
+        embedding_dim=rag.embedding_dim,
+        chunk_chars=rag.chunk_chars,
+        chunk_overlap=rag.chunk_overlap,
+        batch_size=rag.batch_size,
+    )
 
 
 # ----------------------------

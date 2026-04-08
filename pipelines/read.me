@@ -9,6 +9,18 @@ python pipelines/run_pipeline.py
 # Notes
 # - Search outputs: data/scopus_export/scopus_results_raw.csv, scopus_results.csv, scopus_search_report.json
 # - Pipeline status log: data/fulltext/pipeline_status.jsonl
+# - Main project overview: README.md
+# - Paper-oriented method summary: docs/methods_workflow.md
+# - If llm.enable_evaluator=true, each paper also gets llm_evaluation.json and evaluator results are added to postprocess_report.json
+# - confidence_fusion writes document/parameter confidence back into materials_extracted.json and postprocess_report.json
+# - confidence_fusion also assigns quality_tier: gold / silver / candidate
+# - evidence_grounding resolves evidence to matched file + char span + line span + table row/column when possible
+# - evidence_grounding now also writes reusable evidence_objects and parameter-level evidence_ids
+# - evaluator now uses a committee: evidence_judge + normalization_judge + consistency_judge + meta_judge
+# - evaluator writes uncertainty_types for better error analysis and review routing
+# - parameter_claims are built after confidence fusion as the minimal trusted claim unit
+# - gate_on_evaluation can block low-confidence/fail-verdict records from formal DB ingestion while still preserving audit artifacts on disk
+# - PostgreSQL view `evaluation_paper_summary` is available after schema migration for SQL analysis by journal/material/framework/verdict
 # - Preset configs: pipelines/config_profiles/high_recall.yaml, pipelines/config_profiles/high_precision.yaml
 # - Apply preset: python pipelines/apply_profile.py --profile pipelines/config_profiles/high_precision.yaml
 # - Run full pipeline without download:
@@ -25,5 +37,18 @@ python pipelines/run_pipeline.py
 # - Hybrid retrieval: python scripts/rag/hybrid_retrieve.py --query "C11 in Mg alloy"
 # - Evidence-grounded answer synthesis: python scripts/rag/answer_with_evidence.py --query "What is tau0 for CaF2?"
 # - Analytics: python scripts/analytics/materials_insight.py
+# - Publication-style case study analytics: python scripts/analytics/materials_insight.py --root data/fulltext --outdir output/analytics
 # - Human review queue: python scripts/review/build_review_queue.py
+# - Apply reviewed fixes back to extracted JSON and export feedback artifacts:
+#     python scripts/review/apply_review_feedback.py --review-csv output/review/review_queue.csv
+#   review_queue.csv supports `approved_for_ingest`; reviewed decisions are persisted per paper as `review_decision.json`
+# - Ingest manually approved papers without rerunning extraction:
+#     python scripts/review/ingest_review_approved.py --config config.yaml
+# - Re-audit existing extracted papers only: python scripts/eval/audit_extractions.py --config config.yaml
 # - Quality gate (after eval): python scripts/eval/quality_gate.py --metrics-dir results/eval/metrics --output results/eval/metrics/quality_gate.json
+# - Judge benchmark: python scripts/eval/judge_benchmark.py --review-csv output/review/review_queue.csv --pred-root data/fulltext --output results/eval/metrics/metrics_judge.json
+# - Utility under confidence filtering: python scripts/eval/utility_by_confidence.py --pred-root data/fulltext --output results/eval/metrics/metrics_utility_by_confidence.json
+# - Optional evaluator feedback memory file: llm.evaluation_feedback_json (used to inject reviewed failure patterns into committee prompts)
+# - Chatbot UI:
+#     .venv/bin/pip install streamlit
+#     .venv/bin/streamlit run chatbot_ui.py

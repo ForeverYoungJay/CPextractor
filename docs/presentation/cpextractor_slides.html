@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CPextractor Project Presentation</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --paper: #fffaf3;
+      --ink: #1e2430;
+      --muted: #576070;
+      --accent: #b8542f;
+      --accent-2: #0f766e;
+      --accent-3: #d7a64a;
+      --border: rgba(30, 36, 48, 0.12);
+      --shadow: 0 18px 55px rgba(41, 28, 18, 0.12);
+      --slide-w: 1280px;
+      --slide-h: 720px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(184, 84, 47, 0.14), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.12), transparent 20%),
+        linear-gradient(135deg, #f2ece1 0%, #f8f3eb 45%, #efe6d9 100%);
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    .deck {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      opacity: 0;
+      transform: translateX(80px) scale(0.98);
+      transition: opacity 320ms ease, transform 320ms ease;
+      pointer-events: none;
+      padding: 32px;
+    }
+
+    .slide.active {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .frame {
+      width: min(calc(100vw - 64px), var(--slide-w));
+      height: min(calc(100vh - 96px), var(--slide-h));
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 250, 243, 0.97));
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      position: relative;
+    }
+
+    .frame::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(120deg, rgba(255, 255, 255, 0.8), transparent 35%),
+        linear-gradient(180deg, rgba(184, 84, 47, 0.05), transparent 70%);
+      pointer-events: none;
+    }
+
+    .topbar,
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 32px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      font-size: 13px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .page {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      padding: 8px 44px 16px;
+      display: grid;
+      gap: 24px;
+      align-content: center;
+    }
+
+    h1, h2, h3, p, ul {
+      margin: 0;
+    }
+
+    h1 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 56px;
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+      max-width: 800px;
+    }
+
+    h2 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 40px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      max-width: 860px;
+    }
+
+    .subtitle,
+    .lead {
+      font-size: 22px;
+      line-height: 1.45;
+      color: var(--muted);
+      max-width: 860px;
+    }
+
+    .lead strong,
+    .metric strong {
+      color: var(--ink);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 28px;
+      align-items: center;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .card,
+    .metric,
+    .stage,
+    .flow-box {
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(30, 36, 48, 0.09);
+      border-radius: 22px;
+      padding: 20px 22px;
+      backdrop-filter: blur(6px);
+    }
+
+    .card h3,
+    .metric h3,
+    .stage h3 {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .card p,
+    .metric p,
+    .stage p,
+    .footer-note {
+      font-size: 18px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 34px;
+      margin-bottom: 6px;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    .bullet-list {
+      display: grid;
+      gap: 12px;
+      padding: 0;
+      list-style: none;
+      max-width: 880px;
+    }
+
+    .bullet-list li {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 12px;
+      align-items: start;
+      font-size: 22px;
+      line-height: 1.45;
+      color: var(--ink);
+    }
+
+    .bullet-list li::before {
+      content: "";
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      margin-top: 11px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-3));
+      box-shadow: 0 0 0 5px rgba(184, 84, 47, 0.08);
+    }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+    }
+
+    .stage {
+      min-height: 190px;
+      display: grid;
+      align-content: start;
+      gap: 10px;
+    }
+
+    .stage-number {
+      display: inline-flex;
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 118, 110, 0.12);
+      color: var(--accent-2);
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .stage p,
+    .mini-list {
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    .mini-list {
+      color: var(--muted);
+      display: grid;
+      gap: 6px;
+    }
+
+    .flow {
+      display: grid;
+      gap: 14px;
+    }
+
+    .flow-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .flow-box {
+      min-height: 122px;
+    }
+
+    .flow-box span {
+      display: inline-block;
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .flow-box strong {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 8px;
+    }
+
+    .arrow {
+      text-align: center;
+      font-size: 24px;
+      color: var(--accent-2);
+      font-weight: 800;
+    }
+
+    .table-look {
+      display: grid;
+      gap: 12px;
+      font-size: 18px;
+    }
+
+    .table-row {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr 1fr 1.2fr;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(30, 36, 48, 0.08);
+    }
+
+    .table-row.header {
+      background: rgba(15, 118, 110, 0.1);
+      color: var(--accent-2);
+      font-weight: 700;
+    }
+
+    .highlight {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .footer-note {
+      font-size: 15px;
+    }
+
+    .controls {
+      position: fixed;
+      right: 20px;
+      bottom: 18px;
+      display: flex;
+      gap: 10px;
+      z-index: 20;
+    }
+
+    .controls button {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 16px;
+      background: rgba(30, 36, 48, 0.88);
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .progress {
+      width: 180px;
+      height: 6px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(30, 36, 48, 0.12);
+      margin-left: 16px;
+    }
+
+    .progress span {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      transition: width 320ms ease;
+    }
+
+    @media print {
+      body {
+        overflow: visible;
+        background: #ffffff;
+      }
+
+      .deck {
+        height: auto;
+      }
+
+      .slide {
+        position: relative;
+        opacity: 1 !important;
+        transform: none !important;
+        page-break-after: always;
+        pointer-events: auto;
+        height: 100vh;
+      }
+
+      .frame {
+        width: 100%;
+        height: 100%;
+        box-shadow: none;
+      }
+
+      .controls {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck">
+    <section class="slide active">
+      <div class="frame">
+        <div class="topbar">
+          <div class="eyebrow">CPextractor</div>
+          <div class="page">Project Presentation</div>
+        </div>
+        <div class="content">
+          <div class="grid-2">
+            <div>
+              <h1>From Crystal Plasticity Papers to an Evidence-Grounded Database</h1>
+              <p class="subtitle">A literature-to-database pipeline for extracting, validating, and serving crystal plasticity parameters from the scientific literature.</p>
+            </div>
+            <div class="grid-3">
+              <div class="metric">
+                <strong>2-stage</strong>
+                <p>LLM extraction with file selection before schema-constrained parsing.</p>
+              </div>
+              <div class="metric">
+                <strong>4-layer</strong>
+                <p>Quality stack spanning rules, grounding, multi-agent judging, and confidence fusion.</p>
+              </div>
+              <div class="metric">
+                <strong>3 targets</strong>
+                <p>Database curation, RAG question answering, and materials analytics.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="footer-note">Repo focus: `pipelines/run_pipeline.py`, `postprocess/*`, `db/*`, `chatbot.py`</div>
+          <div style="display:flex; align-items:center;">
+            <div class="page">1 / 10</div>
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="frame">
+        <div class="topbar">
+          <div class="eyebrow">Motivation</div>
+          <div class="page">Why This Project Exists</div>
+        </div>
+        <div class="content">
+          <h2>Crystal plasticity parameters are valuable, but buried in heterogeneous papers.</h2>
+          <ul class="bullet-list">
+            <li>Parameters appear across prose, tables, supplementary files, and model descriptions, not in a clean machine-readable format.</li>
+            <li>Simple extraction is not enough because scientific reuse requires normalization, provenance, uncertainty, and evidence traceability.</li>
+            <li>Manual curation does not scale well when the goal is retrieval, question answering, and comparative materials analysis.</li>
+            <li><span><span class="highlight">CPextractor</span> treats the task as a full curation workflow, not only as an information extraction model.</span></li>
+          </ul>
+        </div>
+        <div class="footer">
+          <div class="footer-note">Problem framing from `docs/methods_workflow.md` and `README.md`</div>
+          <div style="display:flex; align-items:center;">
+            <div class="page">2 / 10</div>
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="frame">
+        <div class="topbar">
+          <div class="eyebrow">System View</div>
+          <div class="page">End-to-End Architecture</div>
+        </div>
+        <div class="content">
+          <h2>The project links acquisition, extraction, validation, storage, and retrieval in one pipeline.</h2>
+          <div class="flow">
+            <div class="flow-row">
+              <div class="flow-box">
+                <span>Inputs</span>
+                <strong>Scopus, DOI lists, local full text</strong>
+                <p>Candidate papers are collected from search, manual configuration, or existing local full-text folders.</p>
+              </div>
+              <div class="flow-box">
+                <span>Parsing</span>
+                <strong>Elsevier XML to evidence assets</strong>
+                <p>Each paper becomes `paper.xml`, `sections/*.md`, `tables/*.md`, and `references.json`.</p>
+              </div>
+              <div class="flow-box">
+                <span>Extraction</span>
+                <strong>Two-stage LLM extraction</strong>
+                <p>The model first picks relevant files, then fills a crystal-plasticity schema.</p>
+              </div>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="flow-row">
+              <div class="flow-box">
+                <span>Postprocess</span>
+                <strong>Normalization and binding</strong>
+                <p>Units, provenance, references, material conditions, and mechanism scope are resolved deterministically.</p>
+              </div>
+              <div class="flow-box">
+                <span>Trust</span>
+                <strong>Grounding and multi-agent QA</strong>
+                <p>Claims are tied back to spans or table cells, then reviewed by evidence, normalization, consistency, and meta judges.</p>
+              </div>
+              <div class="flow-box">
+                <span>Outputs</span>
+                <strong>Database, review queue, chatbot</strong>
+                <p>Structured records, embeddings, audits, and searchable claims are served to downstream tools.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="footer-note">Main orchestration entry point: `pipelines/run_pipeline.py`</div>
+          <div style="display:flex; align-items:center;">
+            <div class="page">3 / 10</div>
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="frame">
+        <div class="topbar">
+          <div class="eyebrow">Pipeline</div>
+          <div class="page">Operational Stages</div>
+        </div>
+        <div class="content">
+          <h2>The implemented workflow can be explained as five operational blocks.</h2>
+          <div class="pipeline">
+            <div class="stage">
+              <div class="stage-number">1</div>
+              <h3>Acquire</h3>
+              <div class="mini-list">
+                <div>DOIs from Scopus or config</div>
+                <div>Supports local paper folders</div>
+                <div>Targets repeatable batch runs</div>
+              </div>
+            </div>
+            <div class="stage">
+              <div class="stage-number">2</div>
+              <h3>Parse</h3>
+              <div class="mini-list">
+                <div>Elsevier XML ingestion</div>
+                <div>Sections and tables saved as Markdown</div>
+                <div>References extracted as JSON</div>
+              </div>
+            </div>
+            <div class="stage">
+              <div class="stage-number">3</div>
+              <h3>Extract</h3>
+              <div class="mini-list">
+                <div>Relevant file selection</div>
+                <div>Schema-constrained parameter extraction</div>
+                <div>Initial registry construction</div>
+              </div>
+            </div>
+            <div class="stage">
+              <div class="stage-number">4</div>
+              <h3>Refine</h3>
+              <div class="mini-list">
+                <div>Parameter and unit normalization</div>
+                <div>Condition and mechanism binding</div>
+                <div>Evidence grounding and claim building</div>
+              </div>
+            </div>
+            <div class="stage">
+              <div class="stage-number">5</div>
+              <h3>Gate + Serve</h3>
+              <div class="mini-list">
+                <div>Multi-agent audits and confidence fusion</div>
+                <div>DB ingest plus review artifacts</div>
+                <div>Retrieval, RAG, analytics reuse</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="footer-note">Key modules: `llm/extractor.py`, `postprocess/workflow.py`, `db/ingest*.py`</div>
+          <div style="display:flex; align-items:center;">
+            <div class="page">4 / 10</div>
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="frame">
+        <div class="topbar">
+          <div class="eyebrow">Trust Stack</div>
+          <div class="page">Why The Output Is Reviewable</div>
+        </div>
+        <div class="content">
+          <h2>Quality control is layered so confidence comes from evidence, not one model score.</h2>
+          <div class="grid-2">
+            <div class="grid-3" style="grid-template-columns: 1fr 1fr;">
+              <div class="card">
+                <h3>Layer 1: Rules</h3>
+                <p>Schema completeness, unit sanity, provenance conflicts, and physics-aware consistency checks.</p>
+              </div>
+              <div class="card">
+                <h3>Layer 2: Grounding</h3>
+                <p>Claims are mapped to files, character spans, line spans, and table cells as reusable evidence objects.</p>
+              </div>
+              <div class="card">
+                <h3>Layer 3: Judges</h3>
+                <p>Evidence, normalization, consistency, and meta judges assess scientific support and extraction reliability.</p>
+              </div>
+              <div class="card">
+                <h3>Layer 4: Fusion</h3>
+                <p>Rule scores and judge outputs become calibrated document confidence and quality tiers.</p>
+              </div>
+            </div>
+            <div class="card" style="padding: 26px;">
+              <h3>Result</h3>
+              <p class="lead" style="font-size: 24px;">The system can block low-quality papers from formal ingest while still keeping audit artifacts for manual review and later recovery.</p>
+              <div class="table-look" style="margin-top: 18px;">
+                <div class="table-row header">
+                  <div>Signal</div>
+                  <div>Level</div>
+                  <div>Output</div>
+                  <div>Use</div>
+                </div>
+                <div class="table-row">
+                  <div>Rule validation</div>
+                  <div>Record</div>
+                  <div>Report flags</div>
+                  <div>Fast rejection / cleanup</div>
+                </div>
+                <div class="table-row">
+                  <div>Evidence grounding</div>
+                  <div>Claim</div>
+                  <div>`evidence_objects`</div>
+                  <div>Traceability</div>
+                </div>
+                <div class="table-row">
+                  <div>Judge verdicts</div>
+                  <div>Claim + paper</div>
+                  <div>Audits</div>
+                  <div>Human review support</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="footer-note">Implemented in `postprocess/evidence_grounding.py`, `llm/evaluator.py`, and `postprocess/confidence_fusion.py`</div>
+          <div style="display:flex; align-items:center;">
+            <div class="page">5 / 10</div>
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="frame">
+        <div class="topbar">
+          <div class="eyebrow">Data Model</div>
+          <div class="page">What The System Stores</div>
+        </div>
+        <div class="content">
+          <h2>The core design moves from raw extracted records to reusable, publication-grade claims.</h2>
+          <div class="flow">
+            <div class="flow-row">
+              <div class="flow-box">
+                <span>Registry</span>
+                <strong>`parameters.registry`</strong>
+                <p>One extracted record per parameter mention with normalized identity, values, scope, provenance, and confidence.</p>
+              </div>
+              <div class="flow-box">
+                <span>Evidence</span>
+                <strong>`evidence_objects`</strong>
+                <p>Reusable local evidence spans and table-cell references for traceability and later retrieval.</p>
+              </div>
+              <div class="flow-box">
+                <span>Claims</span>
+                <strong>`parameter_claims`</strong>
+                <p>The smallest trusted unit for review, auditing, database ingest, and downstream analytics.</p>
+              </div>
+            </div>
+          </div>
+          <div class="table-look">
+            <div class="table-row header">
+              <div>Claim field</div>
+              <div>Meaning</div>
+              <div>Why it matters</div>
+              <div>Example value</div>
+            </div>
+            <div class="table-row">
+              <div>`canonical_name`</div>
+              <div>Normalized parameter identity</div>
+              <div>Comparable across papers</div>
+              <div>critical resolved shear stress</div>
+            </div>
+            <div class="table-row">
+              <div>`applies_to` + binding</div>
+              <div>Phase, family, mechanism, loading scope</div>
+              <div>Prevents context collapse</div>
+              <div>FCC, slip family, phase-specific</div>
+            </div>
+            <div class="table-row">
+              <div>`evidence_ids` + provenance</div>
+              <div>Source trace</div>
+              <div>Auditable scientific reuse</div>
+              <div>section span or table cell</div>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="footer-note">Schema details live in `README.md` and `schema.sql`</div>
+          <div style="display:flex; align-items:center;">
+            <div class="page">6 / 10</div>
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="frame">
+        <div class="topbar">
+          <div class="eyebrow">Database + Retrieval</div>
+          <div class="page">How The Outputs Are Used</div>
+        </div>
+        <div class="content">
+          <h2>The same pipeline supports curation, retrieval, and evidence-grounded chatbot answers.</h2>
+          <div class="grid-3">
+            <div class="card">
+              <h3>Structured tables</h3>
+              <p>`papers`, `extractions`, `references`, and claim-aware tables organize curated scientific content for downstream use.</p>
+            </div>
+            <div class="card">
+              <h3>Vector layers</h3>
+              <p>`chunks` and `parameter_vectors` allow semantic retrieval over full text and over parameter-level scientific statements.</p>
+            </div>
+            <div class="card">
+              <h3>Evaluation tables</h3>
+              <p>`pipeline_runs`, `evaluation_runs`, `parameter_audits`, and summaries preserve model behavior and review evidence.</p>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Hybrid retrieval in the chatbot</h3>
+            <p class="lead" style="font-size: 22px;">`chatbot.py` combines vector retrieval over chunks, vector retrieval over parameter claims, and structured SQL search over extracted JSON. The answer model is instructed to respond only from the supplied evidence.</p>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="footer-note">This gives the project a clear path from extraction to user-facing scientific QA.</div>
+          <div style="display:flex; align-items:center;">
+            <div class="page">7 / 10</div>
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="frame">
+        <div class="topbar">
+          <div class="eyebrow">Evaluation</div>
+          <div class="page">How To Measure Success</div>
+        </div>
+        <div class="content">
+          <h2>The evaluation framework is already set up around three complementary questions.</h2>
+          <div class="grid-3">
+            <div class="metric">
+              <strong>A</strong>
+              <h3>Extraction correctness</h3>
+              <p>Field precision/recall, numeric accuracy, unit normalization, provenance completeness.</p>
+            </div>
+            <div class="metric">
+              <strong>B</strong>
+              <h3>Judge correctness</h3>
+              <p>Brier score, ECE, wrong-at-high-confidence, agreement with reviewed annotations.</p>
+            </div>
+            <div class="metric">
+              <strong>C</strong>
+              <h3>Database utility</h3>
+              <p>Retrieval hit rate, QA grounding rate, analyst query success, downstream analytics consistency.</p>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Practical message for the presentation</h3>
+            <p>The project is not only asking “did the model parse a number correctly?” It also asks whether the curated result is trustworthy enough to ingest, searchable enough to retrieve, and grounded enough to support a scientific answer.</p>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="footer-note">Evaluation scripts are organized under `scripts/eval/`</div>
+          <div style="display:flex; align-items:center;">
+            <div class="page">8 / 10</div>
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="frame">
+        <div class="topbar">
+          <div class="eyebrow">Impact</div>
+          <div class="page">What This Enables</div>
+        </div>
+        <div class="content">
+          <h2>CPextractor can be positioned as both an extraction system and a curation infrastructure.</h2>
+          <div class="grid-2">
+            <div>
+              <ul class="bullet-list">
+                <li>Build a reusable crystal plasticity parameter database without manually transcribing every paper.</li>
+                <li>Support evidence-grounded RAG so answers can cite exact text spans or table cells.</li>
+                <li>Create analyst workflows for comparison across materials, phases, mechanisms, and loading conditions.</li>
+                <li>Generate review packets and audit trails that make human-in-the-loop correction tractable.</li>
+              </ul>
+            </div>
+            <div class="grid-3" style="grid-template-columns: 1fr;">
+              <div class="card">
+                <h3>Database paper angle</h3>
+                <p>Focus on curation, provenance, quality tiers, retrieval, and reusable scientific infrastructure.</p>
+              </div>
+              <div class="card">
+                <h3>Information extraction paper angle</h3>
+                <p>Focus on file selection, scientific schema extraction, grounding, and evaluation under uncertainty.</p>
+              </div>
+              <div class="card">
+                <h3>Demo angle</h3>
+                <p>Show one paper becoming claims, audits, DB records, and a chatbot answer backed by evidence.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="footer-note">This dual positioning is stated directly in `docs/methods_workflow.md`</div>
+          <div style="display:flex; align-items:center;">
+            <div class="page">9 / 10</div>
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="frame">
+        <div class="topbar">
+          <div class="eyebrow">Close</div>
+          <div class="page">Takeaway + Next Steps</div>
+        </div>
+        <div class="content">
+          <h2>Takeaway</h2>
+          <p class="lead">CPextractor is already structured as a credible research system because it connects extraction to traceable evidence, calibrated quality control, formal database ingest, and user-facing retrieval.</p>
+          <div class="grid-3">
+            <div class="card">
+              <h3>Short-term next step</h3>
+              <p>Run annotated benchmarks on a fixed paper set and report claim-level accuracy plus judge calibration.</p>
+            </div>
+            <div class="card">
+              <h3>Strong live demo</h3>
+              <p>Walk one DOI through parsing, extraction, grounding, review queue generation, and hybrid chatbot retrieval.</p>
+            </div>
+            <div class="card">
+              <h3>Presentation ending line</h3>
+              <p><span class="highlight">The goal is not just to read papers automatically, but to turn them into trustworthy scientific infrastructure.</span></p>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="footer-note">Use arrow keys or on-screen buttons to present. Browser print can export this deck to PDF.</div>
+          <div style="display:flex; align-items:center;">
+            <div class="page">10 / 10</div>
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="controls">
+    <button id="prevBtn" type="button">Previous</button>
+    <button id="nextBtn" type="button">Next</button>
+  </div>
+
+  <script>
+    const slides = [...document.querySelectorAll(".slide")];
+    let index = 0;
+
+    function updateSlides() {
+      slides.forEach((slide, i) => {
+        slide.classList.toggle("active", i === index);
+        const progress = slide.querySelector(".progress span");
+        if (progress) {
+          progress.style.width = `${((i + 1) / slides.length) * 100}%`;
+        }
+      });
+    }
+
+    function nextSlide() {
+      index = Math.min(index + 1, slides.length - 1);
+      updateSlides();
+    }
+
+    function prevSlide() {
+      index = Math.max(index - 1, 0);
+      updateSlides();
+    }
+
+    document.getElementById("nextBtn").addEventListener("click", nextSlide);
+    document.getElementById("prevBtn").addEventListener("click", prevSlide);
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
+        event.preventDefault();
+        nextSlide();
+      }
+      if (event.key === "ArrowLeft" || event.key === "PageUp") {
+        event.preventDefault();
+        prevSlide();
+      }
+      if (event.key.toLowerCase() === "home") {
+        index = 0;
+        updateSlides();
+      }
+      if (event.key.toLowerCase() === "end") {
+        index = slides.length - 1;
+        updateSlides();
+      }
+    });
+
+    updateSlides();
+  </script>
+</body>
+</html>

@@ -25,9 +25,17 @@ llm:
   max_snippet_chars: 600
   max_context_chars: 24000
   max_extract_retries: 2
+  enable_evaluator: false
+  model_evaluate: "gpt-4.1-mini"
+  max_evaluate_context_chars: 18000
+  max_evaluate_retries: 2
+  evaluate_parameter_limit: 40
+  evaluate_parameter_batch_size: 12
+  evaluate_evidence_chars: 800
+  evaluation_feedback_json: "output/review/prompt_feedback.json"
   enable_source_enrichment: true
   prompt_version: "v2.0.0"
-  schema_version: "2.0.0"
+  schema_version: "3.0.0"
   extractor_version: "extractor_v2"
   model_select: "gpt-4.1-mini"
   model_extract: "gpt-4.1-mini"
@@ -51,4 +59,25 @@ pipeline:
   skip_fulltext_download: false
   prefer_local_fulltext: true
   use_local_fulltext_dois: false
+  local_fulltext_input_root: ""
   dois: []
+  gate_on_evaluation: true
+  db_ingest_block_verdicts: ["fail"]
+  db_ingest_min_document_confidence_score: 65.0
+  db_ingest_block_review_escalation_on_pass: false
+  db_ingest_review_escalation_pass_min_confidence_score: 85.0
+  db_ingest_review_escalation_pass_max_review_required_parameters: 2
+  image_backed_tables:
+    enabled: true
+    model: "gpt-4.1-mini"
+    preprocess: true
+    relevant_keywords:
+      - "crystal plasticity"
+      - "cpfe"
+      - "slip"
+      - "hardening"
+      - "elastic"
+      - "plastic"
+      - "constitutive"
+      - "parameter"
+      - "property"

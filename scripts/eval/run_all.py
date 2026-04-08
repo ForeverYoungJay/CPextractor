@@ -33,10 +33,13 @@ def _write_csv(path: Path, rows: List[Dict[str, object]]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="One-click evaluation runner for CPextractor.")
     ap.add_argument("--gold", required=True, help="Gold labels (.json/.jsonl)")
+    ap.add_argument("--gold-claims", default="", help="Optional annotated claim-level gold jsonl")
     ap.add_argument("--pred-root", required=True, help="Root folder containing DOI subfolders")
     ap.add_argument("--qrels", required=True, help="Retrieval qrels jsonl")
     ap.add_argument("--runs", required=True, help="Retrieval runs jsonl")
     ap.add_argument("--pipeline-csv", required=True, help="pipeline_runs export CSV")
+    ap.add_argument("--review-csv", default="", help="Optional reviewed queue CSV for judge benchmark")
+    ap.add_argument("--qa-jsonl", default="", help="Optional QA result jsonl for utility-by-confidence")
     ap.add_argument("--outdir", default="results/eval")
     ap.add_argument("--method-name", default="CPextractor")
     ap.add_argument("--ks", default="5,10")
@@ -63,6 +66,11 @@ def main() -> None:
     cost_json = metrics_dir / "metrics_cost.json"
     error_json = metrics_dir / "metrics_errors.json"
     gate_json = metrics_dir / "quality_gate.json"
+    judge_json = metrics_dir / "metrics_judge.json"
+    utility_json = metrics_dir / "metrics_utility_by_confidence.json"
+    benchmark_claims_json = metrics_dir / "benchmark_claims.json"
+    benchmark_gate_json = metrics_dir / "benchmark_gate.json"
+    benchmark_slices_json = metrics_dir / "benchmark_slices.json"
 
     # 1) normalize gold
     _run([
@@ -186,6 +194,72 @@ def main() -> None:
         cmd.extend(["--postprocess-report", str(postprocess_report)])
     _run(cmd)
 
+    # 11) judge benchmark (optional)
+    if args.review_csv:
+        _run([
+            py,
+            str(eval_dir / "judge_benchmark.py"),
+            "--review-csv",
+            args.review_csv,
+            "--pred-root",
+            args.pred_root,
+            "--output",
+            str(judge_json),
+        ])
+
+    # 12) downstream utility under confidence filtering
+    utility_cmd = [
+        py,
+        str(eval_dir / "utility_by_confidence.py"),
+        "--pred-root",
+        args.pred_root,
+        "--output",
+        str(utility_json),
+    ]
+    if args.qrels and args.runs:
+        utility_cmd.extend(["--qrels", args.qrels, "--runs", args.runs])
+    if args.qa_jsonl:
+        utility_cmd.extend(["--qa-jsonl", args.qa_jsonl])
+    _run(utility_cmd)
+
+    if args.gold_claims:
+        _run([
+            py,
+            str(eval_dir / "benchmark_claims.py"),
+            "--gold",
+            args.gold_claims,
+            "--pred-root",
+            args.pred_root,
+            "--output",
+            str(benchmark_claims_json),
+            "--by-paper-csv",
+            str(tables_dir / "table_bundle_completeness.csv"),
+        ])
+        _run([
+            py,
+            str(eval_dir / "benchmark_gate.py"),
+            "--gold",
+            args.gold_claims,
+            "--pred-root",
+            args.pred_root,
+            "--output",
+            str(benchmark_gate_json),
+            "--by-paper-csv",
+            str(tables_dir / "table_gate_by_paper.csv"),
+        ])
+        _run([
+            py,
+            str(eval_dir / "benchmark_slices.py"),
+            "--gold",
+            args.gold_claims,
+            "--pred-root",
+            args.pred_root,
+            "--output",
+            str(benchmark_slices_json),
+            "--output-csv",
+            str(tables_dir / "table_slice_results.csv"),
+        ])
+
     field = _load_json(field_json)
     numeric = _load_json(numeric_json)
     unit = _load_json(unit_json)
@@ -194,6 +268,10 @@ def main() -> None:
     cost = _load_json(cost_json)
     errors = _load_json(error_json)
     gate = _load_json(gate_json)
+    judge = _load_json(judge_json) if judge_json.exists() else {}
+    utility = _load_json(utility_json) if utility_json.exists() else {}
+    benchmark_claims = _load_json(benchmark_claims_json) if benchmark_claims_json.exists() else {}
+    benchmark_gate = _load_json(benchmark_gate_json) if benchmark_gate_json.exists() else {}
 
     # Table 1: main extraction result table
     table_main = [
@@ -210,9 +288,29 @@ def main() -> None:
             "citation_f1": citation.get("f1"),
             "cost_per_paper_usd": cost.get("cost_per_paper_usd"),
             "time_seconds_per_paper": cost.get("time_seconds_per_paper"),
+            "judge_f1_error_detection": judge.get("f1_error_detection"),
+            "kept_doc_ratio_after_confidence_filter": utility.get("document_keep_ratio"),
+            "claim_benchmark_f1": benchmark_claims.get("claim_detection", {}).get("f1"),
+            "gate_blocked_rate": benchmark_gate.get("blocked_rate"),
         }
     ]
     _write_csv(tables_dir / "table_main_results.csv", table_main)
+
+    _write_csv(
+        tables_dir / "table_extraction_correctness.csv",
+        [
+            {
+                "method": args.method_name,
+                "field_precision": field.get("micro", {}).get("precision"),
+                "field_recall": field.get("micro", {}).get("recall"),
+                "field_f1": field.get("micro", {}).get("f1"),
+                "exact_match_proxy_f1": field.get("micro", {}).get("f1"),
+                "normalized_value_accuracy_proxy": numeric.get("within_tolerance_ratio"),
+                "unit_normalization_accuracy": unit.get("unit_accuracy"),
+                "provenance_completeness_proxy": citation.get("recall"),
+            }
+        ],
+    )
 
     # Table 2: retrieval table
     table_retrieval = [
@@ -259,6 +357,65 @@ def main() -> None:
     _write_csv(
         tables_dir / "table_quality_gate.csv",
         [{"method": args.method_name, "pass": gate.get("pass"), "failed_count": len(gate.get("failed", []))}],
+    )
+
+    _write_csv(
+        tables_dir / "table_judge_results.csv",
+        [
+            {
+                "method": args.method_name,
+                "samples": judge.get("samples"),
+                "precision_error_detection": judge.get("precision_error_detection"),
+                "recall_error_detection": judge.get("recall_error_detection"),
+                "f1_error_detection": judge.get("f1_error_detection"),
+                "accuracy": judge.get("accuracy"),
+                "brier_score": judge.get("brier_score"),
+                "ece": judge.get("ece"),
+                "cohen_kappa": judge.get("cohen_kappa"),
+                "wrong_at_high_confidence": judge.get("wrong_at_high_confidence"),
+            }
+        ] if judge else [],
+    )
+
+    _write_csv(
+        tables_dir / "table_judge_correctness.csv",
+        [
+            {
+                "method": args.method_name,
+                "evidence_judge_f1": ((judge.get("by_judge") or {}).get("evidence_judge") or {}).get("f1"),
+                "normalization_judge_f1": ((judge.get("by_judge") or {}).get("normalization_judge") or {}).get("f1"),
+                "consistency_judge_f1": ((judge.get("by_judge") or {}).get("consistency_judge") or {}).get("f1"),
+                "meta_judge_accuracy": judge.get("accuracy"),
+                "meta_judge_doc_level_accuracy": ((judge.get("by_judge") or {}).get("meta_judge_doc_level") or {}).get("accuracy"),
+                "meta_judge_kappa": judge.get("cohen_kappa"),
+                "judge_brier_score": judge.get("brier_score"),
+                "judge_ece": judge.get("ece"),
+                "wrong_at_high_confidence": judge.get("wrong_at_high_confidence"),
+            }
+        ] if judge else [],
+    )
+
+    _write_csv(
+        tables_dir / "table_utility_by_confidence.csv",
+        [
+            {
+                "method": args.method_name,
+                "documents_total": utility.get("documents_total"),
+                "documents_kept": utility.get("documents_kept"),
+                "document_keep_ratio": utility.get("document_keep_ratio"),
+                "gold_docs": utility.get("gold_docs"),
+                "silver_docs": utility.get("silver_docs"),
+                "candidate_docs": utility.get("candidate_docs"),
+                "avg_document_confidence_score_kept": utility.get("avg_document_confidence_score_kept"),
+                "avg_rule_score_kept": utility.get("avg_rule_score_kept"),
+                "avg_evidence_grounding_score_kept": utility.get("avg_evidence_grounding_score_kept"),
+                "structured_retrieval_hit_rate": utility.get("structured_retrieval_hit_rate"),
+                "retrieval_relevant_coverage": utility.get("retrieval_relevant_coverage"),
+                "rag_answer_grounding_rate": utility.get("rag_answer_grounding_rate"),
+                "analyst_query_success_rate": utility.get("analyst_query_success_rate"),
+                "downstream_analytics_consistency": utility.get("downstream_analytics_consistency"),
+            }
+        ] if utility else [],
     )
 
     print("\nDone. Outputs:")

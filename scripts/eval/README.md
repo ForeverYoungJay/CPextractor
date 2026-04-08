@@ -9,6 +9,139 @@ python3 scripts/eval/normalize_gold.py --input gold.jsonl --output gold_norm.jso
 python3 scripts/eval/normalize_pred.py --input-root data/fulltext --output pred_norm.json
 ```
 
+## 0) Export claim-level annotation draft
+
+Use model output as a pre-annotation draft, then let humans correct it.
+
+```bash
+python3 scripts/eval/export_annotation_draft.py \
+  --input-root data/fulltext \
+  --source materials_extracted.json \
+  --output data/annotations/annotation_draft.jsonl
+```
+
+Convert draft jsonl into an editable CSV sheet:
+
+```bash
+python3 scripts/eval/export_annotation_sheet.py \
+  --input data/annotations/annotation_draft.jsonl \
+  --output data/annotations/annotation_draft.csv \
+  --profile compact
+```
+
+`--profile compact` keeps the sheet simple:
+- `material_name`
+- `canonical_name`
+- `symbol`
+- `value`
+- `unit`
+- `scope.phase_id`
+- `scope.family_name`
+- `scope.mechanism`
+- `annotation.status`
+- `annotation.notes`
+
+Use `--profile full` only when you want to annotate grounding/provenance details too.
+
+After editing in Excel/Numbers, convert it back:
+
+```bash
+python3 scripts/eval/import_annotation_sheet.py \
+  --input data/annotations/annotation_draft.csv \
+  --output data/annotations/gold_claims.jsonl
+```
+
+Export one file per paper for paper-by-paper annotation:
+
+```bash
+python3 scripts/eval/export_annotation_packets.py \
+  --input-root data/fulltext \
+  --source materials_extracted.json \
+  --output-root data/annotations/packets \
+  --csv-profile compact
+```
+
+This creates:
+
+- `data/annotations/packets/manifest.csv`
+- one folder per DOI, each with:
+  - `claims.csv` (compact by default: parameter, value, unit, light phase/family/mechanism scope, minimal annotation columns; no DOI/claim ID columns)
+  - `claims.jsonl`
+  - `packet_meta.json`
+  - `README.md`
+
+Recommended packet workflow:
+
+1. Open one paper folder and edit `claims.csv`.
+2. Only change:
+   - `material_name`
+   - `canonical_name`
+   - `symbol`
+   - `value`
+   - `unit`
+   - `scope.phase_id`
+   - `scope.family_name`
+   - `scope.mechanism`
+   - `annotation.status`
+   - `annotation.notes`
+3. Keep `claims.jsonl` unchanged; it stores the full original context.
+4. After editing all desired packets, build a combined gold file:
+
+```bash
+python3 scripts/eval/build_gold_from_packets.py \
+  --packets-root data/annotations/packets \
+  --output data/annotations/gold_claims.jsonl \
+  --write-per-packet-jsonl
+```
+
+## 0b) Benchmarks after manual annotation
+
+Claim-level benchmark:
+
+```bash
+python3 scripts/eval/benchmark_claims.py \
+  --gold data/annotations/gold_claims.jsonl \
+  --pred-root data/fulltext \
+  --pred-source materials_extracted.json \
+  --output results/eval/metrics/benchmark_claims.json \
+  --by-paper-csv results/eval/tables/table_bundle_completeness.csv
+```
+
+Gate / ingest benchmark:
+
+```bash
+python3 scripts/eval/benchmark_gate.py \
+  --gold data/annotations/gold_claims.jsonl \
+  --pred-root data/fulltext \
+  --output results/eval/metrics/benchmark_gate.json \
+  --by-paper-csv results/eval/tables/table_gate_by_paper.csv
+```
+
+Difficulty-slice benchmark:
+
+```bash
+python3 scripts/eval/benchmark_slices.py \
+  --gold data/annotations/gold_claims.jsonl \
+  --pred-root data/fulltext \
+  --pred-source materials_extracted.json \
+  --output results/eval/metrics/benchmark_slices.json \
+  --output-csv results/eval/tables/table_slice_results.csv
+```
+
+These scripts are the most useful after your 50-paper annotation pass. They summarize:
+- claim precision / recall / F1
+- value / unit / canonical-name accuracy
+- grounding accuracy when gold grounding is annotated
+- bundle completeness
+- gate rate / ingest rate / gate-reason distribution
+- slice-wise results for image-backed tables, grouped rows, missing-unit cases, etc.
+
+Reference schema and examples:
+
+- `docs/annotation_schema.md`
+- `docs/gold_claims.example.jsonl`
+- `docs/gold_bundles.example.jsonl`
+
 ## 2) Main extraction metrics
 
 ```bash
@@ -57,6 +190,40 @@ python3 scripts/eval/quality_gate.py \
   --output results/eval/metrics/quality_gate.json
 ```
 
+## 7) Judge benchmark against reviewed queue
+
+```bash
+python3 scripts/eval/judge_benchmark.py \
+  --review-csv output/review/review_queue.csv \
+  --pred-root data/fulltext \
+  --output results/eval/metrics/metrics_judge.json
+```
+
+Outputs include:
+- `precision_error_detection`
+- `recall_error_detection`
+- `f1_error_detection`
+- `brier_score`
+- `ece`
+- `cohen_kappa`
+- `wrong_at_high_confidence`
+- `risk_coverage_curve`
+- `by_judge.evidence_judge`
+- `by_judge.normalization_judge`
+- `by_judge.consistency_judge`
+- `by_judge.meta_judge_doc_level`
+
+## 8) Utility under confidence filtering
+
+```bash
+python3 scripts/eval/utility_by_confidence.py \
+  --pred-root data/fulltext \
+  --qrels qrels.jsonl \
+  --runs runs.jsonl \
+  --qa-jsonl qa_results.jsonl \
+  --output results/eval/metrics/metrics_utility_by_confidence.json
+```
+
 ## One-click full run (9 scripts + paper CSV tables)
 
 ```bash
@@ -66,6 +233,7 @@ python3 scripts/eval/run_all.py \
   --qrels qrels.jsonl \
   --runs runs.jsonl \
   --pipeline-csv pipeline_runs.csv \
+  --review-csv output/review/review_queue.csv \
   --outdir results/eval \
   --method-name CPextractor \
   --ks 5,10 \
@@ -76,7 +244,16 @@ python3 scripts/eval/run_all.py \
 Generated files:
 - `results/eval/metrics/*.json`
 - `results/eval/tables/table_main_results.csv`
+- `results/eval/tables/table_extraction_correctness.csv`
 - `results/eval/tables/table_retrieval_results.csv`
 - `results/eval/tables/table_error_buckets.csv`
 - `results/eval/tables/table_field_by_prefix.csv`
 - `results/eval/tables/table_quality_gate.csv`
+- `results/eval/tables/table_judge_results.csv`
+- `results/eval/tables/table_judge_correctness.csv`
+- `results/eval/tables/table_utility_by_confidence.csv`
+
+Paper-facing interpretation:
+- `table_extraction_correctness.csv`: extraction correctness
+- `table_judge_correctness.csv`: judge correctness
+- `table_utility_by_confidence.csv`: database utility

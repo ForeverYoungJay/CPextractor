@@ -49,6 +49,17 @@ def _norm_origin_type(v: Any) -> str | None:
     return _ORIGIN_TYPE_MAP.get(key, key)
 
 
+def _derive_origin_type(origin: str | None, has_adopted_evidence: bool, has_calibration_evidence: bool) -> str | None:
+    origin = _norm_origin_type(origin)
+    if has_adopted_evidence and has_calibration_evidence:
+        return "adopted_then_calibrated"
+    if has_calibration_evidence and origin in {None, "adopted_then_calibrated"}:
+        return "calibrated"
+    if has_adopted_evidence and origin in {None, "adopted_then_calibrated"}:
+        return "adopted"
+    return origin
+
+
 def _normalize_source(src: Dict[str, Any], report: Dict[str, int]) -> None:
     before = dict(src)
 
@@ -82,15 +93,20 @@ def _normalize_source(src: Dict[str, Any], report: Dict[str, int]) -> None:
     if this_study_calibrated:
         src["calibration_in_this_study"] = True
 
-    # Enforce compact source; reference metadata belongs to top-level references.
+    has_adopted_evidence = bool(adopted_ids)
+    has_calibration_evidence = bool(calib_ids or this_study_calibrated or str(src.get("calibration_method") or "").strip())
+    derived_origin = _derive_origin_type(origin, has_adopted_evidence, has_calibration_evidence)
+    if derived_origin is not None and derived_origin != src.get("origin_type"):
+        src["origin_type"] = derived_origin
+        report["sources_normalized"] += 1
+
+    # Keep raw-like provenance in source; do not collapse resolved reference objects.
     src.pop("adopted_references", None)
     src.pop("calibration_references", None)
-    src.pop("references", None)
     src.pop("citations", None)
     src.pop("adopted_citations", None)
     src.pop("calibration_citations", None)
 
-    # Keep source compact.
     src.pop("calibration_targets", None)
     src.pop("validation_targets", None)
 
@@ -115,5 +131,7 @@ def normalize_provenance(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any]
         _normalize_source(src, report)
         if (not before_flag) and bool(src.get("calibration_in_this_study")):
             report["non_reference_calibration_marked"] += 1
+        src.pop("provenance_id", None)
 
+    extracted_json.pop("provenance_records", None)
     return extracted_json, report

@@ -1,7 +1,12 @@
 import argparse
+import sys
 from typing import Any, Dict, List
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from common import load_json, load_jsonl, save_json
+from postprocess.param_iter import iter_parameter_items_with_index
 
 
 def _to_number(v: Any):
@@ -30,6 +35,21 @@ def _factor_to_si(unit: str) -> float | None:
 
 
 def normalize_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+    registry = ((doc.get("parameters") or {}).get("registry") or [])
+    if isinstance(registry, list) and registry:
+        for _, _, p in iter_parameter_items_with_index(doc):
+            value = _to_number(p.get("value"))
+            unit = p.get("unit")
+            fac = _factor_to_si(unit)
+            if value is not None and fac is not None:
+                p["value"] = value
+                p["value_SI"] = value * fac
+                p["unit_SI"] = "Pa" if (unit or "").lower() in {"pa", "kpa", "mpa", "gpa"} else unit
+            symbol = p.get("symbol") or p.get("canonical_name")
+            if symbol is not None:
+                p["symbol"] = str(symbol).strip()
+        return doc
+
     for block, key in (("elastic_parameters", "constants"), ("plastic_parameters", "parameters")):
         items: List[Dict[str, Any]] = doc.get(block, {}).get(key, [])
         for p in items:

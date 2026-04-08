@@ -1,42 +1,35 @@
 from postprocess.param_iter import iter_parameter_items
+from postprocess.record_links import resolve_provenance_record
 
 
 def ingest_references(conn, paper_doi, extracted_json):
     # Keep inserts idempotent across reruns.
     conn.execute("DELETE FROM parameter_references WHERE paper_doi = %s;", (paper_doi,))
-
-    # Canonical reference dictionary comes from top-level references.
-    top_level_refs = extracted_json.get("references", []) or []
-    ref_by_label = {}
-    for r in top_level_refs:
-        if not isinstance(r, dict):
-            continue
-        label = str(r.get("reference_id") or r.get("label") or "").strip()
-        if not label:
-            continue
-        ref_by_label[label] = r
+    conn.execute("DELETE FROM paper_references WHERE paper_doi = %s;", (paper_doi,))
 
     for block, p in iter_parameter_items(extracted_json):
             src = p.get("source", {})
-            source_type = src.get("origin_type") or src.get("type")
+            provenance = resolve_provenance_record(extracted_json, src if isinstance(src, dict) else {})
+            source_type = provenance.get("origin_type") or (src.get("type") if isinstance(src, dict) else None)
             validation_targets = None
 
-            ref_ids = []
-            ref_ids.extend(src.get("reference_ids", []) or [])
-            ref_ids.extend(src.get("adopted_from_reference_ids", []) or [])
-            ref_ids.extend(src.get("calibration_based_on_reference_ids", []) or [])
+            refs = []
+            refs.extend(provenance.get("references", []) or [])
+            refs.extend(provenance.get("adopted_from_references", []) or [])
+            refs.extend(provenance.get("calibration_based_on_references", []) or [])
 
             seen_ids = set()
-            dedup_ids = []
-            for rid in ref_ids:
-                label = str(rid or "").strip()
+            dedup_refs = []
+            for ref in refs:
+                if not isinstance(ref, dict):
+                    continue
+                label = str(ref.get("reference_id") or ref.get("label") or "").strip()
                 if not label or label in seen_ids:
                     continue
                 seen_ids.add(label)
-                dedup_ids.append(label)
+                dedup_refs.append((label, ref))
 
-            for label in dedup_ids:
-                c = ref_by_label.get(label, {})
+            for label, c in dedup_refs:
                 ref_doi = str(c.get("doi") or "").strip()
                 if not ref_doi:
                     continue
@@ -84,7 +77,7 @@ def ingest_references(conn, paper_doi, extracted_json):
                         label,
                         ref_doi,
                         source_type,
-                        src.get("calibration_method"),
+                        provenance.get("calibration_method"),
                         validation_targets,
                     ),
                 )

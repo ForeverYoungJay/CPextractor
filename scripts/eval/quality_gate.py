@@ -18,6 +18,9 @@ def main() -> None:
     ap.add_argument("--min-citation-f1", type=float, default=0.55)
     ap.add_argument("--min-recall-at-10", type=float, default=0.60)
     ap.add_argument("--max-missing-evidence-ratio", type=float, default=0.35)
+    ap.add_argument("--min-rule-score", type=float, default=70.0)
+    ap.add_argument("--min-document-confidence-score", type=float, default=65.0)
+    ap.add_argument("--min-evidence-grounding-score", type=float, default=55.0)
     ap.add_argument("--output", required=True)
     args = ap.parse_args()
 
@@ -27,10 +30,15 @@ def main() -> None:
     retrieval = _load(str(md / "metrics_retrieval.json"))
     post = _load(args.postprocess_report) if args.postprocess_report else {}
     qc = post.get("quality_checks", {}) if isinstance(post, dict) else {}
+    cf = post.get("confidence_fusion", {}) if isinstance(post, dict) else {}
+    eg = post.get("evidence_grounding", {}) if isinstance(post, dict) else {}
 
     field_f1 = float((field.get("micro", {}) or {}).get("f1") or 0.0)
     citation_f1 = float(citation.get("f1") or 0.0)
     recall10 = float(retrieval.get("recall@10") or retrieval.get("recall@5") or 0.0)
+    rule_score = float(qc.get("rule_score") or 0.0)
+    doc_conf_score = float(cf.get("document_confidence_score") or 0.0)
+    evidence_grounding_score = float(eg.get("evidence_grounding_score") or 0.0)
 
     total = int(qc.get("total_parameters") or 0)
     missing_evidence = int(qc.get("missing_evidence") or 0)
@@ -41,6 +49,9 @@ def main() -> None:
         ("citation_f1", citation_f1, ">=", args.min_citation_f1),
         ("retrieval_recall@10", recall10, ">=", args.min_recall_at_10),
         ("missing_evidence_ratio", missing_ratio, "<=", args.max_missing_evidence_ratio),
+        ("rule_score", rule_score, ">=", args.min_rule_score),
+        ("document_confidence_score", doc_conf_score, ">=", args.min_document_confidence_score),
+        ("evidence_grounding_score", evidence_grounding_score, ">=", args.min_evidence_grounding_score),
     ]
 
     failed = []

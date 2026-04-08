@@ -1,8 +1,13 @@
 import argparse
 import json
 import math
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
+
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+
+from postprocess.param_iter import iter_parameter_items_with_index
 
 
 def load_json(path: str | Path) -> Any:
@@ -88,30 +93,18 @@ def index_by_record_id(rows: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, An
 def extract_param_rows(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     rid = doc.get("record_id") or doc.get("doi") or doc.get("source_document", {}).get("doi")
-
-    elastic = doc.get("elastic_parameters", {}).get("constants", [])
-    for p in elastic:
+    for idx, block, p in iter_parameter_items_with_index(doc):
         rows.append(
             {
                 "record_id": rid,
-                "block": "elastic",
+                "block": block,
+                "index": idx,
                 "symbol": norm_text(p.get("symbol") or p.get("canonical_name")),
+                "canonical_name": norm_text(p.get("canonical_name")),
                 "value": p.get("value"),
                 "unit": norm_text(p.get("unit")),
                 "source": p.get("source", {}),
-            }
-        )
-
-    plastic = doc.get("plastic_parameters", {}).get("parameters", [])
-    for p in plastic:
-        rows.append(
-            {
-                "record_id": rid,
-                "block": "plastic",
-                "symbol": norm_text(p.get("symbol") or p.get("canonical_name")),
-                "value": p.get("value"),
-                "unit": norm_text(p.get("unit")),
-                "source": p.get("source", {}),
+                "confidence": p.get("confidence"),
             }
         )
 
@@ -122,7 +115,7 @@ def build_param_key(row: Dict[str, Any]) -> Tuple[str, str, str]:
     return (
         str(row.get("record_id") or ""),
         str(row.get("block") or ""),
-        str(row.get("symbol") or ""),
+        str(row.get("symbol") or row.get("canonical_name") or ""),
     )
 
 

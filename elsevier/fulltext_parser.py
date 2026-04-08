@@ -26,6 +26,19 @@ def safe_filename(title: str) -> str:
     return title[:80].strip()
 
 
+def safe_table_label(label: str, fallback_index: int) -> str:
+    """Convert article table label into a filesystem-safe suffix."""
+    raw = normalize_text(label or "")
+    if not raw:
+        return f"{fallback_index:03d}"
+    raw = re.sub(r"^\s*table\s+", "", raw, flags=re.IGNORECASE)
+    raw = raw.replace(".", "_")
+    raw = re.sub(r"\s+", "", raw)
+    raw = re.sub(r"[^A-Za-z0-9_-]+", "_", raw)
+    raw = raw.strip("_")
+    return raw or f"{fallback_index:03d}"
+
+
 def normalize_text(s: str) -> str:
     """Normalize whitespace."""
     s = re.sub(r"\s+", " ", s)
@@ -135,24 +148,182 @@ def extract_caption(table_tag):
     return None
 
 
+def extract_table_label(table_tag):
+    label = table_tag.find(["ce:label", "label"])
+    if label:
+        return normalize_text(label.get_text(" ", strip=True))
+    return None
+
+
+def build_object_ref_map(soup):
+    """
+    Build a map from object ref (e.g., fx1, gr1) to downloadable URLs declared
+    in the <objects> block of Elsevier full-text XML.
+    """
+    ref_map = {}
+    for obj in soup.find_all(["object", "xocs:object"]):
+        ref = obj.get("ref")
+        if not ref:
+            continue
+        url = normalize_text(obj.get_text(" ", strip=True))
+        category = (obj.get("category") or "").strip().lower()
+        mimetype = obj.get("mimetype")
+        entry = ref_map.setdefault(ref, {"urls": {}, "mimetype": mimetype})
+        if url:
+            entry["urls"][category or "default"] = url
+        if mimetype and not entry.get("mimetype"):
+            entry["mimetype"] = mimetype
+    return ref_map
+
+
+def extract_table_image_info(table_tag, object_ref_map=None):
+    """Return metadata for image-backed tables embedded as inline figures."""
+    inline = table_tag.find(["ce:inline-figure", "inline-figure", "ce:graphic", "graphic"])
+    if not inline:
+        return None
+
+    link = inline.find(["ce:link", "link"])
+    graphic = inline.find(["ce:graphic", "graphic"])
+
+    info = {
+        "kind": "image_backed",
+        "locator": None,
+        "href": None,
+        "local_path": None,
+    }
+    if link:
+        info["locator"] = link.get("locator")
+        info["href"] = link.get("xlink:href") or link.get("href")
+    if graphic and not info["href"]:
+        info["href"] = graphic.get("xlink:href") or graphic.get("href")
+    ref = info.get("locator")
+    if ref and object_ref_map and ref in object_ref_map:
+        urls = object_ref_map[ref].get("urls") or {}
+        info["download_url"] = (
+            urls.get("high")
+            or urls.get("standard")
+            or urls.get("default")
+            or urls.get("thumbnail")
+        )
+        info["download_urls"] = urls
+        if object_ref_map[ref].get("mimetype"):
+            info["mimetype"] = object_ref_map[ref]["mimetype"]
+
+    if info["locator"] or info["href"]:
+        return info
+    return None
+
+
 def extract_tables_from_xml(soup, refid_to_num=None):
     tables = soup.find_all(["ce:table", "table-wrap", "table"])
     extracted = []
     idx = 1
+    object_ref_map = build_object_ref_map(soup)
 
     for t in tables:
         rows = extract_table_rows(t, refid_to_num=refid_to_num)
-        if not rows:
+        image_info = extract_table_image_info(t, object_ref_map=object_ref_map)
+        if not rows and not image_info:
             continue
 
-        extracted.append({
+        record = {
             "table_index": idx,
+            "table_label": extract_table_label(t),
             "caption": extract_caption(t),
             "rows": rows,
-        })
+        }
+        if image_info and not rows:
+            record["table_kind"] = "image_backed"
+            record["image"] = image_info
+        extracted.append(record)
         idx += 1
 
     return extracted
+
+
+def download_table_image(image_info, outdir, table_base, api_key=None, inst_token=None, timeout=30):
+    """
+    Best-effort downloader for image-backed tables.
+    This is intentionally conservative: if the asset URL pattern does not work,
+    the caller still keeps a stable placeholder record.
+    """
+    if not image_info:
+        return None
+
+    locator = image_info.get("locator")
+    href = image_info.get("href")
+    candidates = []
+    if image_info.get("download_url"):
+        candidates.append(image_info["download_url"])
+    if href and href.startswith("http"):
+        candidates.append(href)
+    if locator:
+        candidates.append(f"https://api.elsevier.com/content/object/eid/{quote(locator, safe='')}")
+    if href and not href.startswith("http"):
+        candidates.append(f"https://api.elsevier.com/content/object/{href.lstrip('/')}")
+
+    headers = {}
+    if api_key:
+        headers["X-ELS-APIKey"] = api_key
+    if inst_token:
+        headers["X-ELS-Insttoken"] = inst_token
+    headers["Accept"] = "image/*"
+
+    os.makedirs(outdir, exist_ok=True)
+    out_path = os.path.join(outdir, f"{table_base}.png")
+    for url in candidates:
+        try:
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            if not resp.ok or not resp.content:
+                continue
+            content_type = (resp.headers.get("content-type") or "").lower()
+            ext = ".png"
+            if "jpeg" in content_type or "jpg" in content_type:
+                ext = ".jpg"
+            elif "gif" in content_type:
+                ext = ".gif"
+            out_path = os.path.join(outdir, f"{table_base}{ext}")
+            with open(out_path, "wb") as f:
+                f.write(resp.content)
+            return out_path
+        except Exception:
+            continue
+    return None
+
+
+def should_download_image_backed_table(table_record, keywords=None):
+    keywords = [str(k).strip().lower() for k in (keywords or []) if str(k).strip()]
+    if not keywords:
+        return False
+    text = " ".join(
+        [
+            str(table_record.get("table_label") or ""),
+            str(table_record.get("caption") or ""),
+        ]
+    ).lower()
+    if not text:
+        return False
+    return any(k in text for k in keywords)
+
+
+def run_rule_based_table_ocr(image_path, output_json_path):
+    """
+    Legacy placeholder kept for compatibility.
+    Image-backed tables are no longer converted into structured table JSON here.
+    The active path is to download the image and pass it directly to the
+    extractor as vision input when selected.
+    """
+    result = {
+        "engine": "legacy_placeholder",
+        "status": "skipped",
+        "reason": "Image-backed tables are no longer converted here; use direct image input in extractor.",
+        "image_path": image_path,
+        "rows": [],
+        "cells": [],
+    }
+    with open(output_json_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    return result
 
 
 
@@ -289,6 +460,33 @@ def _is_inside_nested_section(tag, current_sec):
     return False
 
 
+def _iter_direct_child_sections(sec):
+    for child in getattr(sec, "children", []):
+        if getattr(child, "name", None) in ("ce:section", "sec"):
+            yield child
+
+
+def _section_title(sec):
+    st = sec.find(["ce:section-title", "section-title", "title"], recursive=False) or sec.find(["ce:section-title", "section-title", "title"])
+    if st and st.get_text(strip=True):
+        return normalize_text(st.get_text(" ", strip=True))
+    return None
+
+
+def _first_direct_paragraph_preview(sec, refid_to_num, max_chars=220):
+    for p in sec.find_all(["ce:para", "para", "p"], recursive=True):
+        if _is_inside_nested_section(p, sec):
+            continue
+        p_copy = BeautifulSoup(str(p), "xml")
+        p_tag = p_copy.find(["ce:para", "para", "p"]) or p_copy
+        replace_crossrefs_with_numbers(p_tag, refid_to_num)
+        txt = normalize_text(p_tag.get_text(" ", strip=True))
+        if txt:
+            txt = compress_numeric_citation_groups(txt)
+            return txt[:max_chars] + ("..." if len(txt) > max_chars else "")
+    return None
+
+
 def section_to_markdown(sec, tables_map, refid_to_num):
     md_lines = []
 
@@ -296,6 +494,20 @@ def section_to_markdown(sec, tables_map, refid_to_num):
     st = sec.find(["ce:section-title", "section-title", "title"])
     if st and st.get_text(strip=True):
         md_lines.append("## " + normalize_text(st.get_text(" ", strip=True)))
+        md_lines.append("")
+
+    child_summaries = []
+    for child_sec in _iter_direct_child_sections(sec):
+        title = _section_title(child_sec)
+        preview = _first_direct_paragraph_preview(child_sec, refid_to_num)
+        if title:
+            line = f"- {title}"
+            if preview:
+                line += f": {preview}"
+            child_summaries.append(line)
+    if child_summaries:
+        md_lines.append("### Subsection overview")
+        md_lines.extend(child_summaries)
         md_lines.append("")
 
     # Paragraphs belonging to THIS section only (exclude nested sections)
@@ -322,34 +534,42 @@ def section_to_markdown(sec, tables_map, refid_to_num):
             continue
 
         rows = extract_table_rows(table, refid_to_num=refid_to_num)
+        image_info = extract_table_image_info(table)
 
-        if not rows:
+        if not rows and not image_info:
             continue
 
         cap = extract_caption(table) or ""
-        key = cap + "|" + "|".join(rows[0])
+        key = cap + "|" + ("|".join(rows[0]) if rows else "")
 
         tinfo = tables_map.get(key)
         if not tinfo:
             # Fallback: write inline even if not matched to global table list
-            md_lines.append("### Table")
+            md_lines.append(f"### {extract_table_label(table) or 'Table'}")
             if cap:
                 md_lines.append(f"**Caption:** {cap}")
             md_lines.append("")
-            md_lines.append(rows_to_markdown(rows))
+            if rows:
+                md_lines.append(rows_to_markdown(rows))
+            else:
+                md_lines.append("_Image-backed table detected._")
             md_lines.append("")
             continue
 
+        table_heading = tinfo.get("table_label") or f"Table {tinfo['table_index']}"
         idx = tinfo["table_index"]
         if idx in seen_table_idxs:
             continue
         seen_table_idxs.add(idx)
 
-        md_lines.append(f"### Table {idx}")
+        md_lines.append(f"### {table_heading}")
         if tinfo.get("caption"):
             md_lines.append(f"**Caption:** {tinfo['caption']}")
         md_lines.append("")
-        md_lines.append(rows_to_markdown(tinfo["rows"]))
+        if tinfo.get("rows"):
+            md_lines.append(rows_to_markdown(tinfo["rows"]))
+        elif tinfo.get("table_kind") == "image_backed":
+            md_lines.append("_Image-backed table detected._")
         md_lines.append("")
 
     return "\n".join(md_lines).strip()
@@ -501,6 +721,7 @@ def save_paper_as_markdown_and_tables(
     crossref_mailto=None,
     resolve_missing_reference_doi=True,
     http_max_retries=3,
+    image_backed_table_keywords=None,
 ):
     paper_id = safe_id(doi)
     base_dir = os.path.join(outdir, paper_id)
@@ -556,23 +777,33 @@ def save_paper_as_markdown_and_tables(
     tables_map = {}
     for t in tables:
         cap = t.get("caption") or ""
-        key = cap + "|" + "|".join(t["rows"][0])
+        first_row = "|".join(t["rows"][0]) if t.get("rows") else ""
+        key = cap + "|" + first_row
         tables_map[key] = t
 
     # Save tables
     for t in tables:
         idx = t["table_index"]
+        table_suffix = safe_table_label(t.get("table_label") or "", idx)
+        table_base = f"table_{table_suffix}"
+        if (
+            t.get("table_kind") == "image_backed"
+            and should_download_image_backed_table(t, image_backed_table_keywords)
+        ):
+            image_dir = os.path.join(tables_dir, "images")
+            downloaded = download_table_image(
+                t.get("image") or {},
+                image_dir,
+                table_base,
+                api_key=api_key,
+                inst_token=inst_token,
+            )
+            if downloaded:
+                rel = os.path.relpath(downloaded, base_dir)
+                t.setdefault("image", {})["local_path"] = rel
 
-        with open(os.path.join(tables_dir, f"table_{idx:03d}.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(tables_dir, f"{table_base}.json"), "w", encoding="utf-8") as f:
             json.dump(t, f, ensure_ascii=False, indent=2)
-
-        md = ""
-        if t.get("caption"):
-            md += f"**Caption:** {t['caption']}\n\n"
-        md += rows_to_markdown(t["rows"])
-
-        with open(os.path.join(tables_dir, f"table_{idx:03d}.md"), "w", encoding="utf-8") as f:
-            f.write(md)
 
     # Abstract
     combined_md = [f"# {paper_title}", ""]

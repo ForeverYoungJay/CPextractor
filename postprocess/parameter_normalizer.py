@@ -1,36 +1,158 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Tuple
 from postprocess.param_iter import iter_parameter_items
 
 
 _CANONICAL_NAME_MAP = {
+    "c11": "elastic_constant_c11",
+    "c12": "elastic_constant_c12",
+    "c13": "elastic_constant_c13",
+    "c33": "elastic_constant_c33",
+    "c44": "elastic_constant_c44",
     "tau0": "crss_initial",
     "τ0": "crss_initial",
     "g0": "crss_initial",
+    "g0alpha": "crss_initial",
     "crss0": "crss_initial",
+    "xi0": "crss_initial",
+    "ξ0": "crss_initial",
+    "tau1": "crss_saturation",
+    "τ1": "crss_saturation",
+    "g1": "crss_saturation",
+    "g1alpha": "crss_saturation",
     "tau_sat": "crss_saturation",
     "taus": "crss_saturation",
+    "xiinf": "crss_saturation",
+    "ξ∞": "crss_saturation",
     "h0": "hardening_h0",
     "h1": "hardening_h1",
+    "theta0": "hardening_theta0",
+    "θ0": "hardening_theta0",
+    "theta0alpha": "hardening_theta0",
+    "θ0alpha": "hardening_theta0",
+    "theta1": "hardening_theta1",
+    "θ1": "hardening_theta1",
+    "theta1alpha": "hardening_theta1",
+    "θ1alpha": "hardening_theta1",
+    "h": "hardening_coefficient_h",
+    "hd": "hardening_coefficient_hd",
     "q": "latent_ratio_q",
     "qab": "interaction_matrix_qab",
+    "qαα'": "interaction_matrix_qab",
+    "qαβ": "interaction_matrix_qab",
+    "chi": "cross_hardening_matrix",
     "m": "rate_sensitivity_m",
+    "m1": "rate_sensitivity_m",
+    "m2": "rate_sensitivity_m",
     "n": "exponent_n",
+    "nba": "exponent_n",
+    "npr": "exponent_n",
+    "npyr": "exponent_n",
+    "asl": "hardening_exponent",
+    "eta": "hardening_exponent",
     "gamma0": "gamma0_ref",
     "gammadot0": "gamma0_ref",
     "γ̇0": "gamma0_ref",
+    "γ0": "gamma0_ref",
+    "γ̇01": "gamma0_ref",
+    "γ̇02": "gamma0_ref",
+    "gamma0dot": "gamma0_ref",
+    "r": "universal_gas_constant",
+    "t": "temperature",
+    "a": "fitting_parameter_a",
+    "d": "fitting_parameter_d",
+}
+
+_CANONICAL_NAME_MAP_CASED = {
+    "C11": "elastic_constant_c11",
+    "C12": "elastic_constant_c12",
+    "C13": "elastic_constant_c13",
+    "C33": "elastic_constant_c33",
+    "C44": "elastic_constant_c44",
+    "Q": "creep_activation_energy",
+    "R": "universal_gas_constant",
+    "T": "temperature",
+    "A": "fitting_parameter_a",
 }
 
 _CANONICAL_NAME_ALIAS = {
     "critical resolved shear stress": "crss_initial",
     "critical shear strength": "crss_initial",
+    "initial critical resolved shear stress": "crss_initial",
+    "initial slip resistance": "crss_initial",
+    "saturated critical resolved shear stress": "crss_saturation",
+    "saturation slip resistance": "crss_saturation",
     "initial hardening modulus": "hardening_h0",
+    "initial hardening rate": "hardening_h0",
+    "hardening coefficient h": "hardening_coefficient_h",
+    "hardening coefficient hd": "hardening_coefficient_hd",
     "latent hardening coefficient": "latent_ratio_q",
+    "latent hardening ratio": "latent_ratio_q",
     "rate sensitivity exponent": "exponent_n",
     "rate sensitivity": "exponent_n",
     "reference shear rate": "gamma0_ref",
+    "reference slip strain rate": "gamma0_ref",
+    "reference strain rate": "gamma0_ref",
+    "creep activation energy": "creep_activation_energy",
+    "universal gas constant": "universal_gas_constant",
+    "temperature": "temperature",
+    "fitting parameter a": "fitting_parameter_a",
+    "fitting parameter d": "fitting_parameter_d",
+    "elastic constant c11": "elastic_constant_c11",
+    "elastic constant c12": "elastic_constant_c12",
+    "elastic constant c13": "elastic_constant_c13",
+    "elastic constant c33": "elastic_constant_c33",
+    "elastic constant c44": "elastic_constant_c44",
+    "elastic stiffness constant c11": "elastic_constant_c11",
+    "elastic stiffness constant c12": "elastic_constant_c12",
+    "elastic stiffness constant c13": "elastic_constant_c13",
+    "elastic stiffness constant c33": "elastic_constant_c33",
+    "elastic stiffness constant c44": "elastic_constant_c44",
 }
+
+_CANONICAL_NAME_CONTAINS = [
+    ("initial hardening modulus for basal", "hardening_theta0"),
+    ("initial hardening modulus for prism", "hardening_theta0"),
+    ("initial hardening modulus for pyramidal", "hardening_theta0"),
+    ("initial hardening modulus for", "hardening_theta0"),
+    ("saturated hardening modulus", "hardening_theta1"),
+    ("asymptotic hardening rate", "hardening_theta1"),
+    ("elastic stiffness constant c11", "elastic_constant_c11"),
+    ("elastic stiffness constant c12", "elastic_constant_c12"),
+    ("elastic stiffness constant c13", "elastic_constant_c13"),
+    ("elastic stiffness constant c33", "elastic_constant_c33"),
+    ("elastic stiffness constant c44", "elastic_constant_c44"),
+    ("elastic constant c11", "elastic_constant_c11"),
+    ("elastic constant c12", "elastic_constant_c12"),
+    ("elastic constant c13", "elastic_constant_c13"),
+    ("elastic constant c33", "elastic_constant_c33"),
+    ("elastic constant c44", "elastic_constant_c44"),
+    ("initial hardening modulus", "hardening_h0"),
+    ("initial hardening rate", "hardening_h0"),
+    ("hardening coefficient h", "hardening_coefficient_h"),
+    ("hardening coefficient hd", "hardening_coefficient_hd"),
+    ("critical resolved shear stress", "crss_initial"),
+    ("initial crss", "crss_initial"),
+    ("initial slip resistance", "crss_initial"),
+    ("saturated crss", "crss_saturation"),
+    ("saturation slip resistance", "crss_saturation"),
+    ("rate sensitivity exponent", "exponent_n"),
+    ("stress exponent", "exponent_n"),
+    ("reference shear rate", "gamma0_ref"),
+    ("reference slip strain rate", "gamma0_ref"),
+    ("reference strain rate", "gamma0_ref"),
+    ("latent hardening ratio", "latent_ratio_q"),
+    ("latent hardening coefficient", "latent_ratio_q"),
+    ("interaction matrix", "interaction_matrix_qab"),
+    ("forest interaction parameters", "interaction_matrix_qab"),
+    ("cross-hardening matrix", "cross_hardening_matrix"),
+    ("universal gas constant", "universal_gas_constant"),
+    ("creep activation energy", "creep_activation_energy"),
+    ("fitting parameter a", "fitting_parameter_a"),
+    ("fitting parameter d", "fitting_parameter_d"),
+]
 
 _MECHANISM_MAP = {
     "slip": "all_slip",
@@ -53,23 +175,46 @@ def _clean(v: Any) -> str:
     return str(v or "").strip().lower()
 
 
+def _symbol_key(v: Any) -> str:
+    s = str(v or "").strip().lower()
+    s = s.replace("α", "alpha").replace("β", "beta").replace("γ", "gamma")
+    s = s.replace("θ", "theta").replace("τ", "tau").replace("ξ", "xi")
+    s = s.replace("∞", "inf").replace("̇", "dot")
+    s = re.sub(r"[\s\-\.,/{}\[\]()<>\'+]", "", s)
+    s = s.replace("_", "")
+    return s
+
+
 def _normalize_canonical_name(p: Dict[str, Any]) -> bool:
     changed = False
-    symbol_key = _clean(p.get("symbol")).replace(".", "").replace("-", "")
+    raw_symbol = str(p.get("symbol") or "").strip()
+    symbol_key = _symbol_key(p.get("symbol"))
     name_key = _clean(p.get("canonical_name"))
     desc_key = _clean(p.get("description"))
 
     target = None
-    if symbol_key in _CANONICAL_NAME_MAP:
+    if raw_symbol in _CANONICAL_NAME_MAP_CASED:
+        target = _CANONICAL_NAME_MAP_CASED[raw_symbol]
+    elif symbol_key in _CANONICAL_NAME_MAP:
         target = _CANONICAL_NAME_MAP[symbol_key]
     elif name_key in _CANONICAL_NAME_ALIAS:
         target = _CANONICAL_NAME_ALIAS[name_key]
     elif desc_key in _CANONICAL_NAME_ALIAS:
         target = _CANONICAL_NAME_ALIAS[desc_key]
+    else:
+        for needle, candidate in _CANONICAL_NAME_CONTAINS:
+            if needle in name_key or needle in desc_key:
+                target = candidate
+                break
 
     if target and p.get("canonical_name") != target:
+        if p.get("canonical_name") not in (None, "", target) and not p.get("canonical_name_raw"):
+            p["canonical_name_raw"] = p.get("canonical_name")
+        p["canonical_name_normalized"] = target
         p["canonical_name"] = target
         changed = True
+    elif target and not p.get("canonical_name_normalized"):
+        p["canonical_name_normalized"] = target
     return changed
 
 
@@ -255,19 +400,12 @@ def normalize_parameters(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any]
             applies["scope"] = scope
 
         if scope == "global":
-            applies.pop("phase_id", None)
-            applies.pop("family_id", None)
-            applies.pop("family_name", None)
-            applies.pop("system_ids", None)
-            applies.pop("system_count", None)
+            if not applies.get("phase_id") and fam and fam.get("phase_id"):
+                applies["phase_id"] = fam.get("phase_id")
         elif scope == "phase":
             if not applies.get("phase_id"):
                 applies["phase_id"] = "phase_1"
                 report["phase_id_filled"] += 1
-            applies.pop("family_id", None)
-            applies.pop("family_name", None)
-            applies.pop("system_ids", None)
-            applies.pop("system_count", None)
         elif scope == "family":
             if not applies.get("phase_id"):
                 applies["phase_id"] = "phase_1"
@@ -280,7 +418,6 @@ def normalize_parameters(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any]
                 else:
                     applies["family_id"] = "family_1"
                 report["family_mapping_filled"] += 1
-            applies.pop("system_ids", None)
         elif scope == "system":
             if not applies.get("phase_id"):
                 applies["phase_id"] = "phase_1"

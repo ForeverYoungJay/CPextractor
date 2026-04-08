@@ -31,7 +31,7 @@ def load_references(ref_path: str) -> Dict[str, dict]:
 def resolve_references(extracted_json: dict, reference_map: Dict[str, dict]) -> tuple[dict, dict]:
     """
     Resolve parameter-level reference IDs against references.json.
-    Keep source compact: IDs + flags only (no title/doi objects in source).
+    Keep raw-like provenance in source and expand resolved reference objects in-place.
     """
     report = {
         "total_reference_ids": 0,
@@ -44,6 +44,7 @@ def resolve_references(extracted_json: dict, reference_map: Dict[str, dict]) -> 
             "calibration": {"total": 0, "resolved": 0},
             "legacy": {"total": 0, "resolved": 0},
         },
+        "source_references_expanded": 0,
     }
 
     def _unique_keep_order(values: List[str]) -> List[str]:
@@ -103,34 +104,34 @@ def resolve_references(extracted_json: dict, reference_map: Dict[str, dict]) -> 
             else:
                 src.pop("unresolved_reference_ids", None)
 
-            # Keep source compact and deduplicated.
+            def _expand(values: List[str]) -> List[dict]:
+                out = []
+                for rid in values:
+                    mapped = reference_map.get(rid)
+                    if mapped:
+                        out.append({
+                            "reference_id": rid,
+                            "citation": mapped.get("title"),
+                            "doi": mapped.get("doi"),
+                        })
+                return out
+
+            src["references"] = _expand(residual_ids)
+            src["adopted_from_references"] = _expand(adopted_ids)
+            src["calibration_based_on_references"] = _expand(calibration_ids)
+            report["source_references_expanded"] += (
+                len(src["references"]) + len(src["adopted_from_references"]) + len(src["calibration_based_on_references"])
+            )
+
+            # Keep source deduplicated while preserving resolved reference objects.
             src.pop("adopted_references", None)
             src.pop("calibration_references", None)
-            src.pop("references", None)
             src.pop("citations", None)
             src.pop("adopted_citations", None)
             src.pop("calibration_citations", None)
 
     all_items = [it for _, it in iter_parameter_items(extracted_json)]
     resolve_items(all_items)
-
-    # Backfill top-level references[] with title/doi from references.json.
-    for ref in extracted_json.get("references", []) or []:
-        rid = str(ref.get("reference_id") or "").strip()
-        if not rid:
-            continue
-        mapped = reference_map.get(rid)
-        if not mapped:
-            continue
-        changed = False
-        if not ref.get("doi") and mapped.get("doi"):
-            ref["doi"] = mapped.get("doi")
-            changed = True
-        if not ref.get("citation") and mapped.get("title"):
-            ref["citation"] = mapped.get("title")
-            changed = True
-        if changed:
-            report["top_level_references_backfilled"] += 1
 
     report["unresolved_labels"] = sorted(set(report["unresolved_labels"]))
     return extracted_json, report
