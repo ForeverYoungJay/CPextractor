@@ -37,10 +37,11 @@ The extractor still uses `parameters.registry` as an intermediate extraction tar
 
 - `document`
 - `materials[] -> phases[]`
-- `samples[]`
+- `process_states[]`
 - `conditions[]`
 - `models[]`
 - `mechanisms`
+- `microstructure_features[]`
 - `parameter_claims[]`
 
 Each registry item still represents one extracted parameter record with:
@@ -52,7 +53,7 @@ Each registry item still represents one extracted parameter record with:
 
 On top of that, the pipeline now also builds:
 - `materials[]` with nested `phases[]`
-- `samples[]` and `conditions[]`
+- `process_states[]` and `conditions[]`
 - `models[]` and `mechanisms`
 - `evidence_objects`: reusable evidence spans and table-cell references
 - `parameter_claims`: the smallest trusted unit for review, auditing, and downstream use
@@ -62,8 +63,9 @@ On top of that, the pipeline now also builds:
 - normalized value
 - `applies_to`
 - binding context
+- material / process-state / condition / mechanism scope
 - source provenance
-- grounded evidence ids
+- direct evidence locator plus grounded evidence ids
 - confidence
 - audit verdict
 - uncertainty typing

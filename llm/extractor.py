@@ -511,18 +511,12 @@ Return JSON only.
 
 EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
 {
-  "schema_version": "3.1.0",
-  "document": {
-    "doi": "string or null",
-    "title": "string or null",
-    "authors": ["string"],
-    "year": "number or null",
-    "journal": "string or null"
-  },
+  "schema_version": "4.2.0",
   "materials": [
     {
       "material_id": "string or null",
       "name": "string or null",
+      "aliases": ["string"],
       "formula": "string or null",
       "material_class": "steel / titanium_alloy / nickel_superalloy / magnesium_alloy / zirconium_alloy / aluminum_alloy / copper_alloy / ceramic / intermetallic / polymer / composite / other / null",
       "composition": {
@@ -537,38 +531,6 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         ],
         "notes": "string or null"
       },
-      "processing_history": [
-        {
-          "step_id": "string or null",
-          "type": "string or null",
-          "temperature": {"value": "number or null", "unit": "K / C / null", "notes": "string or null"},
-          "time": {"value": "number or null", "unit": "s / min / h / null", "notes": "string or null"},
-          "notes": "string or null"
-        }
-      ],
-      "phases": [
-        {
-          "phase_id": "string or null",
-          "name": "string or null",
-          "role": "matrix / precipitate / inclusion / transformed_product / pore / parent / initial_product / existing_phase / other / null",
-          "crystal_structure": {
-            "crystal_system": "cubic / hexagonal / tetragonal / orthorhombic / trigonal_rhombohedral / monoclinic / triclinic / null",
-            "bravais_lattice": "P / I / F / R / A / B / C / null",
-            "lattice_type": "fcc / bcc / hcp / diamond_cubic / simple_cubic / other / null",
-            "structure_prototype": "fluorite / rocksalt / perovskite / spinel / wurtzite / zincblende / corundum / other / null",
-            "space_group": "string or null",
-            "notes": "string or null"
-          },
-          "volume_fraction": {
-            "value": "number or null",
-            "unit": "fraction / % / null",
-            "reported_value": "number or string or null",
-            "reported_unit": "fraction / % / null",
-            "notes": "string or null"
-          },
-          "notes": "string or null"
-        }
-      ],
       "notes": "string or null"
     }
   ],
@@ -577,17 +539,96 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
       "process_state_id": "string or null",
       "material_id": "string or null",
       "label": "string or null",
+      "state_type": "as_received / as_cast / as_built / annealed / solution_treated / aged / quenched / cold_worked / hot_worked / rolled / forged / extruded / irradiated / hydrogen_charged / fatigue_damaged / other / null",
+      "processing_route": "string or null",
       "processing_steps": [
         {
-          "step_id": "string or null",
-          "step_type": "casting / rolling / forging / annealing / solution_treatment / aging / quenching / extrusion / additive_manufacturing / machining / polishing / other / null",
-          "temperature": {"value": "number or null", "unit": "K / C / null", "notes": "string or null"},
-          "time": {"value": "number or null", "unit": "s / min / h / null", "notes": "string or null"},
-          "strain": {"value": "number or null", "unit": "strain / % / null", "notes": "string or null"},
+          "step_type": "casting / additive_manufacturing / rolling / forging / extrusion / annealing / solution_treatment / aging / quenching / machining / polishing / coating / charging / irradiation / other / null",
+          "temperature": {
+            "value": "number or null",
+            "unit": "K / C / null",
+            "reported_value": "number or string or null",
+            "reported_unit": "string or null"
+          },
+          "time": {
+            "value": "number or null",
+            "unit": "s / min / h / null",
+            "reported_value": "number or string or null",
+            "reported_unit": "string or null"
+          },
+          "strain": {
+            "value": "number or null",
+            "unit": "fraction / % / null"
+          },
+          "deformation_amount": {
+            "value": "number or null",
+            "unit": "fraction / % / true_strain / engineering_strain / null",
+            "description": "string or null"
+          },
           "notes": "string or null"
         }
       ],
-      "linked_condition_ids": ["string"],
+      "state_variables": [
+        {
+          "name": "string or null",
+          "value": "number or string or null",
+          "unit": "string or null",
+          "notes": "string or null"
+        }
+      ],
+      "notes": "string or null"
+    }
+  ],
+  "phases": [
+    {
+      "phase_id": "string or null",
+      "material_id": "string or null",
+      "process_state_id": "string or null",
+      "name": "string or null",
+      "aliases": ["string"],
+      "role": "matrix / precipitate / inclusion / transformed_product / pore / parent / product / other / null",
+      "fraction": {
+        "value": "number or null",
+        "unit": "fraction / % / null",
+        "reported_value": "number or string or null",
+        "reported_unit": "string or null",
+        "basis": "volume / area / weight / unknown / null",
+        "notes": "string or null"
+      },
+      "crystal_structure": {
+        "crystal_system": "string or null",
+        "bravais_lattice": "string or null",
+        "lattice_type": "string or null",
+        "space_group": "string or null",
+        "notes": "string or null"
+      },
+      "notes": "string or null"
+    }
+  ],
+  "models": [
+    {
+      "model_id": "string or null",
+      "name": "string or null",
+      "model_class": "crystal_plasticity / crystal_plasticity_damage / phase_field / continuum_damage / finite_element / fft / other / null",
+      "framework": "cpfe / umat / vumat / damask / evpfft / vpsc / abaqus / custom / other / null",
+      "kinematics": "small_strain / finite_strain / null",
+      "rate_dependence": "rate_dependent / rate_independent / null",
+      "single_or_polycrystal": "single_crystal / polycrystal / null",
+      "implementation": {
+        "software": "string or null",
+        "solver": "string or null",
+        "subroutine": "string or null",
+        "version": "string or null",
+        "notes": "string or null"
+      },
+      "constitutive_laws": {
+        "elasticity": "anisotropic / isotropic / other / null",
+        "slip_kinetics": "power_law / thermal_activation / sinh / other / null",
+        "hardening": "voce / kalidindi / latent_hardening / dislocation_based / other / null",
+        "twinning": "none / ptr / detwinning / other / null",
+        "damage": "none / phenomenological / continuum_damage / cohesive / other / null",
+        "notes": "string or null"
+      },
       "notes": "string or null"
     }
   ],
@@ -595,208 +636,157 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
     {
       "condition_id": "string or null",
       "label": "string or null",
-      "loading_mode": "uniaxial_tension / compression / shear / indentation / cyclic / fatigue / creep / torsion / bending / null",
-      "stress_state": "uniaxial / plane_strain / biaxial / triaxial / multiaxial / null",
-      "loading_path": {
-        "control": "strain_controlled / stress_controlled / displacement_controlled / mixed / null",
-        "loading_direction": "rd / td / nd / crystal_axis / null",
-        "crystal_axis": "string or null",
-        "description": "string or null"
+      "condition_role": "calibration / validation / characterization / simulation_case / experiment / service_like / unspecified / null",
+      "loading_mode": "uniaxial_tension / compression / shear / cyclic / fatigue / creep / torsion / bending / indentation / null",
+      "control_mode": "strain_controlled / stress_controlled / displacement_controlled / mixed / null",
+      "stress_state": "uniaxial / biaxial / triaxial / plane_strain / multiaxial / null",
+      "temperature": {
+        "value": "number or null",
+        "unit": "K / C / null",
+        "reported_value": "number or string or null",
+        "reported_unit": "string or null",
+        "history": "isothermal / non_isothermal / null"
       },
-      "strain_rate": {"value": "number or null", "unit": "string or null", "range": "string or null"},
-      "temperature": {"value": "number or null", "unit": "K / C / null", "history": "isothermal / non_isothermal / null"},
+      "strain_rate": {
+        "value": "number or null",
+        "unit": "string or null",
+        "reported_value": "number or string or null",
+        "reported_unit": "string or null",
+        "range": "string or null"
+      },
       "fatigue": {
         "mode": "lcf / hcf / vhcf / strain_controlled / stress_controlled / null",
         "load_ratio": "string or null",
-        "frequency": {"value": "number or null", "unit": "Hz / null", "notes": "string or null"},
-        "notes": "string or null"
-      },
-      "environment": {
-        "pressure": {"value": "number or null", "unit": "Pa / MPa / bar / null", "notes": "string or null"},
-        "medium": "air / vacuum / liquid / inert_gas / hydrogen / null",
+        "frequency": {
+          "value": "number or null",
+          "unit": "Hz / null"
+        },
         "notes": "string or null"
       },
       "indentation": {
         "indenter_type": "berkovich / spherical / cono_spherical / vickers / knoop / custom / null",
-        "tip_radius": {"value": "number or null", "unit": "nm / um / mm / null", "notes": "string or null"},
-        "target_depths": ["number"],
-        "target_depth_unit": "nm / um / mm / null",
-        "max_load": {"value": "number or null", "unit": "mN / N / null", "notes": "string or null"},
-        "loading_rate": {"type": "displacement_rate / load_rate / indentation_strain_rate / unknown / null", "value": "number or null", "unit": "string or null", "notes": "string or null"},
-        "hold_time_at_peak": {"value": "number or null", "unit": "s / null", "notes": "string or null"},
-        "contact_assumption": "frictionless / frictional / unknown / null",
+        "tip_radius": {
+          "value": "number or null",
+          "unit": "string or null"
+        },
+        "max_load": {
+          "value": "number or null",
+          "unit": "string or null"
+        },
+        "depth": {
+          "value": "number or null",
+          "unit": "string or null"
+        },
         "notes": "string or null"
       },
-      "calibration_strain_range": {"min": "number or null", "max": "number or null", "unit": "strain / percent / null", "notes": "string or null"},
+      "environment": {
+        "medium": "air / vacuum / hydrogen / inert_gas / liquid / null",
+        "pressure": {
+          "value": "number or null",
+          "unit": "string or null"
+        },
+        "notes": "string or null"
+      },
       "notes": "string or null"
     }
   ],
-  "models": [
+  "contexts": [
     {
+      "context_id": "string or null",
+      "label": "string or null",
+      "sample_label": "string or null",
+      "notes": "string or null",
+      "material_ids": ["string"],
+      "process_state_ids": ["string"],
+      "phase_ids": ["string"],
+      "model_ids": ["string"],
+      "condition_ids": ["string"],
+      "primary_material_id": "string or null",
+      "primary_process_state_id": "string or null",
+      "primary_phase_id": "string or null",
+      "primary_model_id": "string or null",
+      "primary_condition_id": "string or null"
+    }
+  ],
+  "mechanisms": [
+    {
+      "mechanism_id": "string or null",
+      "context_id": "string or null",
+      "phase_id": "string or null",
       "model_id": "string or null",
-      "class": "crystal_plasticity / phase_field / continuum_damage / null",
-      "framework": "cpfe / fft / evpfft / vpsc / damask / umat / custom / null",
-      "implementation": {
-        "code_name": "string or null",
-        "platform": "abaqus / damask / vpsc / custom / other / null",
-        "subroutine_or_solver": "umat / vumat / spectral / fem / null",
-        "version": "string or null",
-        "notes": "string or null"
+      "mechanism_type": "slip / twinning / cleavage / damage / transformation / other / null",
+      "level": "global / phase / family / system / null",
+      "name": "string or null",
+      "family_name": "string or null",
+      "plane": {
+        "as_written": "string or null",
+        "indices": ["number"],
+        "basis": "hkl / hkil / null"
       },
-      "kinematics": "finite_strain / small_strain / null",
-      "rate_dependence": "rate_dependent / rate_independent / null",
-      "single_or_poly": "single_crystal / polycrystal / null",
-      "homogenization_assumption": "taylor / self_consistent / full_field / mean_field / null",
-      "constitutive_laws": {
-        "slip_kinetics": "power_law / thermal_activation / other / null",
-        "hardening": "voce / kalidindi / dislocation_based / other / null",
-        "twinning": "detwinning_enabled / ptr / other / null",
-        "elasticity": "anisotropic / isotropic / other / null",
-        "damage": "none / phenomenological / continuum_damage / other / null",
-        "notes": "string or null"
+      "direction": {
+        "as_written": "string or null",
+        "indices": ["number"],
+        "basis": "uvw / uvtw / null"
       },
+      "system_label": "string or null",
+      "parent_mechanism_id": "string or null",
+      "active": "yes / no / null",
       "notes": "string or null"
     }
   ],
-  "mechanisms": {
-    "slip_families": [
-      {
-        "family_id": "string or null",
-        "phase_id": "string or null",
-        "name": "string or null",
-        "plane_direction": "string or null",
-        "num_systems": "number or null",
-        "systems": [
-          {
-            "system_id": "string or null",
-            "plane": {"as_written": "string or null", "indices": ["number"], "basis": "hkl / hkil / null"},
-            "direction": {"as_written": "string or null", "indices": ["number"], "basis": "uvw / uvtw / null"}
-          }
-        ],
-        "active": "yes / no / null",
-        "notes": "string or null"
-      }
-    ],
-    "twinning_families": [
-      {
-        "family_id": "string or null",
-        "phase_id": "string or null",
-        "name": "string or null",
-        "plane_direction": "string or null",
-        "num_systems": "number or null",
-        "systems": [
-          {
-            "system_id": "string or null",
-            "plane": {"as_written": "string or null", "indices": ["number"], "basis": "hkl / hkil / null"},
-            "direction": {"as_written": "string or null", "indices": ["number"], "basis": "uvw / uvtw / null"}
-          }
-        ],
-        "active": "yes / no / null",
-        "reorientation_rule": "string or null",
-        "notes": "string or null"
-      }
-    ],
-    "cleavage_families": [
-      {
-        "family_id": "string or null",
-        "phase_id": "string or null",
-        "name": "string or null",
-        "plane_direction": "string or null",
-        "num_systems": "number or null",
-        "systems": [
-          {
-            "system_id": "string or null",
-            "plane": {"as_written": "string or null", "indices": ["number"], "basis": "hkl / hkil / null"},
-            "direction": {"as_written": "string or null", "indices": ["number"], "basis": "uvw / uvtw / null"}
-          }
-        ],
-        "active": "yes / no / null",
-        "notes": "string or null"
-      }
-    ],
-    "damage_mechanisms": [
-      {
-        "mechanism_id": "string or null",
-        "name": "string or null",
-        "description": "string or null",
-        "active": "yes / no / null",
-        "notes": "string or null"
-      }
-    ],
-    "transformation_mechanisms": [
-      {
-        "mechanism_id": "string or null",
-        "name": "string or null",
-        "description": "string or null",
-        "active": "yes / no / null",
-        "notes": "string or null"
-      }
-    ],
-    "other_mechanisms": [
-      {
-        "mechanism_id": "string or null",
-        "name": "string or null",
-        "description": "string or null",
-        "active": "yes / no / null",
-        "notes": "string or null"
-      }
-    ],
-    "notes": "string or null"
-  },
   "microstructure_features": [
     {
       "feature_id": "string or null",
-      "type": "grain_structure / grain_size / texture / orientation / phase_fraction / precipitates / porosity / dislocation_density / selected_grain / morphology / other / null",
-      "description": "string or null",
+      "feature_family": "grain_structure / texture / precipitates / defects / porosity / interfaces / morphology / phase_distribution / local_region / other / null",
+      "feature_name": "string or null",
+      "value_type": "scalar / vector / range / categorical / text / null",
       "value": "number or string or null",
       "unit": "string or null",
-      "method": "ebsd / xrd / sem / tem / om / narrative / table / other / null",
+      "description": "string or null",
+      "method": "ebsd / xrd / sem / tem / om / narrative / table / figure / other / null",
       "applies_to": {
+        "context_id": "string or null",
         "material_id": "string or null",
         "phase_id": "string or null",
         "process_state_id": "string or null",
-        "condition_id": "string or null",
-        "notes": "string or null"
+        "condition_id": "string or null"
       },
+      "evidence_ids": ["string"],
       "notes": "string or null"
     }
   ],
   "parameter_claims": [
     {
       "claim_id": "string or null",
-      "model_id": "string or null",
       "parameter": {
         "canonical_name": "string or null",
-        "symbol": "string or null",
+        "parameter_family": "elastic_constants / slip_kinetics / hardening / latent_hardening / twinning / damage / thermal / numerical / other / null",
+        "raw_name": "string or null",
+        "symbol_reported": "string or null",
         "domain": "elastic / plastic / twinning / damage / thermal / numerical / other / null",
-        "description": "string or null",
-        "units": {
-          "reported_unit": "string or null",
-          "si_unit": "string or null"
-        }
+        "description": "string or null"
       },
       "assertion": {
-        "value": "number or string or null",
+        "value_type": "scalar / vector / matrix / range / expression / categorical / null",
         "reported_value": "number or string or null",
         "reported_unit": "string or null",
+        "normalized_value": "number or string or null",
+        "normalized_unit": "string or null",
         "value_si": "number or string or null",
         "si_unit": "string or null",
         "qualifier": "string or null",
         "valid_range": "string or null"
       },
-      "context": {
+      "applies_to": {
+        "context_id": "string or null",
         "material_id": "string or null",
         "phase_id": "string or null",
         "process_state_id": "string or null",
+        "model_id": "string or null",
         "condition_id": "string or null",
-        "mechanism_scope": {
-          "level": "global / phase / family / system / null",
-          "mechanism_type": "slip / twinning / cleavage / damage / mixed / null",
-          "family_id": "string or null",
-          "family_name": "string or null",
-          "system_ids": ["string"],
-          "notes": "string or null"
-        },
+        "mechanism_id": "string or null",
+        "scope": "global / phase / family / system / null",
+        "target_description": "string or null",
         "notes": "string or null"
       },
       "provenance": {
@@ -805,23 +795,29 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         "adopted_from_reference_ids": ["string"],
         "calibration_based_on_reference_ids": ["string"],
         "calibration_in_this_study": "yes / no / null",
-        "calibration_method": "manual_fitting / inverse_modeling / optimization / bayesian / null",
+        "calibration_method": "manual_fitting / inverse_modeling / optimization / bayesian / machine_learning / null",
         "notes": "string or null"
       },
-      "evidence": {
-        "text": "string or null",
-        "table_evidence": {
-          "row_name": "string or null",
-          "column_name": "string or null",
-          "value": "string or null",
-          "excerpt": "string or null"
-        },
-        "notes": "string or null"
+      "evidence_ids": ["string"],
+      "notes": "string or null"
+    }
+  ],
+  "evidence_objects": [
+    {
+      "evidence_id": "string or null",
+      "evidence_type": "section_span / table_cell / table_row / figure_caption / equation / mixed / null",
+      "extraction_method": "manual / text_llm / table_text_llm / table_image_ocr_llm / figure_caption_llm / equation_parse / other / null",
+      "source_file": "string or null",
+      "source_id": "string or null",
+      "section_heading": "string or null",
+      "page": "number or null",
+      "locator": {
+        "row_name": "string or null",
+        "column_name": "string or null",
+        "value": "string or null",
+        "excerpt": "string or null"
       },
-      "confidence": {
-        "label": "high / medium / low / null",
-        "score": "number or null"
-      },
+      "snippet": "string or null",
       "notes": "string or null"
     }
   ],
@@ -831,47 +827,60 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
 
 EXTRACT_USER_PROMPT_TEMPLATE = """
 1 Task description
-Extract crystal-plasticity information from the provided paper excerpt into the v3.1 hierarchical CP schema.
+Extract crystal-plasticity information from the provided paper excerpt into the v4.2 hierarchical CP schema.
 
 2 Task requirements
 - Use only explicit evidence in the excerpt.
 - If unknown, return null or empty list.
 - Keep parameter provenance carefully (adopted references vs calibration references).
-- Keep the hierarchy explicit: `phase` belongs inside its parent `materials[]` item as a sub-item.
 - Do not output a top-level `study` block.
-- Do not use `samples[]`; use `process_states[]` for material processing-state variants and `conditions[]` for loading/testing conditions.
-- Express microstructure as `microstructure_features[]`, not as fixed nested microstructure trees.
-- Keep `parameter_claims[]` claim-centric: separate `parameter`, `assertion`, `context`, `provenance`, and `evidence`.
+- Do not use `samples[]`.
+- Use `process_states[]` for material processing-state variants and `conditions[]` for loading/testing context.
+- Keep `contexts[]` limited to paper-level combination background units. A context is not the final precise target of a claim.
+- Keep `parameter_claims[]` claim-centric: separate `parameter`, `assertion`, `applies_to`, `provenance`, and `evidence_ids`.
+- Do not populate document metadata or full reference records in this extraction step; those are filled later by deterministic postprocessing.
+- Prioritize five linked questions for every extraction when possible:
+  1. what material or material state is being discussed
+  2. under which deformation, test, or calibration condition it applies
+  3. which model/framework the parameter belongs to
+  4. which phase / mechanism / family / system the parameter acts on
+  5. where the direct evidence is located
 - Extract the following schema from the paper excerpt:
 __SCHEMA_JSON__
 
 3 Processing suggestions
 - Prefer table values over narrative values when both are present.
-- Keep the original reported unit in value/unit; do not force SI conversion here.
-- Use `evidence` only for the direct supporting text/table snippet.
 - Use `provenance` only for provenance and origin tracing.
+- Use `evidence_objects[]` plus `evidence_ids` for evidence storage.
 - If both adopted and calibrated are stated, use origin_type as adopted_then_calibrated.
 - Put bracketed citation labels like 12, 60, 61 into reference id arrays.
 - For provenance, only output reference ID arrays; do not fabricate reference title/doi.
-- Do not use placeholders like this_study/present_study as reference IDs; put such info in `provenance.notes` or `evidence.text`.
+- Do not use placeholders like this_study/present_study as reference IDs; put such info in `provenance.notes`.
 - For comparative or multi-material papers, populate `materials[]` instead of collapsing everything into one material name.
 - For papers with multiple heat treatments, processing routes, or initial states, populate `process_states[]`.
-- Use `conditions[]` only for deformation/testing context such as temperature, strain rate, fatigue mode, indentation settings, or loading mode.
-- Use `microstructure_features[]` for grain size, texture, phase fraction, precipitates, porosity, selected grains, and other structure descriptors.
-- When a parameter is clearly tied to one material/process/condition, fill `context.material_id`, `context.process_state_id`, and `context.condition_id`.
-- Split context scope into two dimensions:
-  `context.mechanism_scope.level` is the hierarchy level.
-  `context.mechanism_scope.mechanism_type` is the mechanism category.
-- Keep the parameter identity in `parameter`, the numeric statement in `assertion`, and the applicability in `context`.
+- Use `process_states[].processing_steps[]` when the paper gives structured route information such as anneal/age/quench sequences.
+- Use `processing_steps[].deformation_amount` for rolling reduction, extrusion reduction, prestrain, or other deformation magnitudes when reported more naturally than generic strain.
+- Use `conditions[]` for temperature, strain rate, fatigue mode, indentation settings, environment, and calibration/validation role.
+- Use `contexts[]` to recover sample-model-condition combinations such as `aged sample + CPFE + RT tension calibration`.
+- `contexts[]` may aggregate multiple ids, but claim precision must still come from `parameter_claims[].applies_to`.
+- When explicit, fill `applies_to.material_id`, `applies_to.phase_id`, `applies_to.process_state_id`, `applies_to.model_id`, and `applies_to.condition_id`.
+- Use `applies_to.context_id` only as a background pointer.
+- Use `applies_to.mechanism_id` when the parameter is tied to a specific slip/twin/damage/transformation target.
+- If `applies_to.mechanism_id` is present, `applies_to.scope` must match the level of that mechanism.
+- If `applies_to.mechanism_id` is null, use `material_id` / `phase_id` / `model_id` / `condition_id` to make the target explicit when possible.
+- Use `applies_to.target_description` only as a human-readable supplement, not as the only binding.
+- Keep the parameter identity in `parameter`, the numeric statement in `assertion`, and the applicability in `applies_to`.
 - Put range/bounds or qualifiers inside `assertion`, not at top level.
-- If the claim comes from a table or image-backed table, fill `evidence.table_evidence` when possible.
+- If the claim or microstructure fact comes from a table or image-backed table, create an `evidence_objects[]` entry with row/column/value/excerpt when possible and link it through `evidence_ids`.
+- Always try to fill `evidence_objects[].source_file`, `source_id`, `section_heading`, and `extraction_method` when identifiable.
 - Tables may be row-oriented, column-oriented, transposed, matrix-like, multi-level-header, grouped-row, or image-backed. Interpret all of these as valid parameter sources.
 - Resolve units from the nearest reliable source: the value cell, row label, column header, section header, or shared table note. Do not duplicate or invent units.
-- Preserve table structure instead of flattening it. Keep row/column identity, grouped headers, section headers, and shared values explicit in `evidence.table_evidence` and `context`.
-- `evidence.table_evidence.row_name/column_name/value` should be human-readable labels. Do not emit row_index, column_index, or evidence_location.
-- `evidence.table_evidence.excerpt` should be the smallest self-contained supporting snippet: usually one table row or one grouped-row segment with the parameter label and value together. Do not dump the whole table, and do not reduce it to a naked number.
-- If you know the literature source or table section but not the exact numeric cell span, still provide `evidence.text` and `evidence.table_evidence` rather than leaving evidence blank.
+- Preserve table structure instead of flattening it. Keep row/column identity, grouped headers, section headers, and shared values explicit in `evidence_objects[].locator`.
+- `evidence_objects[].locator.row_name/column_name/value` should be human-readable labels. Do not emit row_index or column_index.
+- `evidence_objects[].locator.excerpt` should be the smallest self-contained supporting snippet: usually one table row or one grouped-row segment with the parameter label and value together.
 - `parameter.canonical_name` should already use the project-standard canonical name when it is clear from symbol/description/context. Avoid verbose phrase-like names if a stable canonical label is available.
+- Use `parameter.parameter_family` for the stable middle layer between coarse domain and specific canonical name.
+- Use `parameter.symbol_reported` for the symbol as written in the paper. Do not treat it as a normalized identifier.
 - Use snake_case enum values exactly.
 - Only emit a parameter claim when you can bind it to an explicit numeric/string value in the excerpt or to a concrete grouped table row with one-to-one value mapping.
 - If the excerpt only gives a definition, equation form, literature provenance, or says a parameter was calibrated/adopted without stating its value, omit that parameter from `parameter_claims`.
@@ -888,11 +897,15 @@ __SCHEMA_JSON__
 - Example: `Prism and Basal slip systems | γ̇0 | 3.5e-4` should become two claims if the value is shared by both prism and basal.
 - Example: `Prism and Basal slip systems | n | 20` should become two claims, not one ambiguous shared record.
 - For grouped rows with multiple labels and multiple values, preserve order and map each label to the corresponding value segment.
+- For comparative HCP/FCC tables with multi-row headers, inherit the active header semantics correctly. For an HCP row with columns such as `Prismatic <a>`, `Basal <a>`, and `Pyramidal I <c+a>`, extract all explicit slip strengths and assign the shared reference to each corresponding claim.
+- If continuation rows under the same structure block omit repeated elastic constants but still show explicit slip strengths, extract those explicit slip strengths instead of dropping the row.
 - For chemical-composition matrices, each column/material should become a separate entry in `materials[]`; do not flatten the entire table into one material string.
 - For grain-size / phase-fraction / texture tables, populate `microstructure_features[]` even if the table contains no CP parameters.
-- For selected-grain tables, populate `microstructure_features[]` with `type=selected_grain` and keep the grain identity in `description` or `notes`.
+- When a microstructure fact has direct support, create an evidence object and link it via `microstructure_features[].evidence_ids`.
+- When a microstructure fact is tied to a testing or loading scenario, fill `microstructure_features[].applies_to.condition_id`.
+- When a microstructure fact is specific to a testing or loading scenario, fill `microstructure_features[].applies_to.condition_id` as well as any material/phase/process-state bindings that are explicit.
 - Keep material-state hierarchy explicit: detailed per-material composition/phase data belongs in `materials[]`; per-process-state variation belongs in `process_states[]`; loading/test variation belongs in `conditions[]`.
-- For multiple deformation conditions in one paper, populate `conditions[]` and link `parameter_claims[]` through `context.condition_id` when explicit.
+- For multiple deformation conditions in one paper, populate `conditions[]` and link `parameter_claims[]` through `applies_to.condition_id` when explicit.
 - For parameter tables organized by temperature, grain size, process state, or method, expand each condition row into distinct parameter claims and link them to the right `process_state_id` / `condition_id`.
 - Distinguish calibration bounds from final calibrated parameters. If a table gives bounds or search ranges, do not convert the bound itself into a standalone calibrated parameter. Preserve it in `assertion.valid_range` when the mapping is explicit.
 - For image-backed parameter tables, apply the same completeness rule as text tables: recover all explicit numeric entries, including zeros, shared rows, and elastic blocks.
@@ -900,7 +913,7 @@ __SCHEMA_JSON__
 
 4 Few-shot examples
 Example A: Text says parameters adopted from [12,13] and calibrated against stress-strain curves.
-Expected behavior: provenance.origin_type is adopted_then_calibrated, adopted_from_reference_ids includes 12 and 13, and `evidence.text` mentions calibration target.
+Expected behavior: provenance.origin_type is adopted_then_calibrated, adopted_from_reference_ids includes 12 and 13, and the claim links to an evidence object mentioning the calibration target.
 
 Example B: Text states a parameter value but no source citation.
 Expected behavior: parameter extracted with null/empty provenance reference arrays.
@@ -936,10 +949,13 @@ Example L: A comparative table lists many materials as rows or columns, with ela
 Expected behavior: preserve one material entry per material and keep parameter claims tied to the correct material_id or phase_id instead of mixing all values into one generic phase.
 
 Example M: A selected-grain table lists grain IDs, phase labels, and grain sizes for a nanoindentation study.
-Expected behavior: populate `microstructure_features[]` with `type=selected_grain` entries instead of collapsing the information into a free-text note.
+Expected behavior: populate `microstructure_features[]` entries representing the selected local regions/grains instead of collapsing the information into a free-text note.
 
 Example N: One table gives GA calibration bounds, and later tables give GA/T&E final calibrated parameters.
 Expected behavior: keep the bounds as `assertion.valid_range` for the corresponding parameter when the mapping is explicit; do not create standalone `*_bound` parameters unless the paper explicitly treats the bound as a model quantity.
+
+Example O: An HCP material row contains `Prismatic <a> = 370`, `Basal <a> = 420`, `Pyramidal I <c+a> = 590`, with a shared reference `[78]`.
+Expected behavior: emit three separate parameter claims, one for each slip mode, and attach the same adopted provenance reference `[78]` to each claim.
 
 Paper excerpt:
 ----------------
@@ -1042,6 +1058,49 @@ def _project_v3_claim_to_legacy_registry_item(claim: Dict[str, Any]) -> Dict[str
     mechanism_scope = _safe_dict(context.get("mechanism_scope"))
     provenance = _safe_dict(claim.get("provenance"))
     evidence = _safe_dict(claim.get("evidence"))
+    legacy_applies = _safe_dict(claim.get("applies_to"))
+    if not parameter:
+        parameter = {
+            "canonical_name": claim.get("canonical_name"),
+            "symbol": claim.get("symbol"),
+            "domain": claim.get("domain"),
+            "description": claim.get("description"),
+            "units": {
+                "reported_unit": claim.get("unit"),
+                "si_unit": claim.get("unit_SI"),
+            },
+        }
+    if not assertion:
+        assertion = {
+            "value": claim.get("value"),
+            "reported_value": claim.get("value"),
+            "reported_unit": claim.get("unit"),
+            "value_si": claim.get("value_SI"),
+            "si_unit": claim.get("unit_SI"),
+            "valid_range": claim.get("valid_range"),
+        }
+    if not context:
+        context = {
+            "material_id": legacy_applies.get("material_id"),
+            "phase_id": legacy_applies.get("phase_id"),
+            "process_state_id": legacy_applies.get("sample_id"),
+            "condition_id": legacy_applies.get("condition_id"),
+            "notes": legacy_applies.get("notes"),
+            "mechanism_scope": {
+                "level": legacy_applies.get("scope"),
+                "mechanism_type": legacy_applies.get("mechanism"),
+                "family_id": legacy_applies.get("family_id"),
+                "family_name": legacy_applies.get("family_name"),
+                "system_ids": _safe_list(legacy_applies.get("system_ids")),
+            },
+        }
+        mechanism_scope = _safe_dict(context.get("mechanism_scope"))
+    if evidence and "text" not in evidence and "evidence_text" in evidence:
+        evidence = {
+            "text": evidence.get("evidence_text"),
+            "table_evidence": _safe_dict(evidence.get("table_evidence")) or None,
+            "notes": evidence.get("notes"),
+        }
     legacy_item = {
         "claim_id": claim.get("claim_id"),
         "domain": parameter.get("domain"),
@@ -1124,6 +1183,8 @@ def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, An
     document = _safe_dict(payload.get("document"))
     materials = [m for m in _safe_list(payload.get("materials")) if isinstance(m, dict)]
     process_states = [s for s in _safe_list(payload.get("process_states")) if isinstance(s, dict)]
+    legacy_samples = [s for s in _safe_list(payload.get("samples")) if isinstance(s, dict)]
+    compat_process_states = process_states or legacy_samples
     conditions = [c for c in _safe_list(payload.get("conditions")) if isinstance(c, dict)]
     models = [m for m in _safe_list(payload.get("models")) if isinstance(m, dict)]
     mechanisms = _safe_dict(payload.get("mechanisms"))
@@ -1135,7 +1196,7 @@ def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, An
     primary_phase = primary_phases[0] if primary_phases else {}
     primary_model = models[0] if models else {}
     primary_condition = conditions[0] if conditions else {}
-    primary_process_state = process_states[0] if process_states else {}
+    primary_process_state = compat_process_states[0] if compat_process_states else {}
     primary_grain_feature = _first_feature(
         microstructure_features,
         "grain_size",
@@ -1236,17 +1297,41 @@ def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, An
         ],
         "sample_profiles": [
             {
-                "sample_id": process_state.get("process_state_id"),
+                "sample_id": _first_non_empty(process_state.get("process_state_id"), process_state.get("sample_id")),
                 "material_id": process_state.get("material_id"),
-                "condition_id": _safe_list(process_state.get("linked_condition_ids"))[0] if _safe_list(process_state.get("linked_condition_ids")) else None,
+                "condition_id": (
+                    _safe_list(process_state.get("linked_condition_ids"))[0]
+                    if _safe_list(process_state.get("linked_condition_ids"))
+                    else (_safe_list(process_state.get("condition_ids"))[0] if _safe_list(process_state.get("condition_ids")) else None)
+                ),
                 "label": process_state.get("label"),
-                "processing_state": process_state.get("label"),
+                "processing_state": _first_non_empty(process_state.get("label"), process_state.get("processing_state")),
                 "temperature": None,
                 "grain_size": {
-                    "value": _first_feature(microstructure_features, "grain_size", material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id")).get("value"),
-                    "unit": _first_feature(microstructure_features, "grain_size", material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id")).get("unit"),
-                    "notes": _first_feature(microstructure_features, "grain_size", material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id")).get("notes"),
-                } if _first_feature(microstructure_features, "grain_size", material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id")) else None,
+                    "value": _first_feature(
+                        microstructure_features,
+                        "grain_size",
+                        material_id=process_state.get("material_id"),
+                        process_state_id=_first_non_empty(process_state.get("process_state_id"), process_state.get("sample_id")),
+                    ).get("value"),
+                    "unit": _first_feature(
+                        microstructure_features,
+                        "grain_size",
+                        material_id=process_state.get("material_id"),
+                        process_state_id=_first_non_empty(process_state.get("process_state_id"), process_state.get("sample_id")),
+                    ).get("unit"),
+                    "notes": _first_feature(
+                        microstructure_features,
+                        "grain_size",
+                        material_id=process_state.get("material_id"),
+                        process_state_id=_first_non_empty(process_state.get("process_state_id"), process_state.get("sample_id")),
+                    ).get("notes"),
+                } if _first_feature(
+                    microstructure_features,
+                    "grain_size",
+                    material_id=process_state.get("material_id"),
+                    process_state_id=_first_non_empty(process_state.get("process_state_id"), process_state.get("sample_id")),
+                ) else None,
                 "phase_fractions": [
                     {
                         "phase_id": _safe_dict(feature.get("applies_to")).get("phase_id"),
@@ -1257,7 +1342,11 @@ def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, An
                     for feature in microstructure_features
                     if isinstance(feature, dict)
                     and str(feature.get("type") or "").strip().lower() == "phase_fraction"
-                    and _feature_matches(feature, material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id"))
+                    and _feature_matches(
+                        feature,
+                        material_id=process_state.get("material_id"),
+                        process_state_id=_first_non_empty(process_state.get("process_state_id"), process_state.get("sample_id")),
+                    )
                 ],
                 "selected_grains": [
                     {
@@ -1271,12 +1360,21 @@ def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, An
                     for feature in microstructure_features
                     if isinstance(feature, dict)
                     and str(feature.get("type") or "").strip().lower() == "selected_grain"
-                    and _feature_matches(feature, material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id"))
+                    and _feature_matches(
+                        feature,
+                        material_id=process_state.get("material_id"),
+                        process_state_id=_first_non_empty(process_state.get("process_state_id"), process_state.get("sample_id")),
+                    )
                 ],
-                "texture_or_orientation": _first_feature(microstructure_features, "texture", material_id=process_state.get("material_id"), process_state_id=process_state.get("process_state_id")).get("description"),
+                "texture_or_orientation": _first_feature(
+                    microstructure_features,
+                    "texture",
+                    material_id=process_state.get("material_id"),
+                    process_state_id=_first_non_empty(process_state.get("process_state_id"), process_state.get("sample_id")),
+                ).get("description"),
                 "notes": process_state.get("notes"),
             }
-            for process_state in process_states
+            for process_state in compat_process_states
         ],
         "notes": payload.get("global_notes"),
     }
@@ -1510,8 +1608,6 @@ def _merge_source_enrichment(extracted: Dict[str, Any], enrich: Dict[str, Any]) 
             if isinstance(item.get("source"), dict):
                 target_key = "provenance" if claim_mode else "source"
                 registry[ridx][target_key] = _merge_source_payload(registry[ridx].get(target_key), item["source"])
-            if claim_mode and item.get("confidence") not in (None, "", [], {}):
-                registry[ridx]["confidence"] = _merge_source_payload(registry[ridx].get("confidence"), {"label": item.get("confidence")})
 
     for item in enrich.get("plastic_sources", []) or []:
         idx = item.get("index")
@@ -1520,8 +1616,6 @@ def _merge_source_enrichment(extracted: Dict[str, Any], enrich: Dict[str, Any]) 
             if isinstance(item.get("source"), dict):
                 target_key = "provenance" if claim_mode else "source"
                 registry[ridx][target_key] = _merge_source_payload(registry[ridx].get(target_key), item["source"])
-            if claim_mode and item.get("confidence") not in (None, "", [], {}):
-                registry[ridx]["confidence"] = _merge_source_payload(registry[ridx].get("confidence"), {"label": item.get("confidence")})
 
     return extracted
 
@@ -1799,8 +1893,6 @@ def run_llm_on_paper_dir(
             source_enrichment_error = str(exc)
 
     extracted = _strip_internal_keys(extracted)
-    extracted = _inject_legacy_compat_views_from_v3(extracted)
-    extracted = _drop_legacy_parameter_blocks(extracted)
     with open(os.path.join(paper_dir, "materials_extracted.json"), "w", encoding="utf-8") as f:
         json.dump(extracted, f, ensure_ascii=False, indent=2)
     print(
