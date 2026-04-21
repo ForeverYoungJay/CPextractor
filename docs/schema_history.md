@@ -21,7 +21,7 @@ These two layers do not currently share the same version number, so they are lis
 | `3.0.0` | 2026-04-08 | git commit `9ac9896` | `git show 9ac9896:llm/extractor.py` contains `"schema_version": "3.0.0"` |
 | `3.1.0` | 2026-04-08 | git commit `ac7f652` | `git show ac7f652:llm/extractor.py` contains `"schema_version": "3.1.0"` |
 | `4.2.0` | 2026-04-09 | git commit `662057d` | `git show 662057d:llm/extractor.py` contains `"schema_version": "4.2.0"` |
-| `4.3.0` | 2026-04-10 workspace state | current uncommitted working tree | [`llm/extractor.py`](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/llm/extractor.py#L514) contains `"schema_version": "4.3.0"` |
+| `5.0.2` | 2026-04-21 workspace state | current uncommitted working tree | [`llm/extractor.py`](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/llm/extractor.py#L514) contains `"schema_version": "5.0.2"` |
 
 ## Extractor Schema Timeline
 

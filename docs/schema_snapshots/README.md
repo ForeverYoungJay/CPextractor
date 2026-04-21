@@ -10,7 +10,7 @@ Generated from `llm/extractor.py` git history and the current workspace.
 | `3.0.0` | 2026-04-08 | `9ac9896` | [extractor_schema_v3.0.0.json](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/docs/schema_snapshots/extractor_schema_v3.0.0.json) |
 | `3.1.0` | 2026-04-08 | `ac7f652` | [extractor_schema_v3.1.0.json](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/docs/schema_snapshots/extractor_schema_v3.1.0.json) |
 | `4.2.0` | 2026-04-09 | `662057d` | [extractor_schema_v4.2.0.json](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/docs/schema_snapshots/extractor_schema_v4.2.0.json) |
-| `4.3.0` | 2026-04-10 | `working-tree` | [extractor_schema_v4.3.0.json](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/docs/schema_snapshots/extractor_schema_v4.3.0.json) |
+| `5.0.2` | 2026-04-21 | `working-tree` | [extractor_schema_v5.0.2.json](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/docs/schema_snapshots/extractor_schema_v5.0.2.json) |
 
 ## Notes
 
