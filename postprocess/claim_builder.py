@@ -60,6 +60,60 @@ def _normalize_evidence_for_claim(evidence: Dict[str, Any], grounded: Dict[str, 
     return {k: v for k, v in out.items() if v not in (None, "", [])}
 
 
+def _is_v4_claim(item: Dict[str, Any]) -> bool:
+    return isinstance(item, dict) and (
+        isinstance(item.get("parameter"), dict)
+        or isinstance(item.get("assertion"), dict)
+        or "governing_equation_ids" in item
+    )
+
+
+def _canonical_parameter_payload(item: Dict[str, Any], original_claim: Dict[str, Any]) -> Dict[str, Any]:
+    parameter = _safe_dict(original_claim.get("parameter")) or _safe_dict(item.get("parameter"))
+    payload = {
+        "canonical_name": _first_non_null(parameter.get("canonical_name"), original_claim.get("canonical_name"), item.get("canonical_name")),
+        "parameter_family": parameter.get("parameter_family"),
+        "raw_name": _first_non_null(parameter.get("raw_name"), original_claim.get("raw_name")),
+        "symbol_reported": _first_non_null(parameter.get("symbol_reported"), original_claim.get("symbol"), item.get("symbol")),
+        "domain": _first_non_null(parameter.get("domain"), original_claim.get("domain"), item.get("domain")),
+        "description": _first_non_null(parameter.get("description"), original_claim.get("description"), item.get("description")),
+    }
+    return {k: v for k, v in payload.items() if v not in (None, "", [])}
+
+
+def _canonical_assertion_payload(item: Dict[str, Any], original_claim: Dict[str, Any]) -> Dict[str, Any]:
+    assertion = _safe_dict(original_claim.get("assertion")) or _safe_dict(item.get("assertion"))
+    payload = {
+        "value_type": _first_non_null(assertion.get("value_type"), "scalar" if _first_non_null(item.get("value"), original_claim.get("value")) not in (None, "") else None),
+        "reported_value": _first_non_null(assertion.get("reported_value"), original_claim.get("value"), item.get("value")),
+        "reported_unit": _first_non_null(assertion.get("reported_unit"), original_claim.get("unit"), item.get("unit")),
+        "qualifier": assertion.get("qualifier"),
+        "valid_range": _first_non_null(assertion.get("valid_range"), original_claim.get("valid_range"), item.get("valid_range")),
+    }
+    return {k: v for k, v in payload.items() if v not in (None, "", [])}
+
+
+def _canonical_provenance_payload(source_payload: Dict[str, Any], original_claim: Dict[str, Any]) -> Dict[str, Any]:
+    original_prov = _safe_dict(original_claim.get("provenance"))
+    calibration = _safe_dict(original_prov.get("calibration"))
+    payload = {
+        "origin_type": _first_non_null(original_prov.get("origin_type"), source_payload.get("origin_type")),
+        "reference_ids": _first_non_null(original_prov.get("reference_ids"), source_payload.get("reference_ids"), []),
+        "adopted_from_reference_ids": _first_non_null(original_prov.get("adopted_from_reference_ids"), source_payload.get("adopted_from_reference_ids"), []),
+        "calibration_based_on_reference_ids": _first_non_null(original_prov.get("calibration_based_on_reference_ids"), source_payload.get("calibration_based_on_reference_ids"), []),
+        "calibration": {
+            "method": _first_non_null(calibration.get("method"), source_payload.get("calibration_method")),
+            "target_type": calibration.get("target_type"),
+            "target_description": calibration.get("target_description"),
+            "observation_scope": calibration.get("observation_scope"),
+            "notes": _first_non_null(calibration.get("notes"), source_payload.get("notes")),
+        },
+    }
+    if not any(payload["calibration"].values()):
+        payload.pop("calibration", None)
+    return {k: v for k, v in payload.items() if v not in (None, "", [])}
+
+
 def build_parameter_claims(
     extracted_json: Dict[str, Any],
     evaluation_report: Dict[str, Any] | None = None,
@@ -80,7 +134,6 @@ def build_parameter_claims(
     }
 
     claims: List[Dict[str, Any]] = []
-    compact_registry: List[Dict[str, Any]] = []
     evidence_objects = extracted_json.get("evidence_objects") or []
     evidence_by_id = {
         str(obj.get("evidence_id") or "").strip(): obj
@@ -92,10 +145,12 @@ def build_parameter_claims(
         for obj in (extracted_json.get("binding_contexts") or [])
         if isinstance(obj, dict) and str(obj.get("binding_id") or "").strip()
     }
+    raw_claims = extracted_json.get("parameter_claims") if isinstance(extracted_json.get("parameter_claims"), list) else []
     for idx, _, item in iter_parameter_items_with_index(extracted_json):
         source = _safe_dict(item.get("source"))
         evidence = _safe_dict(item.get("evidence"))
         claim_id = str(item.get("claim_id") or f"claim_{idx + 1:04d}")
+        original_claim = raw_claims[idx] if idx < len(raw_claims) and isinstance(raw_claims[idx], dict) else {}
         if isinstance(item, dict):
             item["claim_id"] = claim_id
         audit = {}
@@ -106,6 +161,10 @@ def build_parameter_claims(
             if audit or conf:
                 break
         evidence_ids = source.get("evidence_ids") if isinstance(source.get("evidence_ids"), list) else []
+        if not evidence_ids and isinstance(item.get("evidence_ids"), list):
+            evidence_ids = item.get("evidence_ids")
+        if not evidence_ids and isinstance(original_claim.get("evidence_ids"), list):
+            evidence_ids = original_claim.get("evidence_ids")
         first_evidence = {}
         for evidence_id in evidence_ids:
             grounded_evidence = evidence_by_id.get(str(evidence_id or "").strip())
@@ -122,6 +181,8 @@ def build_parameter_claims(
         binding_id = item.get("binding_id")
         applies_to = dict(binding_records.get(str(binding_id or "").strip()) or _safe_dict(item.get("applies_to")))
         applies_to.pop("binding_id", None)
+        if applies_to.get("phase_id") and not applies_to.get("constituent_id"):
+            applies_to["constituent_id"] = applies_to.pop("phase_id")
         source_payload = _normalize_source_for_claim(source)
         evidence_payload = _normalize_evidence_for_claim(evidence, first_evidence)
         confidence_payload = {
@@ -130,43 +191,30 @@ def build_parameter_claims(
         }
         confidence_payload = {k: v for k, v in confidence_payload.items() if v not in (None, "", [])}
 
-        claims.append({
+        claim_payload = {
             "claim_id": claim_id,
-            "domain": item.get("domain"),
-            "canonical_name": item.get("canonical_name"),
-            "canonical_name_raw": item.get("canonical_name_raw"),
-            "canonical_name_normalized": item.get("canonical_name_normalized"),
-            "symbol": item.get("symbol"),
-            "description": item.get("description"),
-            "value": item.get("value"),
-            "unit": item.get("unit"),
-            "value_SI": _first_non_null(item.get("value_SI"), item.get("value")),
-            "unit_SI": _first_non_null(item.get("unit_SI"), item.get("unit")),
+            "parameter": _canonical_parameter_payload(item, original_claim),
+            "assertion": _canonical_assertion_payload(item, original_claim),
             "applies_to": applies_to,
-            "provenance": source_payload,
-            "source": source_payload,
-            "evidence": evidence_payload,
-            "confidence": confidence_payload,
-            "temperature_dependent": item.get("temperature_dependent"),
-            "strain_rate_dependent": item.get("strain_rate_dependent"),
-            "valid_range": item.get("valid_range"),
-            "notes": item.get("notes"),
-            "parameter_location": f"parameters.registry[{idx}]",
-        })
-        compact_registry.append({
-            "claim_id": claim_id,
-        })
+            "provenance": _canonical_provenance_payload(source_payload, original_claim),
+            "governing_equation_ids": (
+                original_claim.get("governing_equation_ids")
+                if isinstance(original_claim.get("governing_equation_ids"), list)
+                else item.get("governing_equation_ids", [])
+            ),
+            "evidence_ids": evidence_ids,
+            "notes": _first_non_null(original_claim.get("notes"), item.get("notes")),
+        }
+        claim_payload = {k: v for k, v in claim_payload.items() if v not in (None, "", [])}
+        claims.append(claim_payload)
 
     extracted_json["parameter_claims"] = claims
     extracted_json.pop("provenance_records", None)
     extracted_json.pop("binding_contexts", None)
     extracted_json.pop("references", None)
-    extracted_json.setdefault("parameters", {})
-    extracted_json["parameters"]["registry"] = compact_registry
-    extracted_json["parameters"].pop("registry_full", None)
-    extracted_json["parameters"].pop("registry_compact", None)
+    extracted_json.pop("parameters", None)
     return extracted_json, {
         "claims_built": len(claims),
-        "claim_unit": "one raw-like parameter claim per registry item",
-        "registry_mode": "compact_claim_index_only",
+        "claim_unit": "one v5.0.2 parameter claim per normalized item",
+        "registry_mode": "removed_legacy_registry",
     }

@@ -36,9 +36,15 @@ def _build_issue_map(quality_report: Dict[str, Any]) -> Dict[str, List[Dict[str,
     for issue in quality_report.get("issues", []) or []:
         if not isinstance(issue, dict):
             continue
+        candidates: List[str] = []
+        loc = str(issue.get("location") or "").strip()
+        if loc:
+            candidates.append(loc)
         path = str(issue.get("path") or "").split(".source")[0].split(".value")[0].split(".unit")[0]
         if path:
-            out.setdefault(path, []).append(issue)
+            candidates.append(path)
+        for candidate in candidates:
+            out.setdefault(candidate, []).append(issue)
     return out
 
 
@@ -55,7 +61,10 @@ def _build_audit_map(parameter_audits: List[Dict[str, Any]]) -> Dict[str, Dict[s
 
 def _grounding_status(extracted_json: Dict[str, Any], item: Dict[str, Any]) -> str:
     src = item.get("source", {}) if isinstance(item.get("source"), dict) else {}
-    evidence_objects = resolve_evidence_objects(extracted_json, src.get("evidence_ids") or [])
+    evidence_ids = src.get("evidence_ids") if isinstance(src.get("evidence_ids"), list) else []
+    if not evidence_ids and isinstance(item.get("evidence_ids"), list):
+        evidence_ids = item.get("evidence_ids")
+    evidence_objects = resolve_evidence_objects(extracted_json, evidence_ids or [])
     if evidence_objects:
         return str(evidence_objects[0].get("status") or "").strip().lower()
     return str(item.get("grounding_status") or "").strip().lower()
@@ -66,7 +75,10 @@ def _is_table_based_claim(extracted_json: Dict[str, Any], item: Dict[str, Any]) 
     loc = src.get("evidence_location", {}) if isinstance(src.get("evidence_location"), dict) else {}
     if str(loc.get("kind") or "").strip().lower() == "table":
         return True
-    for obj in resolve_evidence_objects(extracted_json, src.get("evidence_ids") or []):
+    evidence_ids = src.get("evidence_ids") if isinstance(src.get("evidence_ids"), list) else []
+    if not evidence_ids and isinstance(item.get("evidence_ids"), list):
+        evidence_ids = item.get("evidence_ids")
+    for obj in resolve_evidence_objects(extracted_json, evidence_ids or []):
         if not isinstance(obj, dict):
             continue
         file_name = str(obj.get("file") or obj.get("matched_file") or "").strip().lower()
@@ -115,6 +127,8 @@ def _param_base_score(extracted_json: Dict[str, Any], item: Dict[str, Any]) -> f
     score = 70.0
     if src.get("evidence_text"):
         score += 10.0
+    elif isinstance(item.get("evidence_ids"), list) and item.get("evidence_ids"):
+        score += 5.0
     loc = src.get("evidence_location", {}) if isinstance(src.get("evidence_location"), dict) else {}
     if any(loc.get(k) not in (None, "") for k in ("kind", "id", "page")):
         score += 5.0
@@ -232,12 +246,15 @@ def fuse_confidence(
             "table_based": table_based,
         })
 
-    doc_rule_score = float(quality_report.get("rule_score") or 0.0)
+    quality_skipped = bool(quality_report.get("skipped"))
+    doc_rule_score = None if quality_skipped else float(quality_report.get("rule_score") or 0.0)
     doc_llm_score = float(evaluation_report.get("overall_score") or 0.0) if evaluation_report else None
-    if doc_llm_score is None:
-        final_doc_score = doc_rule_score
+    if quality_skipped:
+        final_doc_score = doc_llm_score if doc_llm_score is not None else 100.0
+    elif doc_llm_score is None:
+        final_doc_score = float(doc_rule_score or 0.0)
     else:
-        final_doc_score = (0.55 * doc_rule_score) + (0.45 * doc_llm_score)
+        final_doc_score = (0.55 * float(doc_rule_score or 0.0)) + (0.45 * doc_llm_score)
 
     fail_count = sum(1 for r in param_scores if str(r.get("llm_verdict") or "").strip().lower() == "fail")
     warning_count = sum(1 for r in param_scores if str(r.get("llm_verdict") or "").strip().lower() == "warning")
@@ -271,7 +288,8 @@ def fuse_confidence(
         "document_confidence_score": round(final_doc_score, 2),
         "document_confidence": doc_bucket,
         "quality_tier": quality_tier,
-        "rule_score": round(doc_rule_score, 2),
+        "rule_score": round(doc_rule_score, 2) if doc_rule_score is not None else None,
+        "rule_checks_skipped": quality_skipped,
         "llm_score": round(doc_llm_score, 2) if doc_llm_score is not None else None,
         "parameter_confidence": param_scores,
         "fail_parameter_count": fail_count,

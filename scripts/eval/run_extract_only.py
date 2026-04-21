@@ -87,7 +87,7 @@ def main() -> None:
     print(f"DOI: {doi}")
     print(f"Paper dir: {paper_dir}")
     print(f"Selected file record: {paper_dir / 'llm_selected_files.json'}")
-    print(f"Extraction output: {paper_dir / 'materials_extracted.json'}")
+    print(f"Extraction output: {paper_dir / 'materials_extracted.extractor_raw.json'}")
     print("Extractor metrics:")
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 

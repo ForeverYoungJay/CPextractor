@@ -48,26 +48,36 @@ def _is_compact_registry(registry: list[Any]) -> bool:
 
 def _claim_to_parameter_item(claim: Dict[str, Any]) -> Dict[str, Any]:
     claim = _safe_dict(claim)
+    parameter = _safe_dict(claim.get("parameter"))
+    assertion = _safe_dict(claim.get("assertion"))
     source = _safe_dict(claim.get("source")) or _safe_dict(claim.get("provenance"))
+    evidence_ids = claim.get("evidence_ids")
+    evidence = _safe_dict(claim.get("evidence"))
+    if not evidence and isinstance(evidence_ids, list):
+        evidence = {"evidence_ids": evidence_ids}
     return {
         "claim_id": claim.get("claim_id"),
-        "domain": claim.get("domain"),
-        "canonical_name": claim.get("canonical_name"),
+        "domain": claim.get("domain", parameter.get("domain")),
+        "canonical_name": claim.get("canonical_name", parameter.get("canonical_name")),
         "canonical_name_raw": claim.get("canonical_name_raw"),
         "canonical_name_normalized": claim.get("canonical_name_normalized"),
-        "symbol": claim.get("symbol"),
-        "description": claim.get("description"),
-        "value": claim.get("value", claim.get("reported_value")),
-        "unit": claim.get("unit", claim.get("reported_unit")),
-        "value_SI": claim.get("value_SI", claim.get("normalized_value")),
-        "unit_SI": claim.get("unit_SI", claim.get("normalized_unit")),
+        "symbol": claim.get("symbol", parameter.get("symbol_reported")),
+        "description": claim.get("description", parameter.get("description")),
+        "value": claim.get("value", claim.get("reported_value", assertion.get("reported_value"))),
+        "unit": claim.get("unit", claim.get("reported_unit", assertion.get("reported_unit"))),
+        "value_SI": claim.get("value_SI", claim.get("normalized_value", assertion.get("normalized_value"))),
+        "unit_SI": claim.get("unit_SI", claim.get("normalized_unit", assertion.get("normalized_unit"))),
         "applies_to": _safe_dict(claim.get("applies_to")),
         "source": source,
-        "evidence": _safe_dict(claim.get("evidence")),
+        "evidence": evidence,
         "notes": claim.get("notes"),
         "temperature_dependent": claim.get("temperature_dependent"),
         "strain_rate_dependent": claim.get("strain_rate_dependent"),
-        "valid_range": claim.get("valid_range"),
+        "valid_range": claim.get("valid_range", assertion.get("valid_range")),
+        "parameter": parameter,
+        "assertion": assertion,
+        "governing_equation_ids": claim.get("governing_equation_ids"),
+        "evidence_ids": evidence_ids,
     }
 
 

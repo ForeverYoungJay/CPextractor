@@ -14,7 +14,7 @@ The main entry point is [pipelines/run_pipeline.py](/Users/yang/Library/CloudSto
 
 The runtime flow is:
 1. collect DOI targets from `pipeline.dois`, local fulltext folders, or Scopus
-2. download and parse Elsevier XML into `paper.xml`, `sections/*.md`, `tables/*.md`, and `references.json`
+2. download and parse Elsevier XML into `paper.xml`, `sections/*.md`, `tables/*.json`, `equations/*`, and `references.json`
 3. run a two-stage LLM extractor:
    - file selection
    - schema-constrained extraction

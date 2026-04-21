@@ -317,7 +317,7 @@ def normalize_parameters(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any]
         "plastic_parameters_total": 0,
         "canonical_name_normalized": 0,
         "mechanism_normalized": 0,
-        "phase_id_filled": 0,
+        "constituent_id_filled": 0,
         "family_mapping_filled": 0,
         "system_mapping_filled": 0,
         "scope_normalized": 0,
@@ -380,18 +380,18 @@ def normalize_parameters(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any]
                     report["system_mapping_filled"] += 1
 
         # Scope normalization rules:
-        # global -> no phase_id
-        # phase -> phase_id
-        # family -> phase_id + family_id
-        # system -> phase_id + system_ids
+        # global -> no constituent_id
+        # constituent -> constituent_id
+        # family -> constituent_id + family_id
+        # system -> constituent_id + system_ids
         scope = _slug(applies.get("scope"))
-        if scope not in {"global", "phase", "family", "system"}:
+        if scope not in {"global", "constituent", "family", "system"}:
             if isinstance(applies.get("system_ids"), list) and applies.get("system_ids"):
                 scope = "system"
             elif applies.get("family_id") or applies.get("family_name"):
                 scope = "family"
-            elif applies.get("phase_id"):
-                scope = "phase"
+            elif applies.get("constituent_id") or applies.get("phase_id"):
+                scope = "constituent"
             else:
                 scope = "global"
             applies["scope"] = scope
@@ -400,16 +400,16 @@ def normalize_parameters(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any]
             applies["scope"] = scope
 
         if scope == "global":
-            if not applies.get("phase_id") and fam and fam.get("phase_id"):
-                applies["phase_id"] = fam.get("phase_id")
-        elif scope == "phase":
-            if not applies.get("phase_id"):
-                applies["phase_id"] = "phase_1"
-                report["phase_id_filled"] += 1
+            if not applies.get("constituent_id") and fam and fam.get("phase_id"):
+                applies["constituent_id"] = fam.get("phase_id")
+        elif scope == "constituent":
+            if not applies.get("constituent_id"):
+                applies["constituent_id"] = applies.get("phase_id") or "const_001"
+                report["constituent_id_filled"] += 1
         elif scope == "family":
-            if not applies.get("phase_id"):
-                applies["phase_id"] = "phase_1"
-                report["phase_id_filled"] += 1
+            if not applies.get("constituent_id"):
+                applies["constituent_id"] = applies.get("phase_id") or "const_001"
+                report["constituent_id_filled"] += 1
             if not applies.get("family_id"):
                 if fam and fam.get("family_id"):
                     applies["family_id"] = fam.get("family_id")
@@ -419,9 +419,9 @@ def normalize_parameters(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any]
                     applies["family_id"] = "family_1"
                 report["family_mapping_filled"] += 1
         elif scope == "system":
-            if not applies.get("phase_id"):
-                applies["phase_id"] = "phase_1"
-                report["phase_id_filled"] += 1
+            if not applies.get("constituent_id"):
+                applies["constituent_id"] = applies.get("phase_id") or "const_001"
+                report["constituent_id_filled"] += 1
             system_ids = applies.get("system_ids")
             if not isinstance(system_ids, list) or not system_ids:
                 if fam and isinstance(fam.get("systems"), list):
@@ -434,5 +434,9 @@ def normalize_parameters(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any]
             if applies.get("system_count") is None and isinstance(applies.get("system_ids"), list) and applies["system_ids"]:
                 applies["system_count"] = len(applies["system_ids"])
                 report["system_mapping_filled"] += 1
+
+        if applies.get("phase_id") and not applies.get("constituent_id"):
+            applies["constituent_id"] = applies.get("phase_id")
+        applies.pop("phase_id", None)
 
     return extracted_json, report

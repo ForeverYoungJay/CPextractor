@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS parameter_vectors (
   claim_id TEXT NOT NULL,
   material_id TEXT,
   material_name TEXT,
+  process_state_id TEXT,
+  process_state_name TEXT,
   sample_id TEXT,
   sample_label TEXT,
   condition_id TEXT,
@@ -57,12 +59,16 @@ CREATE TABLE IF NOT EXISTS parameter_vectors (
   canonical_name TEXT,
   symbol TEXT,
   domain TEXT,
+  constituent_id TEXT,
+  constituent_name TEXT,
   phase_id TEXT,
   phase_name TEXT,
   mechanism TEXT,
   family_id TEXT,
   family_name TEXT,
   model_id TEXT,
+  branch_id TEXT,
+  system_ids JSONB DEFAULT '[]'::jsonb,
   value_text TEXT,
   unit TEXT,
   origin_type TEXT,
@@ -80,12 +86,18 @@ ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS content_hash TEXT;
 ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS embedding_model TEXT;
 ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS material_id TEXT;
 ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS material_name TEXT;
+ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS process_state_id TEXT;
+ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS process_state_name TEXT;
 ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS sample_id TEXT;
 ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS sample_label TEXT;
 ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS condition_id TEXT;
 ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS condition_label TEXT;
+ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS constituent_id TEXT;
+ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS constituent_name TEXT;
 ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS phase_name TEXT;
 ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS model_id TEXT;
+ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS branch_id TEXT;
+ALTER TABLE parameter_vectors ADD COLUMN IF NOT EXISTS system_ids JSONB DEFAULT '[]'::jsonb;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_parameter_vectors_doi_claim
 ON parameter_vectors (doi, claim_id);

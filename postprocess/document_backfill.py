@@ -39,26 +39,39 @@ def _year_from_cover_date(cover_date: str | None) -> int | None:
     return int(m.group(1))
 
 
+def _is_extractor_first_payload(extracted_json: Dict[str, Any]) -> bool:
+    raw = str(extracted_json.get("schema_version") or "").strip()
+    if not raw:
+        return False
+    try:
+        major = int(raw.split(".")[0])
+    except Exception:
+        return False
+    return major >= 4
+
+
 def backfill_document_metadata(extracted_json: Dict[str, Any], paper_dir: str, doi_hint: str | None = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     report = {
         "paper_xml_found": False,
         "record_id_filled": False,
-        "source_document_fields_filled": [],
+        "document_fields_filled": [],
     }
 
-    sd = extracted_json.setdefault("source_document", {})
-    for k, default in (
+    target_key = "document" if _is_extractor_first_payload(extracted_json) else "source_document"
+    sd = extracted_json.setdefault(target_key, {})
+    field_specs = (
         ("title", None),
         ("authors", []),
         ("year", None),
-        ("journal_or_venue", None),
+        ("journal", None) if target_key == "document" else ("journal_or_venue", None),
         ("doi", None),
-    ):
+    )
+    for k, default in field_specs:
         if k not in sd:
             sd[k] = default
-    # Keep schema compact.
-    sd.pop("url", None)
-    sd.pop("notes", None)
+    if target_key == "source_document":
+        sd.pop("url", None)
+        sd.pop("notes", None)
 
     xml_text = ""
     xml_path = Path(paper_dir) / "paper.xml"
@@ -84,14 +97,14 @@ def backfill_document_metadata(extracted_json: Dict[str, Any], paper_dir: str, d
             return
         if sd.get(key) in (None, "", []):
             sd[key] = value
-            report["source_document_fields_filled"].append(key)
+            report["document_fields_filled"].append(key)
 
     _fill_scalar("title", title)
     if authors and (not isinstance(sd.get("authors"), list) or not sd.get("authors")):
         sd["authors"] = authors
-        report["source_document_fields_filled"].append("authors")
+        report["document_fields_filled"].append("authors")
     _fill_scalar("year", year)
-    _fill_scalar("journal_or_venue", journal)
+    _fill_scalar("journal" if target_key == "document" else "journal_or_venue", journal)
     _fill_scalar("doi", doi)
 
     if extracted_json.get("record_id") in (None, ""):

@@ -23,13 +23,13 @@ from elsevier.fulltext_parser import (
 from llm.extractor import run_llm_on_paper_dir
 from llm.evaluator import run_llm_evaluation
 from postprocess.reference_resolver import load_references
+from postprocess.compact_export import write_compact_summary
 from postprocess.workflow import (
     run_structure_normalization,
-    run_linking,
+    run_evidence_linking,
     run_deterministic_validation,
     run_finalization,
 )
-from postprocess.compact_export import write_compact_summary
 from pipelines.decision_layer import build_ingest_gate_report, apply_decision_layer
 
 
@@ -113,6 +113,18 @@ def _sanitize_snapshot_for_disk(payload: dict) -> dict:
     return _walk(payload)
 
 
+def _parameter_count_for_pipeline(payload: dict) -> int:
+    if not isinstance(payload, dict):
+        return 0
+    registry = ((payload.get("parameters") or {}).get("registry") or [])
+    if isinstance(registry, list) and registry:
+        return len(registry)
+    claims = payload.get("parameter_claims") or []
+    if isinstance(claims, list):
+        return len([claim for claim in claims if isinstance(claim, dict)])
+    return 0
+
+
 def _sync_local_paper_source(source_paper_dir: str, output_paper_dir: str) -> None:
     source = Path(source_paper_dir)
     target = Path(output_paper_dir)
@@ -123,7 +135,7 @@ def _sync_local_paper_source(source_paper_dir: str, output_paper_dir: str) -> No
         if src.exists():
             shutil.copy2(src, target / name)
 
-    for name in ("sections", "tables"):
+    for name in ("sections", "tables", "equations"):
         src = source / name
         dst = target / name
         if src.exists() and src.is_dir():
@@ -202,6 +214,7 @@ def main():
     gate_review_escalation_pass_max_review_required = int(
         pipeline_cfg.get("db_ingest_review_escalation_pass_max_review_required_parameters", 2)
     )
+    skip_quality_checks = bool(pipeline_cfg.get("skip_quality_checks", True))
     image_table_cfg = pipeline_cfg.get("image_backed_tables", {}) or {}
     image_table_keywords = image_table_cfg.get("relevant_keywords") or []
     direct_image_table_input = bool(llm_cfg.get("direct_image_table_input", True))
@@ -307,14 +320,14 @@ def main():
             metrics = llm_result["metrics"]
             write_json_snapshot(
                 os.path.join(paper_dir, "materials_extracted.extractor_raw.json"),
-                _sanitize_snapshot_for_disk(extracted),
+                extracted,
             )
             reports = {}
             reports["lineage"] = {
                 "prompt_version": str(llm_cfg.get("prompt_version", "v2.0.0")),
-                "schema_version": str(llm_cfg.get("schema_version", "2.0.0")),
+                "schema_version": str(extracted.get("schema_version") or llm_cfg.get("schema_version", "5.0.2")),
                 "extractor_version": str(llm_cfg.get("extractor_version", "extractor_v2")),
-                "postprocess_version": "post_v2.2",
+                "postprocess_version": "workflow_v5_0_2_finalized",
             }
 
             # Load references.json produced by fulltext_parser
@@ -335,25 +348,18 @@ def main():
             reports.update(structure_reports)
             stage_timings["structure_normalization_seconds"] = round(time.perf_counter() - structure_start, 3)
 
-            linking_start = time.perf_counter()
-            extracted, linking_reports = run_linking(
+            evidence_start = time.perf_counter()
+            extracted, evidence_reports = run_evidence_linking(
                 extracted,
                 paper_dir=paper_dir,
             )
-            reports.update(linking_reports)
-            stage_timings["evidence_linking_seconds"] = round(time.perf_counter() - linking_start, 3)
+            reports.update(evidence_reports)
+            stage_timings["evidence_linking_seconds"] = round(time.perf_counter() - evidence_start, 3)
 
-            validation_start = time.perf_counter()
-            extracted, validation_reports = run_deterministic_validation(extracted)
-            reports.update(validation_reports)
-            stage_timings["deterministic_validation_seconds"] = round(time.perf_counter() - validation_start, 3)
+            out_path = os.path.join(paper_dir, "materials_extracted.json")
 
-            parameter_count_pre_eval = len(((extracted.get("parameters") or {}).get("registry") or []))
+            parameter_count_pre_eval = _parameter_count_for_pipeline(extracted)
             if bool(llm_cfg.get("enable_evaluator", False)) and parameter_count_pre_eval > 0:
-                write_json_snapshot(
-                    os.path.join(paper_dir, "materials_extracted.pre_evaluator.json"),
-                    _sanitize_snapshot_for_disk(extracted),
-                )
                 eval_start = time.perf_counter()
                 evaluation, eval_metrics = run_llm_evaluation(
                     paper_dir=paper_dir,
@@ -364,8 +370,8 @@ def main():
                     parameter_limit=int(llm_cfg.get("evaluate_parameter_limit", 40)),
                     field_batch_size=int(llm_cfg.get("evaluate_parameter_batch_size", 12)),
                     per_evidence_chars=int(llm_cfg.get("evaluate_evidence_chars", 800)),
-                    quality_report=reports.get("quality_checks"),
-                    evidence_report=reports.get("evidence_grounding"),
+                    quality_report={},
+                    evidence_report=reports.get("evidence_grounding") or {},
                     feedback_artifact_path=llm_cfg.get("evaluation_feedback_json"),
                 )
                 reports["llm_evaluation"] = evaluation
@@ -378,14 +384,29 @@ def main():
                 if parameter_count_pre_eval == 0:
                     reports["llm_evaluation_skipped_reason"] = "no_explicit_parameters"
 
+            deterministic_start = time.perf_counter()
+            extracted, deterministic_reports = run_deterministic_validation(
+                extracted,
+                skip_quality_checks=skip_quality_checks,
+            )
+            reports.update(deterministic_reports)
+            stage_timings["deterministic_validation_seconds"] = round(
+                time.perf_counter() - deterministic_start, 3
+            )
+
             finalization_start = time.perf_counter()
-            extracted, final_reports = run_finalization(
+            extracted, finalization_reports = run_finalization(
                 extracted,
                 evaluation_report=reports.get("llm_evaluation"),
                 quality_report=reports.get("quality_checks"),
             )
-            reports.update(final_reports)
-            stage_timings["finalization_seconds"] = round(time.perf_counter() - finalization_start, 3)
+            reports.update(finalization_reports)
+            stage_timings["finalization_seconds"] = round(
+                time.perf_counter() - finalization_start, 3
+            )
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(extracted, f, ensure_ascii=False, indent=2)
+
             reports["pipeline_metrics"] = dict(metrics)
             reports["pipeline_metrics"]["stages"] = stage_timings
             reports["ingest_gate"] = build_ingest_gate_report(
@@ -401,11 +422,6 @@ def main():
                 review_escalation_pass_max_review_required_parameters=gate_review_escalation_pass_max_review_required,
             )
             blocked_by_gate = bool(reports["ingest_gate"].get("blocked"))
-
-            out_path = os.path.join(paper_dir, "materials_extracted.json")
-
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(extracted, f, ensure_ascii=False, indent=2)
 
             with open(os.path.join(paper_dir, "postprocess_report.json"), "w", encoding="utf-8") as f:
                 json.dump(reports, f, ensure_ascii=False, indent=2)

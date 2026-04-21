@@ -5,8 +5,12 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
-def _safe_dict(v: Any) -> Dict[str, Any]:
-    return v if isinstance(v, dict) else {}
+def _safe_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_list(value: Any) -> List[Any]:
+    return value if isinstance(value, list) else []
 
 
 def build_compact_summary(
@@ -16,43 +20,39 @@ def build_compact_summary(
 ) -> Dict[str, Any]:
     postprocess_report = postprocess_report or {}
     llm_evaluation = llm_evaluation or {}
-    material = _safe_dict(extracted_json.get("material"))
-    source_document = _safe_dict(extracted_json.get("source_document"))
+
     document = _safe_dict(extracted_json.get("document"))
-    materials = [m for m in (extracted_json.get("materials") or []) if isinstance(m, dict)]
-    primary_material = _safe_dict(materials[0]) if materials else {}
-    compact_claims: List[Dict[str, Any]] = []
-    for claim in extracted_json.get("parameter_claims") or []:
+    study = _safe_dict(extracted_json.get("study"))
+    materials = [m for m in _safe_list(extracted_json.get("materials")) if isinstance(m, dict)]
+    constituents = [c for c in _safe_list(extracted_json.get("constituents")) if isinstance(c, dict)]
+    claims: List[Dict[str, Any]] = []
+
+    for claim in _safe_list(extracted_json.get("parameter_claims")):
         if not isinstance(claim, dict):
             continue
-        binding = _safe_dict(claim.get("applies_to"))
+        parameter = _safe_dict(claim.get("parameter"))
+        assertion = _safe_dict(claim.get("assertion"))
+        applies_to = _safe_dict(claim.get("applies_to"))
         provenance = _safe_dict(claim.get("provenance")) or _safe_dict(claim.get("source"))
-        evidence = _safe_dict(claim.get("evidence"))
-        table_evidence = _safe_dict(evidence.get("table_evidence"))
-        compact_claims.append({
+        claims.append({
             "claim_id": claim.get("claim_id"),
-            "parameter": claim.get("canonical_name"),
-            "symbol": claim.get("symbol"),
-            "material_id": binding.get("material_id"),
-            "sample_id": binding.get("sample_id"),
-            "condition_id": binding.get("condition_id"),
-            "value": claim.get("value", claim.get("reported_value")),
-            "unit": claim.get("unit", claim.get("reported_unit")),
-            "phase": _safe_dict(binding).get("phase_id"),
-            "scope": _safe_dict(binding).get("scope"),
-            "family": _safe_dict(binding).get("family_name") or _safe_dict(binding).get("family_id"),
-            "origin_type": _safe_dict(provenance).get("origin_type"),
-            "evidence": {
-                "evidence_text": evidence.get("evidence_text"),
-                "row_name": table_evidence.get("row_name"),
-                "column_name": table_evidence.get("column_name"),
-                "value": table_evidence.get("value"),
-                "file": evidence.get("file"),
-            },
+            "canonical_name": claim.get("canonical_name") or parameter.get("canonical_name"),
+            "symbol": claim.get("symbol") or parameter.get("symbol_reported"),
+            "material_id": applies_to.get("material_id"),
+            "constituent_id": applies_to.get("constituent_id"),
+            "process_state_id": applies_to.get("process_state_id"),
+            "model_id": applies_to.get("model_id"),
+            "condition_id": applies_to.get("condition_id"),
+            "branch_id": applies_to.get("branch_id"),
+            "scope": applies_to.get("scope"),
+            "value": claim.get("value", assertion.get("reported_value")),
+            "unit": claim.get("unit", assertion.get("reported_unit")),
+            "origin_type": provenance.get("origin_type"),
+            "governing_equation_ids": _safe_list(claim.get("governing_equation_ids")),
         })
 
-    issues = []
-    for issue in ((_safe_dict(postprocess_report.get("quality_checks")).get("issues")) or []):
+    issues: List[Dict[str, Any]] = []
+    for issue in _safe_list(_safe_dict(postprocess_report.get("quality_checks")).get("issues")):
         if isinstance(issue, dict):
             issues.append({
                 "type": issue.get("type"),
@@ -60,7 +60,7 @@ def build_compact_summary(
                 "path": issue.get("path"),
                 "message": issue.get("message"),
             })
-    for issue in (llm_evaluation.get("critical_issues") or []):
+    for issue in _safe_list(llm_evaluation.get("critical_issues")):
         if isinstance(issue, dict):
             issues.append({
                 "type": issue.get("category"),
@@ -70,13 +70,21 @@ def build_compact_summary(
             })
 
     return {
-        "doi": document.get("doi") or source_document.get("doi"),
-        "title": document.get("title") or source_document.get("title"),
-        "material": {
-            "name": primary_material.get("name") or material.get("name"),
-            "formula": primary_material.get("formula") or material.get("chemical_formula"),
-            "phase_mode": extracted_json.get("study", {}).get("study_type") if isinstance(extracted_json.get("study"), dict) else material.get("phase"),
-            "phases": primary_material.get("phases") or material.get("phases"),
+        "schema_version": extracted_json.get("schema_version"),
+        "document": {
+            "doi": document.get("doi"),
+            "title": document.get("title"),
+            "year": document.get("year"),
+            "journal": document.get("journal"),
+        },
+        "study": {
+            "study_type": study.get("study_type"),
+            "primary_focus": study.get("primary_focus"),
+        },
+        "materials": {
+            "count": len(materials),
+            "primary_material": _safe_dict(materials[0]) if materials else {},
+            "constituent_count": len(constituents),
         },
         "summary": {
             "quality_tier": extracted_json.get("quality_tier"),
@@ -84,7 +92,7 @@ def build_compact_summary(
             "verdict": llm_evaluation.get("verdict"),
             "overall_score": llm_evaluation.get("overall_score"),
         },
-        "claims": compact_claims,
+        "claims": claims,
         "issues": issues,
     }
 

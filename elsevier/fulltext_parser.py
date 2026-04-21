@@ -45,6 +45,325 @@ def normalize_text(s: str) -> str:
     return s.strip()
 
 
+def _tag_matches(tag, names):
+    tag_name = str(getattr(tag, "name", "") or "")
+    if not tag_name:
+        return False
+    local = tag_name.split(":")[-1]
+    allowed = set()
+    for name in names:
+        text = str(name or "")
+        if not text:
+            continue
+        allowed.add(text)
+        allowed.add(text.split(":")[-1])
+    return tag_name in allowed or local in allowed
+
+
+def _nearest_ancestor(tag, names):
+    parent = getattr(tag, "parent", None)
+    while parent is not None:
+        if _tag_matches(parent, names):
+            return parent
+        parent = getattr(parent, "parent", None)
+    return None
+
+
+def _nearest_section_title(tag):
+    sec = _nearest_ancestor(tag, {"ce:section", "section", "sec"})
+    if not sec:
+        return None
+    st = sec.find(["ce:section-title", "section-title", "title"], recursive=False) or sec.find(
+        ["ce:section-title", "section-title", "title"]
+    )
+    if st and st.get_text(strip=True):
+        return normalize_text(st.get_text(" ", strip=True))
+    return None
+
+
+def _paragraph_context(tag):
+    para = _nearest_ancestor(tag, {"ce:para", "simple-para", "para", "p"})
+    if not para:
+        return None, None
+    para_id = para.get("id")
+    para_text = normalize_text(para.get_text(" ", strip=True))
+    return para_id, para_text or None
+
+
+def _equation_plain_text(tag):
+    text = normalize_text(tag.get_text(" ", strip=True))
+    text = text.replace("( ", "(").replace(" )", ")")
+    return text
+
+
+def _formula_marker_text(formula_tag) -> str:
+    if formula_tag is None:
+        return ""
+    label_tag = formula_tag.find(["ce:label", "label"])
+    label = normalize_text(label_tag.get_text(" ", strip=True)) if label_tag and label_tag.get_text(strip=True) else None
+    math_tag = formula_tag.find(["mml:math", "math"])
+    equation_text = _equation_plain_text(math_tag or formula_tag)
+    parts = []
+    if label:
+        parts.append(f"Equation {label}:")
+    elif equation_text:
+        parts.append("Equation:")
+    if equation_text:
+        parts.append(equation_text)
+    return " ".join(parts).strip()
+
+
+def _inject_formula_markers(container):
+    if container is None:
+        return
+    for formula_tag in list(container.find_all(["ce:formula", "formula", "disp-formula", "inline-formula"])):
+        marker = _formula_marker_text(formula_tag)
+        if not marker:
+            continue
+        formula_tag.replace_with(" " + marker + " ")
+
+
+def _mathml_local_name(tag) -> str:
+    return str(getattr(tag, "name", "") or "").split(":")[-1]
+
+
+def _mathml_children(tag):
+    return [c for c in getattr(tag, "children", []) if getattr(c, "name", None) or str(c).strip()]
+
+
+def _mathml_join(parts):
+    text = "".join(p for p in parts if p)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _mathml_operator(text: str) -> str:
+    mapped = {
+        "−": "-",
+        "–": "-",
+        "—": "-",
+        "±": r"\pm",
+        "∓": r"\mp",
+        "×": r"\times",
+        "·": r"\cdot",
+        "⋅": r"\cdot",
+        "∗": r"\ast",
+        "∑": r"\sum",
+        "∏": r"\prod",
+        "∫": r"\int",
+        "∂": r"\partial",
+        "∞": r"\infty",
+        "π": r"\pi",
+        "∇": r"\nabla",
+        "≠": r"\neq",
+        "≤": r"\leq",
+        "≥": r"\geq",
+        "≈": r"\approx",
+        "≃": r"\simeq",
+        "∝": r"\propto",
+        "→": r"\to",
+        "⟶": r"\to",
+        "↔": r"\leftrightarrow",
+        "⇒": r"\Rightarrow",
+        "⇔": r"\Leftrightarrow",
+        "⊗": r"\otimes",
+        "⨂": r"\otimes",
+        "⊙": r"\odot",
+        "°": r"^\circ",
+    }
+    text = normalize_text(text)
+    return mapped.get(text, text)
+
+
+def _mathml_identifier(text: str) -> str:
+    text = normalize_text(text)
+    greek = {
+        "α": r"\alpha",
+        "β": r"\beta",
+        "γ": r"\gamma",
+        "Γ": r"\Gamma",
+        "δ": r"\delta",
+        "Δ": r"\Delta",
+        "ε": r"\varepsilon",
+        "ϵ": r"\epsilon",
+        "η": r"\eta",
+        "θ": r"\theta",
+        "Θ": r"\Theta",
+        "κ": r"\kappa",
+        "λ": r"\lambda",
+        "Λ": r"\Lambda",
+        "μ": r"\mu",
+        "ν": r"\nu",
+        "ξ": r"\xi",
+        "Ξ": r"\Xi",
+        "π": r"\pi",
+        "ρ": r"\rho",
+        "σ": r"\sigma",
+        "Σ": r"\Sigma",
+        "τ": r"\tau",
+        "φ": r"\phi",
+        "Φ": r"\Phi",
+        "χ": r"\chi",
+        "ψ": r"\psi",
+        "Ψ": r"\Psi",
+        "ω": r"\omega",
+        "Ω": r"\Omega",
+    }
+    operators = {
+        "tr": r"\operatorname{tr}",
+        "sign": r"\operatorname{sign}",
+        "sgn": r"\operatorname{sgn}",
+        "sym": r"\operatorname{sym}",
+        "skw": r"\operatorname{skw}",
+        "exp": r"\exp",
+        "ln": r"\ln",
+        "sin": r"\sin",
+        "cos": r"\cos",
+        "tan": r"\tan",
+        "max": r"\max",
+        "min": r"\min",
+        "det": r"\det",
+    }
+    if text in greek:
+        return greek[text]
+    low = text.lower()
+    if low in operators:
+        return operators[low]
+    return text
+
+
+def _cleanup_latex(text: str) -> str:
+    text = text or ""
+    text = text.replace(" otimes ", r" \otimes ")
+    text = re.sub(r"\\overset\{˙\}\{([^}]*)\}", r"\\dot{\1}", text)
+    text = re.sub(r"\\overset\{̇\}\{([^}]*)\}", r"\\dot{\1}", text)
+    text = re.sub(r"\\underset\{([^}]*)\}\{\\sum\}", r"\\sum_{\1}", text)
+    text = re.sub(r"(?<![A-Za-z])sgn(?=[A-Za-z\\(])", r"\\operatorname{sgn}", text)
+    text = re.sub(r"(?<![A-Za-z])sign(?=[A-Za-z\\(])", r"\\operatorname{sign}", text)
+    text = re.sub(r"(?<![A-Za-z\\])tr(?=[A-Za-z\\(])", r"\\operatorname{tr}", text)
+    text = re.sub(r"(\\[A-Za-z]+)tr([A-Za-z\\])", r"\1 \\operatorname{tr} \2", text)
+    text = re.sub(r"(\\[A-Za-z]+)(\\operatorname\{(?:sgn|sign)\})", r"\1 \2", text)
+    text = re.sub(r"(\\operatorname\{(?:sgn|sign|tr)\})(\\[A-Za-z]+)", r"\1(\2)", text)
+    text = re.sub(r"(\\operatorname\{(?:sgn|sign|tr)\})([A-Za-z])", r"\1(\2)", text)
+    text = re.sub(r"\\otimes([A-Za-z\\])", r"\\otimes \1", text)
+    text = re.sub(r"([A-Za-z\\])\\otimes", r"\1 \\otimes", text)
+    text = re.sub(r"nosumon\s*([A-Za-z\\]+)", r"\\text{no sum on } \1", text)
+    text = re.sub(r"([a-zA-Z0-9\}\]])\\operatorname", r"\1 \\operatorname", text)
+    text = re.sub(r"(\\operatorname\{(?:sgn|sign|tr)\})([A-Za-z\\][^,\s)]*)", r"\1(\2)", text)
+    text = re.sub(r"([A-Za-z])\s+([A-Za-z])", r"\1\2", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\(\s+", "(", text)
+    text = re.sub(r"\s+\)", ")", text)
+    text = re.sub(r"\{\s+", "{", text)
+    text = re.sub(r"\s+\}", "}", text)
+    return text
+
+
+def mathml_to_latex(node) -> str:
+    if node is None:
+        return ""
+
+    if getattr(node, "name", None) is None:
+        return str(node).strip()
+
+    name = _mathml_local_name(node)
+    children = _mathml_children(node)
+
+    if name in {"math", "mrow", "mstyle", "semantics"}:
+        return _mathml_join([mathml_to_latex(child) for child in children])
+
+    if name in {"mi", "mn"}:
+        return _mathml_identifier(node.get_text(" ", strip=True))
+
+    if name == "mtext":
+        return _mathml_identifier(node.get_text(" ", strip=True))
+
+    if name == "mo":
+        return _mathml_operator(node.get_text(" ", strip=True))
+
+    if name == "msub":
+        base = mathml_to_latex(children[0]) if len(children) > 0 else ""
+        sub = mathml_to_latex(children[1]) if len(children) > 1 else ""
+        return f"{base}_{{{sub}}}"
+
+    if name == "msup":
+        base = mathml_to_latex(children[0]) if len(children) > 0 else ""
+        sup = mathml_to_latex(children[1]) if len(children) > 1 else ""
+        return f"{base}^{{{sup}}}"
+
+    if name == "msubsup":
+        base = mathml_to_latex(children[0]) if len(children) > 0 else ""
+        sub = mathml_to_latex(children[1]) if len(children) > 1 else ""
+        sup = mathml_to_latex(children[2]) if len(children) > 2 else ""
+        return f"{base}_{{{sub}}}^{{{sup}}}"
+
+    if name == "mfrac":
+        num = mathml_to_latex(children[0]) if len(children) > 0 else ""
+        den = mathml_to_latex(children[1]) if len(children) > 1 else ""
+        return rf"\frac{{{num}}}{{{den}}}"
+
+    if name == "msqrt":
+        body = _mathml_join([mathml_to_latex(child) for child in children])
+        return rf"\sqrt{{{body}}}"
+
+    if name == "mroot":
+        body = mathml_to_latex(children[0]) if len(children) > 0 else ""
+        degree = mathml_to_latex(children[1]) if len(children) > 1 else ""
+        return rf"\sqrt[{degree}]{{{body}}}"
+
+    if name == "mover":
+        base = mathml_to_latex(children[0]) if len(children) > 0 else ""
+        over = mathml_to_latex(children[1]) if len(children) > 1 else ""
+        accent_map = {
+            "^": r"\hat",
+            "~": r"\tilde",
+            "¯": r"\bar",
+            "→": r"\vec",
+            "˙": r"\dot",
+            "̇": r"\dot",
+        }
+        if over in accent_map:
+            return rf"{accent_map[over]}{{{base}}}"
+        return rf"\overset{{{over}}}{{{base}}}"
+
+    if name == "munder":
+        base = mathml_to_latex(children[0]) if len(children) > 0 else ""
+        under = mathml_to_latex(children[1]) if len(children) > 1 else ""
+        return rf"\underset{{{under}}}{{{base}}}"
+
+    if name == "munderover":
+        base = mathml_to_latex(children[0]) if len(children) > 0 else ""
+        under = mathml_to_latex(children[1]) if len(children) > 1 else ""
+        over = mathml_to_latex(children[2]) if len(children) > 2 else ""
+        return f"{base}_{{{under}}}^{{{over}}}"
+
+    if name == "mfenced":
+        open_delim = node.get("open", "(")
+        close_delim = node.get("close", ")")
+        body = ", ".join(mathml_to_latex(child) for child in children)
+        return f"{open_delim}{body}{close_delim}"
+
+    if name == "mtable":
+        rows = []
+        for row in children:
+            if _mathml_local_name(row) != "mtr":
+                continue
+            cols = [mathml_to_latex(cell) for cell in _mathml_children(row) if _mathml_local_name(cell) == "mtd"]
+            rows.append(" & ".join(c for c in cols if c))
+        if len(rows) == 1 and "&" not in rows[0]:
+            return rows[0]
+        return r"\begin{matrix} " + r" \\ ".join(rows) + r" \end{matrix}"
+
+    if name in {"mtr", "mtd"}:
+        return _mathml_join([mathml_to_latex(child) for child in children])
+
+    if name == "annotation":
+        return normalize_text(node.get_text(" ", strip=True))
+
+    latex = _mathml_join([mathml_to_latex(child) for child in children]) or _mathml_identifier(node.get_text(" ", strip=True))
+    return _cleanup_latex(latex)
+
+
 def rows_to_markdown(rows):
     """Convert table rows into a Markdown table."""
     if not rows:
@@ -326,6 +645,98 @@ def run_rule_based_table_ocr(image_path, output_json_path):
     return result
 
 
+# --------------------------------------------------
+# Equation extraction
+# --------------------------------------------------
+
+def extract_equations_from_xml(soup):
+    """
+    Extract standalone display formulas from Elsevier XML.
+    """
+    equations = []
+
+    formula_tags = soup.find_all(["ce:formula", "formula", "disp-formula", "inline-formula"])
+    for idx, formula_tag in enumerate(formula_tags, start=1):
+        math_tag = formula_tag.find(["mml:math", "math"])
+        label_tag = formula_tag.find(["ce:label", "label"])
+        equations.append(
+            {
+                "equation_index": idx,
+                "kind": "display_formula",
+                "label": normalize_text(label_tag.get_text(" ", strip=True)) if label_tag and label_tag.get_text(strip=True) else None,
+                "section_title": _nearest_section_title(formula_tag),
+                "mathml": str(math_tag or formula_tag),
+                "xml": str(formula_tag),
+                "text": _equation_plain_text(math_tag or formula_tag),
+                "latex": _cleanup_latex(mathml_to_latex(math_tag or formula_tag)),
+            }
+        )
+
+    return equations
+
+
+def save_equations(equations, outdir):
+    os.makedirs(outdir, exist_ok=True)
+    for stale in os.listdir(outdir):
+        if re.match(r"^equation_\d+\.(xml|txt)$", stale):
+            try:
+                os.remove(os.path.join(outdir, stale))
+            except OSError:
+                pass
+
+    index = []
+
+    for eq in equations:
+        base_name = f"equation_{int(eq['equation_index']):03d}"
+        txt_path = os.path.join(outdir, f"{base_name}.txt")
+        equation_id = f"eq_{int(eq['equation_index']):04d}"
+
+        with open(txt_path, "w", encoding="utf-8") as f:
+            meta = [
+                f"Equation ID: {equation_id}",
+            ]
+            if eq.get("label"):
+                meta.append(f"Label: {eq['label']}")
+            if eq.get("section_title"):
+                meta.append(f"Section: {eq['section_title']}")
+
+            lines = meta + [""]
+            if eq.get("latex"):
+                lines.extend(
+                    [
+                        "LaTeX",
+                        "-----",
+                        eq["latex"],
+                        "",
+                    ]
+                )
+            if eq.get("text"):
+                lines.extend(
+                    [
+                        "Plain Text",
+                        "----------",
+                        eq["text"],
+                        "",
+                    ]
+                )
+            f.write("\n".join(lines).rstrip() + "\n")
+
+        record = {
+            "equation_id": equation_id,
+            "equation_index": eq.get("equation_index"),
+            "section_title": eq.get("section_title"),
+            "text": eq.get("text"),
+            "latex": eq.get("latex"),
+            "text_file": os.path.basename(txt_path),
+        }
+        index.append(record)
+
+    with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
+        json.dump(index, f, ensure_ascii=False, indent=2)
+
+    return index
+
+
 
 # --------------------------------------------------
 # Abstract extraction
@@ -479,6 +890,7 @@ def _first_direct_paragraph_preview(sec, refid_to_num, max_chars=220):
             continue
         p_copy = BeautifulSoup(str(p), "xml")
         p_tag = p_copy.find(["ce:para", "para", "p"]) or p_copy
+        _inject_formula_markers(p_tag)
         replace_crossrefs_with_numbers(p_tag, refid_to_num)
         txt = normalize_text(p_tag.get_text(" ", strip=True))
         if txt:
@@ -519,6 +931,7 @@ def section_to_markdown(sec, tables_map, refid_to_num):
         p_copy = BeautifulSoup(str(p), "xml")
         p_tag = p_copy.find(["ce:para", "para", "p"]) or p_copy
 
+        _inject_formula_markers(p_tag)
         replace_crossrefs_with_numbers(p_tag, refid_to_num)
 
         txt = normalize_text(p_tag.get_text(" ", strip=True))
@@ -739,9 +1152,11 @@ def save_paper_as_markdown_and_tables(
     # --------------------------------------------------
     sections_dir = os.path.join(base_dir, "sections")
     tables_dir = os.path.join(base_dir, "tables")
+    equations_dir = os.path.join(base_dir, "equations")
 
     os.makedirs(sections_dir, exist_ok=True)
     os.makedirs(tables_dir, exist_ok=True)
+    os.makedirs(equations_dir, exist_ok=True)
 
     # Save raw XML
     xml_path = os.path.join(base_dir, "paper.xml")
@@ -773,6 +1188,7 @@ def save_paper_as_markdown_and_tables(
 
     # Extract tables (global)
     tables = extract_tables_from_xml(soup, refid_to_num=refid_to_num)
+    equations = extract_equations_from_xml(soup)
 
     tables_map = {}
     for t in tables:
@@ -804,6 +1220,9 @@ def save_paper_as_markdown_and_tables(
 
         with open(os.path.join(tables_dir, f"{table_base}.json"), "w", encoding="utf-8") as f:
             json.dump(t, f, ensure_ascii=False, indent=2)
+
+    # Save equations
+    save_equations(equations, equations_dir)
 
     # Abstract
     combined_md = [f"# {paper_title}", ""]

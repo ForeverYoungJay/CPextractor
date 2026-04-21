@@ -1,6 +1,7 @@
 #streamlit run chatbot_ui.py --server.port 8501 --server.address 127.0.0.1
 import json
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -155,6 +156,27 @@ def confidence_badge(conf: str) -> str:
     return f'<span class="badge {c}">confidence: {c}</span>'
 
 
+def render_markdown_with_latex(text: str) -> None:
+    if not text:
+        return
+
+    pattern = r"(\$\$.*?\$\$|\\\[.*?\\\])"
+    parts = re.split(pattern, text, flags=re.DOTALL)
+    for part in parts:
+        if not part:
+            continue
+        block = part.strip()
+        if not block:
+            continue
+        if block.startswith("$$") and block.endswith("$$"):
+            st.latex(block[2:-2].strip())
+            continue
+        if block.startswith(r"\[") and block.endswith(r"\]"):
+            st.latex(block[2:-2].strip())
+            continue
+        st.markdown(part)
+
+
 def render_answer(result: Dict[str, Any]) -> None:
     answer = (
         result.get("answer")
@@ -171,7 +193,7 @@ def render_answer(result: Dict[str, Any]) -> None:
 
     st.markdown(confidence_badge(conf), unsafe_allow_html=True)
     if answer:
-        st.markdown(answer)
+        render_markdown_with_latex(answer)
     else:
         st.warning("No `answer` field returned by model. Raw payload shown below.")
         st.json(result)
@@ -189,7 +211,7 @@ def render_answer(result: Dict[str, Any]) -> None:
             st.write(f"- {g}")
 
     with st.expander("Retrieval Evidence", expanded=False):
-        tab1, tab2, tab3 = st.tabs(["Chunks", "Parameter Vectors", "Structured"])
+        tab1, tab2, tab3, tab4 = st.tabs(["Chunks", "Parameter Vectors", "Structured", "Equations"])
         with tab1:
             chunk_hits = retrieval.get("chunk_hits", [])
             if not chunk_hits:
@@ -212,6 +234,20 @@ def render_answer(result: Dict[str, Any]) -> None:
                 st.info("No structured hits.")
             else:
                 st.dataframe(structured_hits, width="stretch")
+        with tab4:
+            equation_hits = retrieval.get("equation_hits", [])
+            if not equation_hits:
+                st.info("No equation hits.")
+            else:
+                for i, h in enumerate(equation_hits, start=1):
+                    st.markdown(
+                        f"**Q{i}** | DOI: `{h.get('doi')}` | label: `{h.get('label')}` | "
+                        f"kind: `{h.get('kind')}` | section: `{h.get('section_title')}` | score: `{h.get('score')}`"
+                    )
+                    if h.get("latex"):
+                        st.latex(h.get("latex"))
+                    if h.get("text"):
+                        st.caption(h.get("text"))
 
 
 def run_query(
@@ -245,6 +281,7 @@ def run_query(
     try:
         return run_one(
             conn=conn,
+            cfg=cfg,
             client=client,
             query=query,
             embedding_model=emb_model,

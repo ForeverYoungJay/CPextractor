@@ -22,461 +22,341 @@ def _first_non_empty(*values: Any) -> Any:
     return None
 
 
-def _compact_value_unit(value: Dict[str, Any]) -> Dict[str, Any] | None:
-    value = _safe_dict(value)
-    out = {
-        "value": value.get("value"),
-        "unit": value.get("unit"),
-        "notes": value.get("notes"),
-    }
-    out = {k: v for k, v in out.items() if v not in (None, "", [], {})}
-    return out or None
-
-
-def _legacy_grain_size_payload(value: Dict[str, Any]) -> Dict[str, Any] | None:
-    value = _safe_dict(value)
-    out = {
-        "value": value.get("value"),
-        "unit": value.get("unit"),
-        "distribution": value.get("distribution"),
-        "notes": value.get("notes"),
-    }
-    out = {k: v for k, v in out.items() if v not in (None, "", [], {})}
-    return out or None
-
-
-def _legacy_microstructure_to_phase_microstructure(extracted_json: Dict[str, Any]) -> Dict[str, Any] | None:
-    micro = _safe_dict(extracted_json.get("microstructure"))
-    if not micro:
-        return None
-
-    orientation = _safe_dict(micro.get("orientation_texture"))
-    defect_state = _safe_dict(micro.get("initial_defect_state"))
-    dislocation_density = _safe_dict(defect_state.get("dislocation_density"))
-    out = {
-        "grain_structure": micro.get("grain_structure"),
-        "grain_size": {
-            "value": _safe_dict(micro.get("grain_size")).get("value"),
-            "unit": _safe_dict(micro.get("grain_size")).get("unit"),
-            "distribution": _safe_dict(micro.get("grain_size")).get("distribution"),
-            "notes": _safe_dict(micro.get("grain_size")).get("notes"),
-        },
-        "texture": {
-            "description": orientation.get("description"),
-            "method": orientation.get("texture_type"),
-            "notes": orientation.get("notes"),
-        },
-        "morphology": None,
-        "defect_state": {
-            "dislocation_density": {
-                "value": dislocation_density.get("value"),
-                "unit": dislocation_density.get("unit"),
-                "notes": dislocation_density.get("notes"),
-            },
-            "precipitates": defect_state.get("precipitate_state"),
-            "porosity": None,
-            "notes": defect_state.get("notes"),
-        },
-        "notes": micro.get("notes"),
-    }
-    if not any(v not in (None, "", [], {}) for v in out.values()):
-        return None
-    return out
-
-
-def _material_level_microstructure_summary(extracted_json: Dict[str, Any]) -> Dict[str, Any] | None:
-    micro = _safe_dict(extracted_json.get("microstructure"))
-    if not micro:
-        return None
-
-    parts: List[str] = []
-    grain_structure = str(micro.get("grain_structure") or "").strip()
-    if grain_structure:
-        parts.append(grain_structure.replace("_", " "))
-    grain_size = _safe_dict(micro.get("grain_size"))
-    if grain_size.get("value") not in (None, ""):
-        unit = str(grain_size.get("unit") or "").strip()
-        value = grain_size.get("value")
-        parts.append(f"grain size {value}{(' ' + unit) if unit else ''}".strip())
-    texture = _safe_dict(micro.get("orientation_texture"))
-    if str(texture.get("description") or "").strip():
-        parts.append(str(texture.get("description")).strip())
-    notes = _first_non_empty(micro.get("notes"), _safe_dict(micro.get("initial_defect_state")).get("notes"))
-    out = {
-        "summary": "; ".join(parts) if parts else None,
-        "notes": notes,
-    }
-    return out if any(v not in (None, "", [], {}) for v in out.values()) else None
-
-
-def _map_phase(phase: Dict[str, Any], *, include_legacy_microstructure: bool) -> Dict[str, Any]:
-    phase = _safe_dict(phase)
-    out = {
-        "phase_id": phase.get("phase_id"),
-        "name": phase.get("phase_name"),
-        "role": phase.get("role"),
-        "crystal_structure": _safe_dict(phase.get("crystal_structure")) or None,
-        "volume_fraction": {
-            "value": _safe_dict(phase.get("volume_fraction")).get("value_SI"),
-            "unit": _safe_dict(phase.get("volume_fraction")).get("unit_SI"),
-            "reported_value": _safe_dict(phase.get("volume_fraction")).get("reported_value"),
-            "reported_unit": _safe_dict(phase.get("volume_fraction")).get("reported_unit"),
-            "notes": _safe_dict(phase.get("volume_fraction")).get("notes"),
-        } if _safe_dict(phase.get("volume_fraction")) else None,
-        "notes": phase.get("notes"),
-    }
-    if include_legacy_microstructure:
-        out["microstructure"] = include_legacy_microstructure
-    return {k: v for k, v in out.items() if v not in (None, "", [], {})}
-
-
-def _material_from_legacy(legacy_material: Dict[str, Any], extracted_json: Dict[str, Any]) -> Dict[str, Any]:
-    legacy_material = _safe_dict(legacy_material)
-    phases = [
-        _map_phase(phase, include_legacy_microstructure=_legacy_microstructure_to_phase_microstructure(extracted_json))
-        for phase in _safe_list(legacy_material.get("phases"))
-        if isinstance(phase, dict)
-    ]
+def _normalize_document(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
+    document = _safe_dict(extracted_json.get("document"))
+    source_document = _safe_dict(extracted_json.get("source_document"))
     return {
-        "material_id": "mat_001",
-        "name": legacy_material.get("name"),
-        "formula": legacy_material.get("chemical_formula"),
-        "material_class": None,
-        "composition": None,
-        "processing_history": [],
-        "phases": phases,
-        "material_level_microstructure": _material_level_microstructure_summary(extracted_json),
-        "notes": legacy_material.get("notes"),
+        "doi": _first_non_empty(document.get("doi"), source_document.get("doi")),
+        "title": _first_non_empty(document.get("title"), source_document.get("title")),
+        "authors": _safe_list(document.get("authors")) or _safe_list(source_document.get("authors")),
+        "year": _first_non_empty(document.get("year"), source_document.get("year")),
+        "journal": _first_non_empty(document.get("journal"), source_document.get("journal_or_venue")),
+        "notes": document.get("notes"),
     }
 
 
-def _final_materials(extracted_json: Dict[str, Any]) -> List[Dict[str, Any]]:
-    paper_profile = _safe_dict(extracted_json.get("paper_profile"))
-    studied_materials = [m for m in _safe_list(paper_profile.get("studied_materials")) if isinstance(m, dict)]
-    legacy_material = _safe_dict(extracted_json.get("material"))
-    legacy_phases = [p for p in _safe_list(legacy_material.get("phases")) if isinstance(p, dict)]
-    legacy_phase_by_id = {
-        str(phase.get("phase_id") or "").strip(): phase
-        for phase in legacy_phases
-        if str(phase.get("phase_id") or "").strip()
-    }
-    legacy_micro = _legacy_microstructure_to_phase_microstructure(extracted_json)
-    material_level_micro = _material_level_microstructure_summary(extracted_json)
-
-    if not studied_materials:
-        material = _material_from_legacy(legacy_material, extracted_json)
-        return [material] if any(material.values()) else []
-
-    final_materials: List[Dict[str, Any]] = []
-    for idx, studied in enumerate(studied_materials, start=1):
-        material_id = str(studied.get("material_id") or f"mat_{idx:03d}")
-        phase_ids = [
-            str(pid).strip()
-            for pid in _safe_list(studied.get("phase_ids"))
-            if str(pid).strip()
-        ]
-        linked_phases = [
-            _map_phase(legacy_phase_by_id[pid], include_legacy_microstructure=legacy_micro if len(legacy_phases) == 1 else None)
-            for pid in phase_ids
-            if pid in legacy_phase_by_id
-        ]
-        if not linked_phases and idx == 1 and legacy_phases:
-            linked_phases = [
-                _map_phase(phase, include_legacy_microstructure=legacy_micro if len(legacy_phases) == 1 else None)
-                for phase in legacy_phases
-            ]
-
-        composition = _safe_dict(studied.get("composition"))
-        final_materials.append({
-            "material_id": material_id,
-            "name": _first_non_empty(studied.get("name"), legacy_material.get("name") if idx == 1 else None),
-            "formula": _first_non_empty(studied.get("chemical_formula"), legacy_material.get("chemical_formula") if idx == 1 else None),
-            "material_class": studied.get("material_class"),
-            "composition": {
-                "basis": composition.get("basis"),
-                "components": _safe_list(composition.get("rows")),
-                "notes": composition.get("notes"),
-            } if composition else None,
-            "processing_history": [],
-            "phases": linked_phases,
-            "material_level_microstructure": material_level_micro if idx == 1 else None,
-            "notes": _first_non_empty(studied.get("notes"), legacy_material.get("notes") if idx == 1 else None),
-        })
-
-    return final_materials
-
-
-def _final_samples(extracted_json: Dict[str, Any]) -> List[Dict[str, Any]]:
-    paper_profile = _safe_dict(extracted_json.get("paper_profile"))
-    sample_profiles = [s for s in _safe_list(paper_profile.get("sample_profiles")) if isinstance(s, dict)]
-    out: List[Dict[str, Any]] = []
-    for idx, sample in enumerate(sample_profiles, start=1):
-        condition_id = sample.get("condition_id")
-        condition_ids = [condition_id] if condition_id not in (None, "") else []
-        microstructure_overrides = {
-            "grain_size": _legacy_grain_size_payload(sample.get("grain_size")),
-            "texture_or_orientation": sample.get("texture_or_orientation"),
-            "phase_fractions": _safe_list(sample.get("phase_fractions")),
-            "selected_grains": _safe_list(sample.get("selected_grains")),
-            "notes": sample.get("notes"),
-        }
-        microstructure_overrides = {
-            k: v for k, v in microstructure_overrides.items()
-            if v not in (None, "", [], {})
-        }
-        out.append({
-            "sample_id": str(sample.get("sample_id") or f"samp_{idx:03d}"),
-            "material_id": sample.get("material_id"),
-            "label": sample.get("label"),
-            "processing_state": sample.get("processing_state"),
-            "condition_ids": condition_ids,
-            "microstructure_overrides": microstructure_overrides or None,
-            "notes": sample.get("notes"),
-        })
-    return out
-
-
-def _has_default_condition_payload(payload: Dict[str, Any]) -> bool:
-    payload = _safe_dict(payload)
-    return any(
-        payload.get(key) not in (None, "", [], {})
-        for key in ("loading_mode", "stress_state", "loading_path", "strain_rate", "temperature", "fatigue", "environment", "indentation", "notes")
-    )
-
-
-def _final_conditions(extracted_json: Dict[str, Any]) -> List[Dict[str, Any]]:
-    condition_profiles = [c for c in _safe_list(extracted_json.get("condition_profiles")) if isinstance(c, dict)]
-    out: List[Dict[str, Any]] = []
-    for idx, condition in enumerate(condition_profiles, start=1):
-        out.append({
-            "condition_id": str(condition.get("condition_id") or f"cond_{idx:03d}"),
-            "label": condition.get("label"),
-            "temperature": _compact_value_unit(condition.get("temperature")),
-            "strain_rate": _compact_value_unit(condition.get("strain_rate")),
-            "loading_mode": condition.get("loading_mode"),
-            "stress_state": condition.get("stress_state"),
-            "loading_path": _safe_dict(condition.get("loading_path")) or None,
-            "fatigue": _safe_dict(condition.get("fatigue")) or None,
-            "notes": condition.get("notes"),
-        })
-
-    default_condition = _safe_dict(extracted_json.get("deformation_conditions"))
-    if _has_default_condition_payload(default_condition):
-        existing_ids = {str(row.get("condition_id") or "").strip() for row in out}
-        default_id = "cond_default"
-        if default_id not in existing_ids:
-            out.insert(0, {
-                "condition_id": default_id,
-                "label": "paper_default_condition",
-                "temperature": _compact_value_unit(default_condition.get("temperature")),
-                "strain_rate": _compact_value_unit(default_condition.get("strain_rate")),
-                "loading_mode": default_condition.get("loading_mode"),
-                "stress_state": default_condition.get("stress_state"),
-                "loading_path": _safe_dict(default_condition.get("loading_path")) or None,
-                "fatigue": _safe_dict(default_condition.get("fatigue")) or None,
-                "notes": default_condition.get("notes"),
-            })
-    return out
-
-
-def _final_models(extracted_json: Dict[str, Any]) -> List[Dict[str, Any]]:
-    model = _safe_dict(extracted_json.get("constitutive_model"))
-    if not model:
-        return []
-    if not any(model.get(k) not in (None, "", [], {}) for k in ("class", "framework", "implementation", "kinematics", "rate_dependence", "notes")):
-        return []
-    return [{
-        "model_id": "model_001",
-        "class": model.get("class"),
-        "framework": model.get("framework"),
-        "implementation": _safe_dict(model.get("implementation")) or None,
-        "kinematics": model.get("kinematics"),
-        "rate_dependence": model.get("rate_dependence"),
-        "notes": model.get("notes"),
-    }]
-
-
-def _final_mechanisms(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
-    mechanisms = _safe_dict(extracted_json.get("deformation_mechanisms"))
+def _normalize_study(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
+    study = _safe_dict(extracted_json.get("study"))
     return {
-        "slip_families": _safe_list(mechanisms.get("slip_families")),
-        "twinning_families": _safe_list(mechanisms.get("twinning_families")),
-        "other_mechanisms": (
-            _safe_list(mechanisms.get("cleavage_families"))
-            + _safe_list(mechanisms.get("damage_mechanisms"))
-            + _safe_list(mechanisms.get("transformation_mechanisms"))
-            + _safe_list(mechanisms.get("other_mechanisms"))
-        ),
-        "notes": mechanisms.get("notes"),
+        "study_type": study.get("study_type"),
+        "primary_focus": study.get("primary_focus"),
+        "notes": _first_non_empty(study.get("notes"), extracted_json.get("global_notes")),
     }
 
 
-def _study_type(materials: List[Dict[str, Any]], samples: List[Dict[str, Any]], conditions: List[Dict[str, Any]]) -> str | None:
-    if len(materials) > 1 and len(conditions) > 1:
-        return "comparative"
-    if len(materials) > 1:
-        return "multi_material"
-    if len(conditions) > 1 or len(samples) > 1:
-        return "multi_condition"
-    if len(materials) == 1:
-        return "single_material"
-    return None
+def _normalize_materials(extracted_json: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
+    materials = [m for m in _safe_list(extracted_json.get("materials")) if isinstance(m, dict)]
+    if not materials:
+        legacy_material = _safe_dict(extracted_json.get("material"))
+        if legacy_material:
+            materials = [{
+                "material_id": "mat_001",
+                "name": legacy_material.get("name"),
+                "chemical_formula": legacy_material.get("chemical_formula"),
+                "material_class": legacy_material.get("material_class"),
+                "phase_mode": legacy_material.get("phase_mode"),
+                "crystal_aggregate": legacy_material.get("crystal_aggregate"),
+                "composition": _safe_dict(legacy_material.get("composition")) or None,
+                "evidence_ids": [],
+                "notes": legacy_material.get("notes"),
+            }]
+    ids_filled = 0
+    out: List[Dict[str, Any]] = []
+    for idx, material in enumerate(materials, start=1):
+        row = dict(material)
+        if not str(row.get("material_id") or "").strip():
+            row["material_id"] = f"mat_{idx:03d}"
+            ids_filled += 1
+        row.setdefault("evidence_ids", [])
+        out.append(row)
+    return out, ids_filled
 
 
-def _phase_lookup(materials: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    out: Dict[str, Dict[str, Any]] = {}
-    for material in materials:
-        for phase in _safe_list(material.get("phases")):
+def _normalize_constituents(extracted_json: Dict[str, Any], materials: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
+    constituents = [c for c in _safe_list(extracted_json.get("constituents")) if isinstance(c, dict)]
+    if not constituents:
+        legacy_material = _safe_dict(extracted_json.get("material"))
+        for idx, phase in enumerate(_safe_list(legacy_material.get("phases")), start=1):
             if not isinstance(phase, dict):
                 continue
-            phase_id = str(phase.get("phase_id") or "").strip()
-            if phase_id:
-                out[phase_id] = phase
-    return out
-
-
-def _sample_lookup(samples: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    out: Dict[str, Dict[str, Any]] = {}
-    for sample in samples:
-        sample_id = str(_safe_dict(sample).get("sample_id") or "").strip()
-        if sample_id:
-            out[sample_id] = sample
-    return out
-
-
-def _bundle_lookup(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    out: Dict[str, Dict[str, Any]] = {}
-    for bundle in _safe_list(extracted_json.get("parameter_bundles")):
-        if not isinstance(bundle, dict):
-            continue
-        bundle_id = str(bundle.get("bundle_id") or "").strip()
-        if bundle_id:
-            out[bundle_id] = bundle
-    return out
-
-
-def _enrich_claims(
-    extracted_json: Dict[str, Any],
-    *,
-    materials: List[Dict[str, Any]],
-    samples: List[Dict[str, Any]],
-    conditions: List[Dict[str, Any]],
-    models: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    claims = [c for c in _safe_list(extracted_json.get("parameter_claims")) if isinstance(c, dict)]
-    if not claims:
-        return []
-
-    primary_material_id = str(_safe_dict(materials[0]).get("material_id") or "").strip() if materials else None
-    primary_condition_id = str(_safe_dict(conditions[0]).get("condition_id") or "").strip() if conditions else None
-    primary_model_id = str(_safe_dict(models[0]).get("model_id") or "").strip() if models else None
-    phase_by_id = _phase_lookup(materials)
-    sample_by_id = _sample_lookup(samples)
-    bundle_by_id = _bundle_lookup(extracted_json)
-
+            volume_fraction = _safe_dict(phase.get("volume_fraction"))
+            constituents.append({
+                "constituent_id": phase.get("phase_id") or f"const_{idx:03d}",
+                "material_id": _safe_dict(materials[0]).get("material_id") if materials else None,
+                "process_state_id": None,
+                "constituent_type": "phase",
+                "name": _first_non_empty(phase.get("name"), phase.get("phase_name")),
+                "aliases": [],
+                "role": phase.get("role"),
+                "fraction": {
+                    "value": _first_non_empty(volume_fraction.get("value"), volume_fraction.get("value_SI")),
+                    "unit": _first_non_empty(volume_fraction.get("unit"), volume_fraction.get("unit_SI")),
+                    "reported_value": volume_fraction.get("reported_value"),
+                    "reported_unit": volume_fraction.get("reported_unit"),
+                    "basis": volume_fraction.get("basis"),
+                    "notes": volume_fraction.get("notes"),
+                } if volume_fraction else None,
+                "crystal_structure": _safe_dict(phase.get("crystal_structure")) or None,
+                "evidence_ids": [],
+                "notes": phase.get("notes"),
+            })
+    ids_filled = 0
     out: List[Dict[str, Any]] = []
-    for claim in claims:
-        applies_to = dict(_safe_dict(claim.get("applies_to")))
-        provenance = dict(_safe_dict(claim.get("provenance")) or _safe_dict(claim.get("source")))
-        evidence = dict(_safe_dict(claim.get("evidence")))
+    for idx, constituent in enumerate(constituents, start=1):
+        row = dict(constituent)
+        if not str(row.get("constituent_id") or "").strip():
+            row["constituent_id"] = f"const_{idx:03d}"
+            ids_filled += 1
+        row.setdefault("evidence_ids", [])
+        out.append(row)
+    return out, ids_filled
 
-        bundle = _safe_dict(bundle_by_id.get(str(applies_to.get("bundle_id") or "").strip()))
-        if not applies_to.get("material_id") and bundle.get("material_id"):
-            applies_to["material_id"] = bundle.get("material_id")
-        if not applies_to.get("sample_id") and bundle.get("sample_id"):
-            applies_to["sample_id"] = bundle.get("sample_id")
-        if not applies_to.get("condition_id") and bundle.get("condition_id"):
-            applies_to["condition_id"] = bundle.get("condition_id")
 
-        sample = _safe_dict(sample_by_id.get(str(applies_to.get("sample_id") or "").strip()))
-        if not applies_to.get("material_id") and sample.get("material_id"):
-            applies_to["material_id"] = sample.get("material_id")
-        if not applies_to.get("condition_id"):
-            sample_conditions = [c for c in _safe_list(sample.get("condition_ids")) if c]
-            if len(sample_conditions) == 1:
-                applies_to["condition_id"] = sample_conditions[0]
+def _normalize_process_states(extracted_json: Dict[str, Any], materials: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
+    process_states = [s for s in _safe_list(extracted_json.get("process_states")) if isinstance(s, dict)]
+    if not process_states:
+        for idx, sample in enumerate(_safe_list(extracted_json.get("samples")), start=1):
+            if not isinstance(sample, dict):
+                continue
+            process_states.append({
+                "process_state_id": sample.get("sample_id") or f"ps_{idx:03d}",
+                "material_id": sample.get("material_id") or (_safe_dict(materials[0]).get("material_id") if len(materials) == 1 else None),
+                "label": sample.get("label"),
+                "state_type": [],
+                "processing_route": sample.get("processing_state"),
+                "processing_steps": [],
+                "state_descriptors": [],
+                "evidence_ids": [],
+                "notes": sample.get("notes"),
+            })
+    ids_filled = 0
+    out: List[Dict[str, Any]] = []
+    for idx, process_state in enumerate(process_states, start=1):
+        row = dict(process_state)
+        if not str(row.get("process_state_id") or "").strip():
+            row["process_state_id"] = f"ps_{idx:03d}"
+            ids_filled += 1
+        row.setdefault("evidence_ids", [])
+        out.append(row)
+    return out, ids_filled
 
-        if not applies_to.get("material_id") and len(materials) == 1 and primary_material_id:
+
+def _normalize_conditions(extracted_json: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
+    conditions = [c for c in _safe_list(extracted_json.get("conditions")) if isinstance(c, dict)]
+    if not conditions:
+        condition_profiles = [c for c in _safe_list(extracted_json.get("condition_profiles")) if isinstance(c, dict)]
+        conditions = [dict(c) for c in condition_profiles]
+        default_condition = _safe_dict(extracted_json.get("deformation_conditions"))
+        if default_condition and any(default_condition.get(k) not in (None, "", [], {}) for k in default_condition.keys()):
+            conditions.insert(0, default_condition)
+    ids_filled = 0
+    out: List[Dict[str, Any]] = []
+    for idx, condition in enumerate(conditions, start=1):
+        row = dict(condition)
+        if not str(row.get("condition_id") or "").strip():
+            row["condition_id"] = f"cond_{idx:03d}"
+            ids_filled += 1
+        row.setdefault("evidence_ids", [])
+        out.append(row)
+    return out, ids_filled
+
+
+def _normalize_models(extracted_json: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int, int]:
+    models = [m for m in _safe_list(extracted_json.get("models")) if isinstance(m, dict)]
+    if not models:
+        legacy_model = _safe_dict(extracted_json.get("constitutive_model"))
+        if legacy_model:
+            models = [{
+                "model_id": "model_001",
+                "name": legacy_model.get("framework"),
+                "model_type": legacy_model.get("class"),
+                "model_role": "primary_simulation",
+                "constituent_scope": [],
+                "material_scope": [],
+                "mechanism_scope": {},
+                "solver_framework": {},
+                "implementation": _safe_dict(legacy_model.get("implementation")) or None,
+                "constitutive_description": {
+                    "kinematics": legacy_model.get("kinematics"),
+                    "flow_kinetics": {"rate_dependence": legacy_model.get("rate_dependence")},
+                },
+                "constitutive_branches": [],
+                "equation_ids": [],
+                "evidence_ids": [],
+                "notes": legacy_model.get("notes"),
+            }]
+    model_ids_filled = 0
+    branch_ids_filled = 0
+    out: List[Dict[str, Any]] = []
+    for model_idx, model in enumerate(models, start=1):
+        row = dict(model)
+        if not str(row.get("model_id") or "").strip():
+            row["model_id"] = f"model_{model_idx:03d}"
+            model_ids_filled += 1
+        branches = [b for b in _safe_list(row.get("constitutive_branches")) if isinstance(b, dict)]
+        norm_branches: List[Dict[str, Any]] = []
+        for branch_idx, branch in enumerate(branches, start=1):
+            branch_row = dict(branch)
+            if not str(branch_row.get("branch_id") or "").strip():
+                branch_row["branch_id"] = f"{row['model_id']}_branch_{branch_idx:02d}"
+                branch_ids_filled += 1
+            branch_row.setdefault("evidence_ids", [])
+            branch_row["governing_equation_ids"] = _safe_list(branch_row.get("governing_equation_ids"))
+            norm_branches.append(branch_row)
+        row["constitutive_branches"] = norm_branches
+        row["equation_ids"] = _safe_list(row.get("equation_ids"))
+        row.setdefault("evidence_ids", [])
+        out.append(row)
+    return out, model_ids_filled, branch_ids_filled
+
+
+def _normalize_microstructure_features(extracted_json: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
+    features = [f for f in _safe_list(extracted_json.get("microstructure_features")) if isinstance(f, dict)]
+    ids_filled = 0
+    out: List[Dict[str, Any]] = []
+    for idx, feature in enumerate(features, start=1):
+        row = dict(feature)
+        if not str(row.get("feature_id") or "").strip():
+            row["feature_id"] = f"feat_{idx:03d}"
+            ids_filled += 1
+        row.setdefault("evidence_ids", [])
+        out.append(row)
+    return out, ids_filled
+
+
+def _normalize_parameter_claims(extracted_json: Dict[str, Any], materials: List[Dict[str, Any]], models: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
+    claims = [c for c in _safe_list(extracted_json.get("parameter_claims")) if isinstance(c, dict)]
+    ids_filled = 0
+    primary_material_id = _safe_dict(materials[0]).get("material_id") if len(materials) == 1 else None
+    primary_model_id = _safe_dict(models[0]).get("model_id") if len(models) == 1 else None
+    out: List[Dict[str, Any]] = []
+    for idx, claim in enumerate(claims, start=1):
+        parameter = _safe_dict(claim.get("parameter"))
+        assertion = _safe_dict(claim.get("assertion"))
+        provenance = _safe_dict(claim.get("provenance"))
+        row = {
+            "claim_id": claim.get("claim_id"),
+            "parameter": {
+                "canonical_name": parameter.get("canonical_name"),
+                "parameter_family": parameter.get("parameter_family"),
+                "raw_name": parameter.get("raw_name"),
+                "symbol_reported": parameter.get("symbol_reported"),
+                "domain": parameter.get("domain"),
+                "description": parameter.get("description"),
+            },
+            "assertion": {
+                "value_type": assertion.get("value_type"),
+                "reported_value": assertion.get("reported_value"),
+                "reported_unit": assertion.get("reported_unit"),
+                "qualifier": assertion.get("qualifier"),
+                "valid_range": assertion.get("valid_range"),
+            },
+            "applies_to": dict(_safe_dict(claim.get("applies_to"))),
+            "provenance": {
+                "origin_type": provenance.get("origin_type"),
+                "reference_ids": _safe_list(provenance.get("reference_ids")),
+                "adopted_from_reference_ids": _safe_list(provenance.get("adopted_from_reference_ids")),
+                "calibration_based_on_reference_ids": _safe_list(provenance.get("calibration_based_on_reference_ids")),
+                "calibration": _safe_dict(provenance.get("calibration")) or None,
+            },
+            "governing_equation_ids": _safe_list(claim.get("governing_equation_ids")),
+            "evidence_ids": _safe_list(claim.get("evidence_ids")),
+            "notes": claim.get("notes"),
+        }
+        if not str(row.get("claim_id") or "").strip():
+            row["claim_id"] = f"claim_{idx:04d}"
+            ids_filled += 1
+        applies_to = dict(_safe_dict(row.get("applies_to")))
+        if primary_material_id and not applies_to.get("material_id"):
             applies_to["material_id"] = primary_material_id
-        material = {}
-        if applies_to.get("material_id"):
-            material = next(
-                (m for m in materials if str(_safe_dict(m).get("material_id") or "").strip() == str(applies_to.get("material_id") or "").strip()),
-                {},
-            )
+        if primary_model_id and not applies_to.get("model_id"):
+            applies_to["model_id"] = primary_model_id
+        row["applies_to"] = applies_to
+        row["parameter"] = {k: v for k, v in _safe_dict(row.get("parameter")).items() if v not in (None, "", [])}
+        row["assertion"] = {k: v for k, v in _safe_dict(row.get("assertion")).items() if v not in (None, "", [])}
+        prov = {
+            k: v for k, v in _safe_dict(row.get("provenance")).items()
+            if v not in (None, "", []) and v != {}
+        }
+        row["provenance"] = prov
+        row["governing_equation_ids"] = _safe_list(row.get("governing_equation_ids"))
+        row["evidence_ids"] = _safe_list(row.get("evidence_ids"))
+        out.append(row)
+    return out, ids_filled
 
-        if not applies_to.get("phase_id"):
-            phases = [p for p in _safe_list(_safe_dict(material).get("phases")) if isinstance(p, dict)]
-            if len(phases) == 1:
-                applies_to["phase_id"] = phases[0].get("phase_id")
 
-        if not applies_to.get("condition_id") and len(conditions) == 1 and primary_condition_id:
-            applies_to["condition_id"] = primary_condition_id
-
-        if not applies_to.get("material_id") and applies_to.get("phase_id"):
-            phase = _safe_dict(phase_by_id.get(str(applies_to.get("phase_id") or "").strip()))
-            if phase:
-                for mat in materials:
-                    phases = _safe_list(_safe_dict(mat).get("phases"))
-                    if phase in phases:
-                        applies_to["material_id"] = _safe_dict(mat).get("material_id")
-                        break
-
-        confidence = _safe_dict(claim.get("confidence"))
-        if confidence and not confidence.get("label") and claim.get("confidence"):
-            confidence["label"] = claim.get("confidence")
-
-        enriched = dict(claim)
-        if primary_model_id and not enriched.get("model_id"):
-            enriched["model_id"] = primary_model_id
-        enriched["applies_to"] = applies_to
-        enriched["provenance"] = provenance
-        enriched["source"] = provenance
-        if confidence:
-            enriched["confidence"] = confidence
-        enriched["evidence"] = evidence
-        out.append(enriched)
-    return out
+def _normalize_evidence_objects(extracted_json: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
+    evidence_objects = [e for e in _safe_list(extracted_json.get("evidence_objects")) if isinstance(e, dict)]
+    ids_filled = 0
+    out: List[Dict[str, Any]] = []
+    for idx, evidence in enumerate(evidence_objects, start=1):
+        row = dict(evidence)
+        if not str(row.get("evidence_id") or "").strip():
+            row["evidence_id"] = f"ev_{idx:04d}"
+            ids_filled += 1
+        out.append(row)
+    return out, ids_filled
 
 
 def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    document = {
-        "doi": _safe_dict(extracted_json.get("source_document")).get("doi"),
-        "title": _safe_dict(extracted_json.get("source_document")).get("title"),
-        "authors": _safe_list(_safe_dict(extracted_json.get("source_document")).get("authors")),
-        "year": _safe_dict(extracted_json.get("source_document")).get("year"),
-        "journal": _safe_dict(extracted_json.get("source_document")).get("journal_or_venue"),
-    }
-    materials = _final_materials(extracted_json)
-    samples = _final_samples(extracted_json)
-    conditions = _final_conditions(extracted_json)
-    models = _final_models(extracted_json)
-    mechanisms = _final_mechanisms(extracted_json)
-    parameter_claims = _enrich_claims(
-        extracted_json,
-        materials=materials,
-        samples=samples,
-        conditions=conditions,
-        models=models,
-    )
+    extracted = dict(extracted_json)
+    document = _normalize_document(extracted)
+    study = _normalize_study(extracted)
+    materials, material_ids_filled = _normalize_materials(extracted)
+    constituents, constituent_ids_filled = _normalize_constituents(extracted, materials)
+    process_states, process_state_ids_filled = _normalize_process_states(extracted, materials)
+    conditions, condition_ids_filled = _normalize_conditions(extracted)
+    models, model_ids_filled, branch_ids_filled = _normalize_models(extracted)
+    microstructure_features, feature_ids_filled = _normalize_microstructure_features(extracted)
+    parameter_claims, claim_ids_filled = _normalize_parameter_claims(extracted, materials, models)
+    evidence_objects, evidence_ids_filled = _normalize_evidence_objects(extracted)
 
-    extracted_json["schema_version"] = "3.0.0"
-    extracted_json["document"] = document
-    extracted_json["study"] = {
-        "study_type": _study_type(materials, samples, conditions),
-        "notes": extracted_json.get("global_notes"),
-    }
-    extracted_json["materials"] = materials
-    extracted_json["samples"] = samples
-    extracted_json["conditions"] = conditions
-    extracted_json["models"] = models
-    extracted_json["mechanisms"] = mechanisms
-    extracted_json["parameter_claims"] = parameter_claims
-    return extracted_json, {
-        "schema_version": "3.0.0",
+    extracted["schema_version"] = "5.0.2"
+    extracted["document"] = document
+    extracted["study"] = study
+    extracted["materials"] = materials
+    extracted["process_states"] = process_states
+    extracted["constituents"] = constituents
+    extracted["models"] = models
+    extracted["conditions"] = conditions
+    extracted["microstructure_features"] = microstructure_features
+    extracted["parameter_claims"] = parameter_claims
+    extracted["evidence_objects"] = evidence_objects
+
+    # Drop legacy views so downstream operates on the v5.0.2 hierarchy only.
+    for key in (
+        "source_document",
+        "material",
+        "paper_profile",
+        "microstructure",
+        "constitutive_model",
+        "parameters",
+        "parameter_bundles",
+        "deformation_conditions",
+        "condition_profiles",
+        "deformation_mechanisms",
+        "samples",
+        "mechanisms",
+    ):
+        extracted.pop(key, None)
+
+    return extracted, {
+        "schema_version": "5.0.2",
         "materials": len(materials),
-        "samples": len(samples),
+        "constituents": len(constituents),
+        "process_states": len(process_states),
         "conditions": len(conditions),
         "models": len(models),
+        "microstructure_features": len(microstructure_features),
         "parameter_claims": len(parameter_claims),
+        "evidence_objects": len(evidence_objects),
+        "material_ids_filled": material_ids_filled,
+        "constituent_ids_filled": constituent_ids_filled,
+        "process_state_ids_filled": process_state_ids_filled,
+        "condition_ids_filled": condition_ids_filled,
+        "model_ids_filled": model_ids_filled,
+        "branch_ids_filled": branch_ids_filled,
+        "feature_ids_filled": feature_ids_filled,
+        "claim_ids_filled": claim_ids_filled,
+        "evidence_ids_filled": evidence_ids_filled,
     }

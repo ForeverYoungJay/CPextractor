@@ -42,7 +42,7 @@ def resolve_condition_bindings(extracted_json: Dict[str, Any]) -> Tuple[Dict[str
 
         issues: List[str] = []
         scope = str(applies_to.get("scope") or "").strip().lower()
-        phase_id = applies_to.get("phase_id")
+        constituent_id = applies_to.get("constituent_id") or applies_to.get("phase_id")
         family_id = applies_to.get("family_id")
         system_ids = _safe_list(applies_to.get("system_ids"))
         family_name = applies_to.get("family_name")
@@ -63,10 +63,10 @@ def resolve_condition_bindings(extracted_json: Dict[str, Any]) -> Tuple[Dict[str
             family_name = applies_to.get("family_name")
             downgraded += 1
 
-        if scope in {"phase", "family", "system"} and not phase_id:
-            issues.append("missing_phase_binding")
-        if scope == "global" and phase_id:
-            issues.append("unexpected_phase_binding")
+        if scope in {"constituent", "phase", "family", "system"} and not constituent_id:
+            issues.append("missing_constituent_binding")
+        if scope == "global" and constituent_id:
+            issues.append("unexpected_constituent_binding")
         if scope == "family" and not family_id:
             issues.append("missing_family_binding")
         if scope in {"global", "phase", "system"} and family_id:
@@ -79,7 +79,7 @@ def resolve_condition_bindings(extracted_json: Dict[str, Any]) -> Tuple[Dict[str
             issues.append("missing_scope")
 
         binding_record = {
-            "phase_id": phase_id,
+            "constituent_id": constituent_id,
             "scope": scope or None,
             "mechanism": applies_to.get("mechanism"),
             "family_id": family_id,

@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 from openai import OpenAI
 
-from llm.extractor import build_context, load_md_files, load_table_files
+from llm.extractor import build_context, load_md_files, load_table_files, load_equation_files
 from llm.openai_sanitize import sanitize_text_for_openai, validate_openai_json_payload
 from postprocess.location_ids import claim_location
 from postprocess.param_iter import iter_parameter_items_with_index
@@ -16,9 +16,16 @@ from postprocess.record_links import (
     provenance_map,
     resolve_binding_record,
     resolve_evidence_objects,
-    resolve_primary_crystal_structure,
     resolve_provenance_record,
 )
+
+
+def _safe_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_list(value: Any) -> List[Any]:
+    return value if isinstance(value, list) else []
 
 
 EVIDENCE_AGENT_SYSTEM_PROMPT = """
@@ -193,6 +200,13 @@ Evaluate whether extracted parameter records are self-consistent within the pape
 - Table-based claims with coherent family/phase binding but weak explicit cell grounding should not be treated as binding inconsistencies.
 - Do not evaluate unit conversion, SI normalization, or evidence sufficiency here.
 - Do not flag a parameter merely because one slip-family value is larger than another.
+- The v5.0.2 schema allows many-to-many equation binding.
+  One branch may legitimately bind to multiple governing equations, one parameter may legitimately bind to multiple equations, and multiple branches may also share one equation.
+  Do not treat multi-equation arrays or shared equation labels as a consistency error by themselves.
+- The v5.0.2 schema also allows multiple models in one paper, including `primary_simulation`, `comparison`, and `auxiliary` roles.
+  Do not use `model_variant_confusion` merely because a paper contains more than one model or because a comparison model reuses the same constitutive law.
+- Use `condition_binding_error` only for true scope incoherence such as wrong material, wrong constituent, wrong branch, impossible condition assignment, or explicit contradiction in applicability.
+- If a claim is attached to a branch and that branch carries several constitutive equations, it is coherent for the claim to reference one or several of those equations depending on the text.
 
 4 Few-shot examples
 Example A:
@@ -202,6 +216,14 @@ Example A:
 Example B:
 - Two materials appear mixed into one parameter block or phase/family binding conflicts with the mechanism.
 - Good behavior: flag condition_binding_error or cross_material_mixup.
+
+Example C:
+- A constitutive branch has equations (4), (5), and (6), and one parameter claim references both (5) and (6).
+- Good behavior: treat this as normal v5.0.2 many-to-many binding, not as model_variant_confusion or condition_binding_error.
+
+Example D:
+- The paper contains one primary CPFE model and one comparison single-crystal or J2 model, each with its own model_role.
+- Good behavior: do not flag model_variant_confusion unless parameter claims are actually mixed across incompatible models.
 
 Reviewed feedback summary:
 __FEEDBACK_SUMMARY__
@@ -262,6 +284,9 @@ Produce the final document-level audit result for a crystal-plasticity extractio
 - Do not escalate low-risk table-based disagreements into critical issues when the disagreement is mainly `warning/pass` around weak grounding rather than a concrete wrong value or provenance conflict.
 - For image-backed table extractions, weak direct cell grounding alone should not dominate the document verdict if normalization and consistency remain strong.
 - Unit-only or SI-format-only disagreements should not become document-level critical issues or mandatory review escalations.
+- Treat v5.0.2 many-to-many equation binding as normal structure, not as a schema or consistency problem.
+- Treat the presence of comparison or auxiliary models as normal when the roles and bindings are explicit.
+- Do not escalate a paper merely because one branch or one parameter is linked to multiple equations, or because multiple branches share one equation.
 
 4 Few-shot examples
 Example A:
@@ -334,14 +359,15 @@ def _trim_text(text: str, max_chars: int) -> str:
     return text[:max_chars] + ("...[TRUNCATED]..." if len(text) > max_chars else "")
 
 
-def _load_selected_context(
+def _resolve_selected_sources(
     paper_dir: str,
-    max_context_chars: int,
-) -> Tuple[str, Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
     sections_dir = os.path.join(paper_dir, "sections")
     tables_dir = os.path.join(paper_dir, "tables")
+    equations_dir = os.path.join(paper_dir, "equations")
     sections = load_md_files(sections_dir) if os.path.exists(sections_dir) else []
     tables = load_table_files(tables_dir) if os.path.exists(tables_dir) else []
+    equations = load_equation_files(equations_dir) if os.path.exists(equations_dir) else []
 
     selected_path = os.path.join(paper_dir, "llm_selected_files.json")
     selection: Dict[str, Any] = {}
@@ -356,6 +382,11 @@ def _load_selected_context(
     resolved_table_files = {
         str(name).strip()
         for name in (selection.get("resolved_selected_table_files", []) or [])
+        if str(name).strip()
+    }
+    selected_equation_ids = {
+        str(name).strip()
+        for name in (selection.get("selected_equations", []) or [])
         if str(name).strip()
     }
     selected_table_ids = set()
@@ -373,30 +404,48 @@ def _load_selected_context(
         t for t in tables
         if t.get("selection_id") in selected_table_ids or t["name"] in resolved_table_files or t["name"] in selected_table_ids
     ]
+    selected_equations = [
+        e for e in equations
+        if e.get("selection_id") in selected_equation_ids or e["name"] in selected_equation_ids
+    ]
     used_fallback_sections = False
     used_fallback_tables = False
+    used_fallback_equations = False
     if not selected_sections and sections:
         selected_sections = sections[:2]
         used_fallback_sections = True
     if not selected_tables and tables:
         selected_tables = tables[:1]
         used_fallback_tables = True
-    context, build_meta = build_context(selected_sections, selected_tables, max_context_chars=max_context_chars)
-    return context, {
+    if not selected_equations and equations:
+        selected_equations = equations[: min(2, len(equations))]
+        used_fallback_equations = True
+    return selected_sections, selected_tables, selected_equations, {
         "selected_sections": [s["name"] for s in selected_sections],
         "selected_tables": [t["name"] for t in selected_tables],
+        "selected_equations": [e["name"] for e in selected_equations],
         "resolved_selected_table_files": [t["name"] for t in selected_tables],
-        "used_fallback_selection": used_fallback_sections or used_fallback_tables,
+        "used_fallback_selection": used_fallback_sections or used_fallback_tables or used_fallback_equations,
         "fallback": {
             "sections": used_fallback_sections,
             "tables": used_fallback_tables,
+            "equations": used_fallback_equations,
         },
         "selection_file_metadata": {
             "selected_tables_raw": selection.get("selected_tables", []) or [],
             "resolved_selected_table_files_raw": selection.get("resolved_selected_table_files", []) or [],
         },
-        "context_build": build_meta,
     }
+
+
+def _load_selected_context(
+    paper_dir: str,
+    max_context_chars: int,
+) -> Tuple[str, Dict[str, Any]]:
+    selected_sections, selected_tables, selected_equations, selection_meta = _resolve_selected_sources(paper_dir)
+    context, build_meta = build_context(selected_sections, selected_tables, selected_equations, max_context_chars=max_context_chars)
+    selection_meta["context_build"] = build_meta
+    return context, selection_meta
 
 
 def _load_feedback_artifacts(path: str | None, max_examples: int = 5) -> Dict[str, Any]:
@@ -427,24 +476,203 @@ def _load_feedback_artifacts(path: str | None, max_examples: int = 5) -> Dict[st
     }
 
 
+def _evidence_object_summary(obj: Dict[str, Any]) -> str:
+    locator = _safe_dict(obj.get("locator"))
+    parts = [
+        str(obj.get("evidence_type") or "").strip(),
+        str(obj.get("source_file") or "").strip(),
+        str(locator.get("table_id") or locator.get("equation_label") or "").strip(),
+        str(locator.get("row_name") or "").strip(),
+        str(locator.get("column_name") or "").strip(),
+        str(locator.get("value") or "").strip(),
+        str(locator.get("excerpt") or obj.get("snippet") or "").strip(),
+    ]
+    return " | ".join([p for p in parts if p])
+
+
+def _best_available_evidence_text(
+    evidence: Dict[str, Any],
+    src: Dict[str, Any],
+    table_evidence: Dict[str, Any],
+    evidence_objects: List[Dict[str, Any]],
+    max_chars: int,
+) -> str:
+    raw = str(
+        evidence.get("evidence_text")
+        or src.get("evidence_text")
+        or table_evidence.get("excerpt")
+        or ""
+    ).strip()
+    if raw:
+        return _trim_text(raw, max_chars)
+    combined = " || ".join(
+        _evidence_object_summary(obj)
+        for obj in evidence_objects
+        if isinstance(obj, dict) and _evidence_object_summary(obj)
+    ).strip()
+    return _trim_text(combined, max_chars) if combined else ""
+
+
+def _norm_text(value: Any) -> str:
+    text = sanitize_text_for_openai(str(value or "")).strip().lower()
+    return " ".join(text.split())
+
+
+def _value_string_candidates(value: Any) -> List[str]:
+    out: List[str] = []
+    if value in (None, ""):
+        return out
+    text = str(value).strip()
+    if text and text not in out:
+        out.append(text)
+    try:
+        num = float(value)
+    except Exception:
+        return out
+    numeric_variants = [
+        f"{num}",
+        f"{num:g}",
+        f"{num:.1f}",
+        f"{num:.2f}",
+        f"{num:.3f}",
+        f"{num:.6g}",
+    ]
+    for variant in numeric_variants:
+        variant = variant.strip()
+        if variant and variant not in out:
+            out.append(variant)
+    return out
+
+
+def _record_symbol_candidates(item: Dict[str, Any]) -> List[str]:
+    candidates: List[str] = []
+    parameter = _safe_dict(item.get("parameter"))
+    for raw in (
+        parameter.get("symbol_reported"),
+        parameter.get("raw_name"),
+        parameter.get("canonical_name"),
+        item.get("symbol"),
+        item.get("canonical_name"),
+    ):
+        text = str(raw or "").strip()
+        if text and text not in candidates:
+            candidates.append(text)
+    return candidates
+
+
+def _infer_support_snippets(
+    *,
+    item: Dict[str, Any],
+    selected_sections: List[Dict[str, Any]],
+    selected_tables: List[Dict[str, Any]],
+    selected_equations: List[Dict[str, Any]],
+    max_chars: int,
+) -> List[Dict[str, Any]]:
+    symbol_candidates = [c.lower() for c in _record_symbol_candidates(item)]
+    equation_candidates = [str(v).strip().lower() for v in _safe_list(item.get("governing_equation_ids")) if str(v).strip()]
+    unit_candidates = [str(v).strip().lower() for v in {
+        _safe_dict(item.get("assertion")).get("reported_unit"),
+        item.get("unit"),
+        item.get("unit_SI"),
+    } if str(v or "").strip()]
+    value_candidates = [c.lower() for c in _value_string_candidates(_safe_dict(item.get("assertion")).get("reported_value"))]
+    if not value_candidates:
+        value_candidates = [c.lower() for c in _value_string_candidates(item.get("value"))]
+
+    supports: List[Dict[str, Any]] = []
+    seen_keys: set[tuple[str, str]] = set()
+
+    def maybe_add(source_type: str, source_name: str, raw_text: str) -> None:
+        norm = _norm_text(raw_text)
+        if not norm:
+            return
+        symbol_hit = any(sym in norm for sym in symbol_candidates if sym)
+        value_hit = any(val in norm for val in value_candidates if val)
+        equation_hit = any(eq in norm for eq in equation_candidates if eq)
+        unit_hit = any(unit in norm for unit in unit_candidates if unit)
+        if not ((symbol_hit and value_hit) or (value_hit and unit_hit) or (symbol_hit and equation_hit)):
+            return
+        snippet = _trim_text(raw_text, max_chars)
+        key = (source_name, snippet)
+        if key in seen_keys:
+            return
+        seen_keys.add(key)
+        supports.append({
+            "source_type": source_type,
+            "source_name": source_name,
+            "snippet": snippet,
+            "match_basis": {
+                "symbol": symbol_hit,
+                "value": value_hit,
+                "unit": unit_hit,
+                "equation": equation_hit,
+            },
+        })
+
+    for table in selected_tables:
+        maybe_add("table", str(table.get("name") or ""), str(table.get("extract_text") or table.get("text") or ""))
+    for section in selected_sections:
+        maybe_add("section", str(section.get("name") or ""), str(section.get("text") or ""))
+    for equation in selected_equations:
+        maybe_add("equation", str(equation.get("name") or ""), str(equation.get("extract_text") or equation.get("text") or ""))
+    return supports[:3]
+
+
+def _has_inferred_support(record: Dict[str, Any]) -> bool:
+    inferred = record.get("inferred_support")
+    return isinstance(inferred, list) and any(isinstance(row, dict) and str(row.get("snippet") or "").strip() for row in inferred)
+
+
 def _build_document_summary(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
-    material = extracted_json.get("material", {}) if isinstance(extracted_json.get("material"), dict) else {}
-    model = extracted_json.get("constitutive_model", {}) if isinstance(extracted_json.get("constitutive_model"), dict) else {}
-    mechanisms = extracted_json.get("deformation_mechanisms", {}) if isinstance(extracted_json.get("deformation_mechanisms"), dict) else {}
+    materials = extracted_json.get("materials", []) if isinstance(extracted_json.get("materials"), list) else []
+    primary_material = materials[0] if materials and isinstance(materials[0], dict) else {}
+    constituents = extracted_json.get("constituents", []) if isinstance(extracted_json.get("constituents"), list) else []
+    primary_constituent = constituents[0] if constituents and isinstance(constituents[0], dict) else {}
+    models = extracted_json.get("models", []) if isinstance(extracted_json.get("models"), list) else []
+    primary_model = models[0] if models and isinstance(models[0], dict) else {}
+    primary_constitutive_description = _safe_dict(primary_model.get("constitutive_description"))
+    primary_slip_description = _safe_dict(primary_constitutive_description.get("slip_description"))
+    primary_twinning = _safe_dict(primary_constitutive_description.get("twinning"))
+    slip_count = 1 if str(primary_slip_description.get("slip_families_defined") or "").strip().lower() == "yes" else 0
+    twin_count = 1 if str(primary_twinning.get("enabled") or "").strip().lower() == "yes" else 0
+    cleavage_count = 0
+    lattice_type = (
+        _safe_dict(primary_constituent.get("crystal_structure")).get("lattice_type")
+        or _safe_dict(primary_constituent.get("crystal_structure")).get("bravais_lattice")
+        or _safe_dict(primary_constituent.get("crystal_structure")).get("crystal_system")
+    )
+    model_summaries = []
+    for model in models:
+        if not isinstance(model, dict):
+            continue
+        branches = [b for b in _safe_list(model.get("constitutive_branches")) if isinstance(b, dict)]
+        model_summaries.append({
+            "model_id": model.get("model_id"),
+            "name": model.get("name"),
+            "model_type": model.get("model_type"),
+            "model_role": model.get("model_role"),
+            "equation_ids": _safe_list(model.get("equation_ids")),
+            "branch_ids": [b.get("branch_id") for b in branches if b.get("branch_id")],
+            "branch_types": [b.get("branch_type") for b in branches if b.get("branch_type")],
+        })
     return {
-        "material_name": material.get("name"),
-        "chemical_formula": material.get("chemical_formula"),
-        "lattice_type": resolve_primary_crystal_structure(extracted_json).get("lattice_type"),
-        "constitutive_framework": model.get("framework"),
-        "rate_dependence": model.get("rate_dependence"),
-        "phase_mode": material.get("phase"),
-        "slip_family_count": len(mechanisms.get("slip_families", []) or []),
-        "twin_family_count": len(mechanisms.get("twinning_families", []) or []),
-        "cleavage_family_count": len(mechanisms.get("cleavage_families", []) or []),
+        "schema_version": extracted_json.get("schema_version"),
+        "material_name": primary_material.get("name"),
+        "chemical_formula": primary_material.get("chemical_formula") or primary_material.get("formula"),
+        "lattice_type": lattice_type,
+        "constitutive_framework": primary_model.get("framework") or primary_model.get("model_type"),
+        "rate_dependence": primary_model.get("rate_dependence") or _safe_dict(primary_constitutive_description.get("flow_kinetics")).get("rate_dependence"),
+        "phase_mode": primary_material.get("phase_mode"),
+        "model_count": len(model_summaries),
+        "models": model_summaries,
+        "slip_family_count": slip_count,
+        "twin_family_count": twin_count,
+        "cleavage_family_count": cleavage_count,
     }
 
 
 def _build_parameter_records(
+    paper_dir: str,
     extracted_json: Dict[str, Any],
     per_evidence_chars: int,
     limit: int,
@@ -453,6 +681,22 @@ def _build_parameter_records(
     provenance_lookup = provenance_map(extracted_json)
     binding_lookup = binding_map(extracted_json)
     evidence_lookup = evidence_map(extracted_json)
+    selected_sections, selected_tables, selected_equations, _ = _resolve_selected_sources(paper_dir)
+    models = [m for m in _safe_list(extracted_json.get("models")) if isinstance(m, dict)]
+    model_lookup = {
+        str(m.get("model_id") or "").strip(): m
+        for m in models
+        if str(m.get("model_id") or "").strip()
+    }
+    branch_lookup: Dict[tuple[str, str], Dict[str, Any]] = {}
+    for model in models:
+        model_id = str(model.get("model_id") or "").strip()
+        for branch in _safe_list(model.get("constitutive_branches")):
+            if not isinstance(branch, dict):
+                continue
+            branch_id = str(branch.get("branch_id") or "").strip()
+            if model_id and branch_id:
+                branch_lookup[(model_id, branch_id)] = branch
     for idx, _, item in iter_parameter_items_with_index(extracted_json):
         src = item.get("source", {}) if isinstance(item.get("source"), dict) else {}
         evidence = item.get("evidence", {}) if isinstance(item.get("evidence"), dict) else {}
@@ -465,42 +709,207 @@ def _build_parameter_records(
         binding = binding_lookup.get(bid) if bid else None
         if not isinstance(binding, dict):
             binding = resolve_binding_record(extracted_json, item)
-        evidence_ids = src.get("evidence_ids") if isinstance(src.get("evidence_ids"), list) else []
+        claim_evidence_ids = item.get("evidence_ids") if isinstance(item.get("evidence_ids"), list) else []
+        source_evidence_ids = src.get("evidence_ids") if isinstance(src.get("evidence_ids"), list) else []
+        evidence_ids: List[str] = []
+        for eid in claim_evidence_ids + source_evidence_ids:
+            normalized = str(eid).strip()
+            if normalized and normalized not in evidence_ids:
+                evidence_ids.append(normalized)
         evidence_objects = [
             evidence_lookup[str(eid).strip()]
             for eid in evidence_ids
             if str(eid).strip() in evidence_lookup
         ]
-        raw_evidence_text = str(evidence.get("evidence_text") or src.get("evidence_text") or table_evidence.get("excerpt") or "")
-        trimmed_evidence_text = _trim_text(raw_evidence_text, per_evidence_chars)
+        raw_evidence_text = _best_available_evidence_text(
+            evidence=evidence,
+            src=src,
+            table_evidence=table_evidence,
+            evidence_objects=evidence_objects,
+            max_chars=per_evidence_chars,
+        )
+        trimmed_evidence_text = _trim_text(raw_evidence_text, per_evidence_chars) if raw_evidence_text else ""
+        applies_to = item.get("applies_to") if isinstance(item.get("applies_to"), dict) else {}
+        model_id = str(applies_to.get("model_id") or "").strip()
+        branch_id = str(applies_to.get("branch_id") or "").strip()
+        model_context = _safe_dict(model_lookup.get(model_id))
+        branch_context = _safe_dict(branch_lookup.get((model_id, branch_id)))
+        inferred_support = _infer_support_snippets(
+            item=item,
+            selected_sections=selected_sections,
+            selected_tables=selected_tables,
+            selected_equations=selected_equations,
+            max_chars=per_evidence_chars,
+        )
+        parameter_payload = _safe_dict(item.get("parameter"))
+        assertion_payload = _safe_dict(item.get("assertion"))
+        provenance_payload = {
+            "origin_type": provenance.get("origin_type"),
+            "reference_ids": _safe_list(provenance.get("reference_ids")),
+            "adopted_from_reference_ids": _safe_list(provenance.get("adopted_from_reference_ids")),
+            "calibration_based_on_reference_ids": _safe_list(provenance.get("calibration_based_on_reference_ids")),
+            "calibration": _safe_dict(provenance.get("calibration")),
+        }
+        provenance_payload = {
+            k: v for k, v in provenance_payload.items()
+            if v not in (None, "", []) and v != {}
+        }
+        evidence_summary = {
+            "primary_text": trimmed_evidence_text,
+            "primary_text_original_chars": len(raw_evidence_text),
+            "primary_text_truncated": len(raw_evidence_text) > len(trimmed_evidence_text),
+            "table_locator": table_evidence,
+        }
+        evidence_summary = {
+            k: v for k, v in evidence_summary.items()
+            if v not in (None, "", []) and v != {}
+        }
         records.append({
             "location": claim_location(item, idx),
             "record_index": idx,
-            "canonical_name": item.get("canonical_name"),
-            "symbol": item.get("symbol"),
-            "value": item.get("value"),
-            "unit": item.get("unit"),
-            "value_SI": item.get("value_SI"),
-            "unit_SI": item.get("unit_SI"),
-            "applies_to": item.get("applies_to"),
+            "parameter": parameter_payload,
+            "assertion": assertion_payload,
+            "applies_to": applies_to,
+            "provenance": provenance_payload,
+            "evidence_ids": evidence_ids,
+            "evidence_objects": evidence_objects,
+            "evidence_summary": evidence_summary,
+            "governing_equation_ids": _safe_list(item.get("governing_equation_ids")),
             "binding_id": item.get("binding_id"),
             "binding_context": binding,
-            "source": {
-                "provenance_id": provenance.get("provenance_id"),
-                "origin_type": provenance.get("origin_type"),
-                "adopted_from_reference_ids": provenance.get("adopted_from_reference_ids"),
-                "calibration_based_on_reference_ids": provenance.get("calibration_based_on_reference_ids"),
-                "calibration_in_this_study": provenance.get("calibration_in_this_study"),
-                "calibration_method": provenance.get("calibration_method"),
-                "evidence_ids": evidence_ids,
-                "evidence_text": trimmed_evidence_text,
-                "evidence_text_original_chars": len(raw_evidence_text),
-                "evidence_text_truncated": len(raw_evidence_text) > len(trimmed_evidence_text),
-                "table_evidence": table_evidence,
-                "evidence_objects": evidence_objects,
+            "evaluator_mode": "extractor_raw_document_backfill_v5",
+            "inferred_support": inferred_support,
+            "canonical_name": item.get("canonical_name") or parameter_payload.get("canonical_name"),
+            "symbol_reported": item.get("symbol") or parameter_payload.get("symbol_reported"),
+            "domain": item.get("domain") or parameter_payload.get("domain"),
+            "reported_value": item.get("value") if item.get("value") not in (None, "") else assertion_payload.get("reported_value"),
+            "reported_unit": item.get("unit") if item.get("unit") not in (None, "") else assertion_payload.get("reported_unit"),
+            "normalized_value": item.get("value_SI"),
+            "normalized_unit": item.get("unit_SI"),
+            "model_context": {
+                "model_id": model_context.get("model_id"),
+                "name": model_context.get("name"),
+                "model_type": model_context.get("model_type"),
+                "model_role": model_context.get("model_role"),
+                "equation_ids": _safe_list(model_context.get("equation_ids")),
+            } if model_context else {},
+            "branch_context": {
+                "branch_id": branch_context.get("branch_id"),
+                "branch_type": branch_context.get("branch_type"),
+                "name": branch_context.get("name"),
+                "governing_equation_ids": _safe_list(branch_context.get("governing_equation_ids")),
+            } if branch_context else {},
+            "evidence_linkage": {
+                "claim_evidence_ids": claim_evidence_ids,
+                "projected_evidence_ids": source_evidence_ids,
             },
         })
     return records[:limit] if limit > 0 else records
+
+
+def _audit_axis_value(record: Dict[str, Any], axis: str) -> str:
+    applies_to = _safe_dict(record.get("applies_to"))
+    parameter = _safe_dict(record.get("parameter"))
+    if axis == "condition_id":
+        return str(applies_to.get("condition_id") or "").strip()
+    if axis == "process_state_id":
+        return str(applies_to.get("process_state_id") or "").strip()
+    if axis == "canonical_name":
+        return str(
+            record.get("canonical_name")
+            or parameter.get("canonical_name")
+            or ""
+        ).strip()
+    if axis == "scope":
+        return str(applies_to.get("scope") or "").strip()
+    return ""
+
+
+def _sampling_axis_counts(records: List[Dict[str, Any]], axes: List[str]) -> Dict[str, Dict[str, int]]:
+    counts: Dict[str, Dict[str, int]] = {axis: {} for axis in axes}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        for axis in axes:
+            value = _audit_axis_value(record, axis)
+            if not value:
+                continue
+            counts[axis][value] = counts[axis].get(value, 0) + 1
+    return counts
+
+
+def _select_parameter_records_for_audit(
+    all_parameter_records: List[Dict[str, Any]],
+    limit: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    if limit <= 0 or len(all_parameter_records) <= limit:
+        axes = ["condition_id", "process_state_id", "canonical_name", "scope"]
+        return list(all_parameter_records), {
+            "strategy": "full_coverage",
+            "axes": axes,
+            "selected_count": len(all_parameter_records),
+            "available_count": len(all_parameter_records),
+            "selected_axis_counts": _sampling_axis_counts(all_parameter_records, axes),
+        }
+
+    axes_with_weights = [
+        ("condition_id", 3.0),
+        ("process_state_id", 2.5),
+        ("canonical_name", 2.0),
+        ("scope", 1.0),
+    ]
+    axes = [axis for axis, _ in axes_with_weights]
+    axis_counts: Dict[str, Dict[str, int]] = {axis: {} for axis in axes}
+    remaining: List[Tuple[int, Dict[str, Any]]] = list(enumerate(all_parameter_records))
+    selected: List[Dict[str, Any]] = []
+    selected_indices: List[int] = []
+
+    while remaining and len(selected) < limit:
+        best_pos = 0
+        best_rank: Tuple[float, float, float] | None = None
+        for pos, (idx, record) in enumerate(remaining):
+            novelty_score = 0.0
+            balance_score = 0.0
+            for axis, weight in axes_with_weights:
+                value = _audit_axis_value(record, axis)
+                if not value:
+                    continue
+                seen = axis_counts[axis].get(value, 0)
+                if seen == 0:
+                    novelty_score += weight
+                balance_score += weight / (1.0 + float(seen))
+            rank = (novelty_score, balance_score, -float(idx))
+            if best_rank is None or rank > best_rank:
+                best_rank = rank
+                best_pos = pos
+
+        idx, record = remaining.pop(best_pos)
+        selected.append(record)
+        selected_indices.append(idx)
+        for axis, _ in axes_with_weights:
+            value = _audit_axis_value(record, axis)
+            if value:
+                axis_counts[axis][value] = axis_counts[axis].get(value, 0) + 1
+
+    selected_pairs = sorted(zip(selected_indices, selected), key=lambda pair: pair[0])
+    selected_records = [record for _, record in selected_pairs]
+    selected_locations = {
+        str(record.get("location") or "")
+        for record in selected_records
+        if isinstance(record, dict)
+    }
+    omitted_records = [
+        record for record in all_parameter_records
+        if isinstance(record, dict) and str(record.get("location") or "") not in selected_locations
+    ]
+    return selected_records, {
+        "strategy": "balanced_axis_stratified",
+        "axes": axes,
+        "selected_count": len(selected_records),
+        "available_count": len(all_parameter_records),
+        "selected_axis_counts": _sampling_axis_counts(selected_records, axes),
+        "omitted_axis_counts": _sampling_axis_counts(omitted_records, axes),
+    }
 
 
 def _score_bucket(score: Any) -> str:
@@ -515,14 +924,38 @@ def _score_bucket(score: Any) -> str:
     return "low"
 
 
+def _record_reported_value(record: Dict[str, Any]) -> Any:
+    if record.get("reported_value") not in (None, ""):
+        return record.get("reported_value")
+    return _safe_dict(record.get("assertion")).get("reported_value")
+
+
+def _record_reported_unit(record: Dict[str, Any]) -> str:
+    if str(record.get("reported_unit") or "").strip():
+        return str(record.get("reported_unit") or "")
+    return str(_safe_dict(record.get("assertion")).get("reported_unit") or "")
+
+
+def _record_normalized_value(record: Dict[str, Any]) -> Any:
+    if record.get("normalized_value") not in (None, ""):
+        return record.get("normalized_value")
+    return _safe_dict(record.get("assertion")).get("normalized_value")
+
+
+def _record_normalized_unit(record: Dict[str, Any]) -> str:
+    if str(record.get("normalized_unit") or "").strip():
+        return str(record.get("normalized_unit") or "")
+    return str(_safe_dict(record.get("assertion")).get("normalized_unit") or "")
+
+
 def _si_conversion_consistent(record: Dict[str, Any]) -> bool:
-    unit = str(record.get("unit") or "").strip().lower()
-    unit_si = str(record.get("unit_SI") or "").strip().lower()
+    unit = _record_reported_unit(record).strip().lower()
+    unit_si = _record_normalized_unit(record).strip().lower()
     if not unit or not unit_si:
         return False
     try:
-        value = float(record.get("value"))
-        value_si = float(record.get("value_SI"))
+        value = float(_record_reported_value(record))
+        value_si = float(_record_normalized_value(record))
     except Exception:
         return False
 
@@ -543,14 +976,19 @@ def _si_conversion_consistent(record: Dict[str, Any]) -> bool:
 
 
 def _is_table_based_record(record: Dict[str, Any]) -> bool:
-    source = record.get("source", {}) if isinstance(record.get("source"), dict) else {}
-    loc = source.get("evidence_location", {}) if isinstance(source.get("evidence_location"), dict) else {}
-    if str(loc.get("kind") or "").strip().lower() == "table":
+    for support in record.get("inferred_support", []) or []:
+        if not isinstance(support, dict):
+            continue
+        if str(support.get("source_type") or "").strip().lower() == "table":
+            return True
+    summary = record.get("evidence_summary", {}) if isinstance(record.get("evidence_summary"), dict) else {}
+    locator = summary.get("table_locator", {}) if isinstance(summary.get("table_locator"), dict) else {}
+    if any(locator.get(k) not in (None, "", []) for k in ("row_name", "column_name", "value", "excerpt")):
         return True
-    for obj in source.get("evidence_objects", []) or []:
+    for obj in record.get("evidence_objects", []) or []:
         if not isinstance(obj, dict):
             continue
-        file_name = str(obj.get("file") or obj.get("matched_file") or "").strip().lower()
+        file_name = str(obj.get("source_file") or obj.get("file") or obj.get("matched_file") or "").strip().lower()
         if file_name.startswith("table_") or file_name.endswith(".json") and "/table_" in file_name:
             return True
     return False
@@ -562,7 +1000,7 @@ def _is_high_risk_table_claim(merged_row: Dict[str, Any], record: Dict[str, Any]
         return True
     if str(merged_row.get("verdict") or "").strip().lower() == "fail":
         return True
-    if record.get("value") in (None, "") and record.get("value_SI") in (None, ""):
+    if _record_reported_value(record) in (None, "") and _record_normalized_value(record) in (None, ""):
         return True
     binding = record.get("binding_context", {}) if isinstance(record.get("binding_context"), dict) else {}
     scope = str((binding.get("scope") or (record.get("applies_to") or {}).get("scope") or "")).strip().lower()
@@ -604,7 +1042,7 @@ def _is_low_risk_normalization_only_disagreement(
     nm: Dict[str, Any],
     cs: Dict[str, Any],
 ) -> bool:
-    if record.get("value") in (None, ""):
+    if _record_reported_value(record) in (None, ""):
         return False
     ev_verdict = str(ev.get("verdict") or "").strip().lower()
     cs_verdict = str(cs.get("verdict") or "").strip().lower()
@@ -828,7 +1266,7 @@ def _merge_committee(
         merged_row = {
             "location": location,
             "canonical_name": rec.get("canonical_name"),
-            "symbol": rec.get("symbol"),
+            "symbol": rec.get("symbol_reported") or rec.get("symbol"),
             "verdict": verdict,
             "score": score,
             "supportiveness": ev.get("supportiveness", "insufficient_evidence"),
@@ -932,6 +1370,22 @@ def _merge_committee(
             if "Low-risk unit/SI normalization disagreement was not treated as a mandatory review issue." not in effective_reason:
                 extra = " Low-risk unit/SI normalization disagreement was not treated as a mandatory review issue."
                 effective_reason = (effective_reason.strip() + extra).strip()
+        if _has_inferred_support(record):
+            non_support_errors = {
+                str(e or "").strip().lower()
+                for e in (merged_row.get("error_types") or [])
+                if str(e or "").strip()
+            } - {"unsupported_claim", "other"}
+            if not non_support_errors and effective_verdict in {"warning", "fail"}:
+                merged_row["policy_adjustments"].append("trust_inferred_support_snippets")
+                if effective_verdict == "fail":
+                    effective_verdict = "warning"
+                effective_review_required = False
+                effective_score = max(float(effective_score or 0), 80.0)
+                effective_confidence = _score_bucket(effective_score)
+                if "Extractor-first support snippets were found in the selected source files, so missing postprocessed evidence packaging was not treated as an unsupported claim." not in effective_reason:
+                    extra = " Extractor-first support snippets were found in the selected source files, so missing postprocessed evidence packaging was not treated as an unsupported claim."
+                    effective_reason = (effective_reason.strip() + extra).strip()
         merged_row["policy_adjusted_consensus"] = {
             "verdict": effective_verdict,
             "score": round(effective_score, 2),
@@ -1189,11 +1643,15 @@ def run_llm_evaluation(
     feedback = _load_feedback_artifacts(feedback_artifact_path)
     feedback_summary = feedback["summary"]
     all_parameter_records = _build_parameter_records(
+        paper_dir=paper_dir,
         extracted_json=extracted_json,
         per_evidence_chars=per_evidence_chars,
         limit=0,
     )
-    parameter_records = all_parameter_records[:parameter_limit] if parameter_limit > 0 else list(all_parameter_records)
+    parameter_records, sampling_meta = _select_parameter_records_for_audit(
+        all_parameter_records,
+        parameter_limit,
+    )
     doc_summary = _build_document_summary(extracted_json)
 
     evidence_rows, evidence_metrics = _run_parameter_agent(
@@ -1269,8 +1727,9 @@ def run_llm_evaluation(
             "audited": len(parameter_audits),
             "available": len(all_parameter_records),
             "limit": parameter_limit,
-            "truncated_by_limit": bool(parameter_limit > 0 and len(parameter_audits) >= parameter_limit),
+            "truncated_by_limit": bool(parameter_limit > 0 and len(all_parameter_records) > len(parameter_records)),
             "per_evidence_chars": per_evidence_chars,
+            "sampling": sampling_meta,
             "audited_locations": [str(r.get("location") or "") for r in parameter_records],
             "omitted_locations": [
                 str(r.get("location") or "")
@@ -1280,7 +1739,9 @@ def run_llm_evaluation(
             "truncated_evidence_locations": [
                 str(r.get("location") or "")
                 for r in parameter_records
-                if isinstance(r, dict) and bool(((r.get("source") or {}) if isinstance(r.get("source"), dict) else {}).get("evidence_text_truncated"))
+                if isinstance(r, dict) and bool(
+                    ((r.get("evidence_summary") or {}) if isinstance(r.get("evidence_summary"), dict) else {}).get("primary_text_truncated")
+                )
             ],
         },
         "review_escalation": {
@@ -1290,6 +1751,24 @@ def run_llm_evaluation(
         },
         "feedback_summary_used": feedback_summary,
     }
+
+    evaluator_input_payload = {
+        "schema_version": extracted_json.get("schema_version"),
+        "context_used": context_meta,
+        "document_summary": doc_summary,
+        "parameter_audit_coverage": {
+            "available": len(all_parameter_records),
+            "audited": len(parameter_records),
+            "limit": parameter_limit,
+            "per_evidence_chars": per_evidence_chars,
+            "sampling": sampling_meta,
+        },
+        "parameter_records": parameter_records,
+        "all_parameter_records": all_parameter_records,
+    }
+    evaluator_input_path = os.path.join(paper_dir, "llm_evaluation_input.json")
+    with open(evaluator_input_path, "w", encoding="utf-8") as f:
+        json.dump(evaluator_input_payload, f, ensure_ascii=False, indent=2)
 
     metrics = {
         "model": model_evaluate,

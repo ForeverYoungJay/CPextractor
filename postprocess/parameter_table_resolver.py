@@ -265,7 +265,7 @@ def _section_phase_tokens(title: str | None) -> List[str]:
 def _item_phase_tokens(item: Dict[str, Any], extracted_json: Dict[str, Any] | None = None) -> List[str]:
     applies = _safe_dict(item.get("applies_to"))
     vals = [
-        applies.get("phase_id"),
+        applies.get("constituent_id") or applies.get("phase_id"),
         applies.get("mechanism"),
         item.get("claim_id"),
         item.get("notes"),

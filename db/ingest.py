@@ -8,6 +8,7 @@ else:
     OpenAI = Any
 
 from db.vector_builders import build_parameter_vector_rows
+from db.parameter_vector_schema import build_parameter_vector_payload, get_table_columns
 from llm.openai_sanitize import sanitize_text_for_openai, validate_openai_json_payload
 
 def read_text(p: str) -> str:
@@ -363,9 +364,14 @@ def _upsert_parameter_vector_row(
     conn,
     row: Dict[str, Any],
     embedding_model: str,
+    available_columns: List[str],
 ) -> Tuple[int, bool]:
     retrieval_text = str(row.get("retrieval_text") or "")
     content_hash = _sha256_text(retrieval_text)
+    mutable_columns = [
+        col for col in available_columns
+        if col not in {"vector_id", "embedding"} and col not in {"doi", "claim_id"}
+    ]
     existing = conn.execute(
         """
         SELECT vector_id, embedding, embedding_model, content_hash
@@ -382,113 +388,59 @@ def _upsert_parameter_vector_row(
             or str(existing.get("embedding_model") or "") != embedding_model
             or str(existing.get("content_hash") or "") != content_hash
         )
+        row_with_runtime = dict(row)
+        row_with_runtime["retrieval_text"] = retrieval_text
+        row_with_runtime["metadata"] = row.get("metadata") or {}
+        row_with_runtime["content_hash"] = content_hash
+        row_with_runtime["embedding_model"] = embedding_model
+        assignments = build_parameter_vector_payload(row_with_runtime, mutable_columns)
+        assignment_sql = ",\n                ".join(
+            f"{column} = %s::jsonb" if column == "metadata" else f"{column} = %s"
+            for column, _ in assignments
+        )
+        if "embedding_model" in mutable_columns and "content_hash" in mutable_columns:
+            assignment_sql += (
+                ",\n                embedding = CASE\n"
+                "                    WHEN content_hash = %s AND embedding_model = %s THEN embedding\n"
+                "                    ELSE NULL\n"
+                "                END"
+            )
+        elif "embedding" in available_columns:
+            assignment_sql += ",\n                embedding = NULL"
+        values = [value if column != "metadata" else json.dumps(value or {}, ensure_ascii=False) for column, value in assignments]
+        if "embedding_model" in mutable_columns and "content_hash" in mutable_columns:
+            values.extend([content_hash, embedding_model])
+        values.append(vector_id)
         conn.execute(
-            """
+            f"""
             UPDATE parameter_vectors
-            SET material_id = %s,
-                material_name = %s,
-                sample_id = %s,
-                sample_label = %s,
-                condition_id = %s,
-                condition_label = %s,
-                canonical_name = %s,
-                symbol = %s,
-                domain = %s,
-                phase_id = %s,
-                phase_name = %s,
-                mechanism = %s,
-                family_id = %s,
-                family_name = %s,
-                model_id = %s,
-                value_text = %s,
-                unit = %s,
-                origin_type = %s,
-                evidence_file = %s,
-                evidence_kind = %s,
-                evidence_snippet = %s,
-                retrieval_text = %s,
-                metadata = %s::jsonb,
-                content_hash = %s,
-                embedding_model = %s,
-                embedding = CASE
-                    WHEN content_hash = %s AND embedding_model = %s THEN embedding
-                    ELSE NULL
-                END
+            SET {assignment_sql}
             WHERE vector_id = %s;
             """,
-            (
-                row.get("material_id"),
-                row.get("material_name"),
-                row.get("sample_id"),
-                row.get("sample_label"),
-                row.get("condition_id"),
-                row.get("condition_label"),
-                row.get("canonical_name"),
-                row.get("symbol"),
-                row.get("domain"),
-                row.get("phase_id"),
-                row.get("phase_name"),
-                row.get("mechanism"),
-                row.get("family_id"),
-                row.get("family_name"),
-                row.get("model_id"),
-                row.get("value_text"),
-                row.get("unit"),
-                row.get("origin_type"),
-                row.get("evidence_file"),
-                row.get("evidence_kind"),
-                row.get("evidence_snippet"),
-                retrieval_text,
-                json.dumps(row.get("metadata") or {}, ensure_ascii=False),
-                content_hash,
-                embedding_model,
-                content_hash,
-                embedding_model,
-                vector_id,
-            ),
+            tuple(values),
         )
         return vector_id, needs_embedding
 
+    insert_columns = [col for col in available_columns if col != "vector_id" and col != "embedding"]
+    row_with_runtime = dict(row)
+    row_with_runtime["retrieval_text"] = retrieval_text
+    row_with_runtime["metadata"] = row.get("metadata") or {}
+    row_with_runtime["content_hash"] = content_hash
+    row_with_runtime["embedding_model"] = embedding_model
+    insert_pairs = build_parameter_vector_payload(row_with_runtime, insert_columns)
+    insert_sql_cols = ", ".join(column for column, _ in insert_pairs)
+    insert_sql_vals = ", ".join("%s::jsonb" if column == "metadata" else "%s" for column, _ in insert_pairs)
+    insert_values = tuple(
+        json.dumps(value or {}, ensure_ascii=False) if column == "metadata" else value
+        for column, value in insert_pairs
+    )
     inserted = conn.execute(
-        """
-        INSERT INTO parameter_vectors (
-            doi, claim_id, material_id, material_name, sample_id, sample_label, condition_id, condition_label,
-            canonical_name, symbol, domain, phase_id, phase_name, mechanism, family_id, family_name, model_id,
-            value_text, unit, origin_type, evidence_file, evidence_kind, evidence_snippet,
-            retrieval_text, metadata, content_hash, embedding_model, embedding
-        )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,NULL)
+        f"""
+        INSERT INTO parameter_vectors ({insert_sql_cols})
+        VALUES ({insert_sql_vals})
         RETURNING vector_id;
         """,
-        (
-            row["doi"],
-            row["claim_id"],
-            row.get("material_id"),
-            row.get("material_name"),
-            row.get("sample_id"),
-            row.get("sample_label"),
-            row.get("condition_id"),
-            row.get("condition_label"),
-            row.get("canonical_name"),
-            row.get("symbol"),
-            row.get("domain"),
-            row.get("phase_id"),
-            row.get("phase_name"),
-            row.get("mechanism"),
-            row.get("family_id"),
-            row.get("family_name"),
-            row.get("model_id"),
-            row.get("value_text"),
-            row.get("unit"),
-            row.get("origin_type"),
-            row.get("evidence_file"),
-            row.get("evidence_kind"),
-            row.get("evidence_snippet"),
-            retrieval_text,
-            json.dumps(row.get("metadata") or {}, ensure_ascii=False),
-            content_hash,
-            embedding_model,
-        ),
+        insert_values,
     ).fetchone()
     return int(inserted["vector_id"]), True
 
@@ -496,8 +448,9 @@ def _upsert_parameter_vector_row(
 def sync_parameter_vectors(conn, doi: str, rows: List[Dict[str, Any]], embedding_model: str) -> List[Tuple[int, str]]:
     to_embed: List[Tuple[int, str]] = []
     keep_ids: List[int] = []
+    available_columns = get_table_columns(conn, "parameter_vectors")
     for row in rows:
-        vector_id, needs_embedding = _upsert_parameter_vector_row(conn, row, embedding_model)
+        vector_id, needs_embedding = _upsert_parameter_vector_row(conn, row, embedding_model, available_columns)
         keep_ids.append(vector_id)
         if needs_embedding:
             to_embed.append((vector_id, str(row.get("retrieval_text") or "")))
@@ -535,13 +488,15 @@ def ingest_paper_dir_to_db(
     ensure_embedding_schema(conn, embedding_dim)
 
     # 1) papers + extractions
-    source_doc = extracted_json.get("source_document", {}) if isinstance(extracted_json.get("source_document"), dict) else {}
+    source_doc = extracted_json.get("document", {}) if isinstance(extracted_json.get("document"), dict) else {}
+    if not source_doc:
+        source_doc = extracted_json.get("source_document", {}) if isinstance(extracted_json.get("source_document"), dict) else {}
     upsert_paper(
         conn,
         doi=doi,
         title=source_doc.get("title"),
         year=source_doc.get("year"),
-        journal=source_doc.get("journal_or_venue"),
+        journal=source_doc.get("journal") or source_doc.get("journal_or_venue"),
     )
     upsert_extraction(conn, doi=doi, extracted_json=extracted_json, model_select=model_select, model_extract=model_extract)
 

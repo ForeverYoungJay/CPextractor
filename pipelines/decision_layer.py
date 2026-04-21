@@ -126,13 +126,15 @@ def apply_decision_layer(
     gate = reports.get("ingest_gate") or {}
     blocked = bool(gate.get("blocked"))
 
-    source_doc = extracted_json.get("source_document", {}) if isinstance(extracted_json.get("source_document"), dict) else {}
+    source_doc = extracted_json.get("document", {}) if isinstance(extracted_json.get("document"), dict) else {}
+    if not source_doc:
+        source_doc = extracted_json.get("source_document", {}) if isinstance(extracted_json.get("source_document"), dict) else {}
     upsert_paper(
         conn,
         doi=doi,
         title=source_doc.get("title"),
         year=source_doc.get("year"),
-        journal=source_doc.get("journal_or_venue"),
+        journal=source_doc.get("journal") or source_doc.get("journal_or_venue"),
     )
 
     insert_pipeline_run(

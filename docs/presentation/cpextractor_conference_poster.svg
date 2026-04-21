@@ -1,0 +1,568 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1189mm" height="841mm" viewBox="0 0 1189 841" role="img" aria-labelledby="poster-title poster-desc">
+  <title id="poster-title">CPextractor: Automated Literature Mining for Crystal Plasticity Parameters</title>
+  <desc id="poster-desc">A0 landscape academic poster describing the CPextractor pipeline, schema design, table extraction challenges, evaluation strategy, representative case-study results, and take-home message.</desc>
+
+  <defs>
+    <linearGradient id="accent_gradient" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#123B63"/>
+      <stop offset="100%" stop-color="#2A6F97"/>
+    </linearGradient>
+    <style>
+      .bg { fill: #ffffff; }
+      .top-band { fill: url(#accent_gradient); }
+      .panel {
+        fill: #f7fafc;
+        stroke: #d8e0e8;
+        stroke-width: 1.2;
+      }
+      .panel-alt {
+        fill: #eef4f8;
+        stroke: #d8e0e8;
+        stroke-width: 1.2;
+      }
+      .card {
+        fill: #ffffff;
+        stroke: #d8e0e8;
+        stroke-width: 1;
+      }
+      .accent-card {
+        fill: #ffffff;
+        stroke: #dfeaf2;
+        stroke-width: 1.1;
+      }
+      .soft-card {
+        fill: #fbfdfe;
+        stroke: #e5edf4;
+        stroke-width: 1;
+      }
+      .title {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 28px;
+        font-weight: 700;
+        fill: #ffffff;
+        letter-spacing: -0.02em;
+      }
+      .subtitle {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 10.4px;
+        font-weight: 500;
+        fill: #dbe8f3;
+      }
+      .author {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 9.4px;
+        font-weight: 600;
+        fill: #ffffff;
+      }
+      .affil {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 8.2px;
+        font-weight: 500;
+        fill: #dbe8f3;
+      }
+      .panel-kicker {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 6.3px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        fill: #2a6f97;
+      }
+      .panel-title {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 13.5px;
+        font-weight: 700;
+        fill: #102033;
+        letter-spacing: -0.01em;
+      }
+      .body {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 8px;
+        font-weight: 500;
+        fill: #102033;
+      }
+      .body-strong {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 8px;
+        font-weight: 700;
+        fill: #102033;
+      }
+      .small {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 7px;
+        font-weight: 500;
+        fill: #506173;
+      }
+      .tiny {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 6px;
+        font-weight: 500;
+        fill: #506173;
+      }
+      .metric-value {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 17px;
+        font-weight: 700;
+        fill: #123b63;
+      }
+      .metric-label {
+        font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        font-size: 6.4px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        fill: #506173;
+      }
+      .mono {
+        font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+        font-size: 7px;
+        font-weight: 500;
+        fill: #102033;
+      }
+      .mono-small {
+        font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+        font-size: 6px;
+        font-weight: 500;
+        fill: #506173;
+      }
+      .chip {
+        fill: #ffffff;
+        stroke: #c8d8e4;
+        stroke-width: 1;
+      }
+      .chip-blue {
+        fill: #edf4fb;
+        stroke: #bfd3e4;
+        stroke-width: 1;
+      }
+      .chip-teal {
+        fill: #eef7f5;
+        stroke: #c9dfda;
+        stroke-width: 1;
+      }
+      .chip-warm {
+        fill: #f4f7fa;
+        stroke: #d6e0e8;
+        stroke-width: 1;
+      }
+      .divider {
+        stroke: #d8e0e8;
+        stroke-width: 1;
+      }
+      .accent-line {
+        stroke: #2a6f97;
+        stroke-width: 1.6;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .soft-line {
+        stroke: #9bb6c8;
+        stroke-width: 1.1;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .thin-line {
+        stroke: #bfd0dc;
+        stroke-width: 0.9;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .blue-fill { fill: #123b63; }
+      .blue-soft-fill { fill: #dce9f3; }
+      .teal-fill { fill: #6b8a8f; }
+      .teal-soft-fill { fill: #dce8e6; }
+      .muted-fill { fill: #506173; }
+    </style>
+
+    <marker id="arrow_blue" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#2A6F97"/>
+    </marker>
+    <marker id="arrow_soft" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#9BB6C8"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <g id="background">
+    <rect class="bg" x="0" y="0" width="1189" height="841"/>
+    <rect x="0" y="0" width="1189" height="18" class="top-band"/>
+    <line x1="36" y1="130" x2="1153" y2="130" class="divider"/>
+  </g>
+
+  <!-- Title -->
+  <g id="title_block">
+    <rect x="36" y="28" width="1117" height="88" rx="10" ry="10" class="top-band"/>
+    <rect x="829" y="40" width="142" height="64" rx="8" ry="8" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.22" stroke-width="1"/>
+    <rect x="985" y="40" width="118" height="64" rx="8" ry="8" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.22" stroke-width="1"/>
+
+    <text x="56" y="60" class="title">CPextractor: Automated Literature Mining for Crystal Plasticity Parameters</text>
+    <text x="56" y="79" class="subtitle">Structured extraction, normalization, evidence grounding, and dataset construction from scientific papers</text>
+    <text x="56" y="101" class="author">[Your Name], [Coauthors]</text>
+    <text x="56" y="113" class="affil">[Institution] | Literature-to-database workflow for trustworthy CP parameter curation</text>
+
+    <text x="849" y="58" class="small" fill="#ffffff">Project focus</text>
+    <text x="849" y="73" class="author">Evidence-grounded CP data infrastructure</text>
+    <text x="849" y="88" class="affil">Parse -&gt; extract -&gt; normalize -&gt; audit -&gt; ingest -&gt; retrieve</text>
+    <text x="849" y="101" class="affil">Real schema objects: materials, conditions, models, evidence_objects, parameter_claims</text>
+
+    <rect x="1002" y="52" width="40" height="40" rx="4" ry="4" fill="#ffffff" stroke="#dbe8f3" stroke-width="1.2"/>
+    <path d="M1009 59 h8 v8 h-8 z M1021 59 h14 v14 h-14 z M1009 71 h14 v14 h-14 z M1027 77 h8 v8 h-8 z M1047 59 h8 v8 h-8 z M1047 71 h8 v8 h-8 z M1047 83 h8 v8 h-8 z" fill="#123B63"/>
+    <text x="1065" y="67" class="small" fill="#ffffff">Contact / repo / poster PDF</text>
+    <text x="1065" y="82" class="author">QR</text>
+    <text x="1065" y="96" class="affil">placeholder</text>
+  </g>
+
+  <!-- Intro -->
+  <g id="intro_panel">
+    <rect x="36" y="146" width="300" height="164" rx="10" ry="10" class="panel"/>
+    <text x="54" y="169" class="panel-kicker">MOTIVATION / PROBLEM</text>
+    <text x="54" y="190" class="panel-title">Why CP parameter curation does not scale manually</text>
+
+    <rect x="54" y="206" width="228" height="86" rx="8" ry="8" class="card"/>
+    <circle cx="72" cy="225" r="4" class="blue-fill"/>
+    <text x="84" y="228" class="body">Parameters are distributed across prose, tables, references, and supplements.</text>
+    <circle cx="72" cy="245" r="4" class="blue-fill"/>
+    <text x="84" y="248" class="body">Table content may be image-backed, irregular, or split across multi-row headers.</text>
+    <circle cx="72" cy="265" r="4" class="blue-fill"/>
+    <text x="84" y="268" class="body">Names, symbols, units, provenance, and applicability vary by paper and model scope.</text>
+    <circle cx="72" cy="285" r="4" class="blue-fill"/>
+    <text x="84" y="288" class="body">Flat extraction is not enough for reuse, auditing, or database ingest.</text>
+
+    <g transform="translate(286 208)">
+      <rect x="0" y="0" width="32" height="24" rx="4" ry="4" class="chip-warm"/>
+      <line x1="6" y1="7" x2="24" y2="7" class="thin-line"/>
+      <line x1="6" y1="12" x2="26" y2="12" class="thin-line"/>
+      <line x1="6" y1="17" x2="20" y2="17" class="thin-line"/>
+      <rect x="3" y="28" width="32" height="24" rx="4" ry="4" class="chip-warm"/>
+      <line x1="9" y1="35" x2="28" y2="35" class="thin-line"/>
+      <line x1="9" y1="40" x2="25" y2="40" class="thin-line"/>
+      <line x1="9" y1="45" x2="22" y2="45" class="thin-line"/>
+      <path d="M16 57 C16 69, 0 70, 0 83 C0 93, 9 100, 18 100" class="accent-line"/>
+      <path d="M20 57 C20 69, 36 70, 36 83 C36 93, 27 100, 18 100" class="accent-line"/>
+      <rect x="2" y="102" width="32" height="24" rx="4" ry="4" class="chip-blue"/>
+      <line x1="8" y1="109" x2="26" y2="109" class="thin-line"/>
+      <line x1="8" y1="114" x2="23" y2="114" class="thin-line"/>
+      <line x1="8" y1="119" x2="28" y2="119" class="thin-line"/>
+    </g>
+
+    <text x="54" y="302" class="small">CPextractor addresses this as an evidence-grounded curation workflow, not a single extraction step.</text>
+  </g>
+
+  <!-- Workflow -->
+  <g id="workflow_panel">
+    <rect x="354" y="146" width="480" height="602" rx="10" ry="10" class="panel-alt"/>
+    <text x="374" y="169" class="panel-kicker">METHOD / WORKFLOW</text>
+    <text x="374" y="190" class="panel-title">Implemented pipeline from full text to trusted database records</text>
+    <text x="374" y="206" class="small">The project runtime follows the repo workflow: parse Elsevier XML, run two-stage LLM extraction, normalize scope, ground evidence, evaluate with a committee, and build database-ready claims.</text>
+
+    <rect x="376" y="224" width="436" height="82" rx="9" ry="9" class="accent-card"/>
+    <text x="394" y="244" class="metric-label">INPUT ASSETS</text>
+    <rect x="394" y="254" width="78" height="34" rx="7" ry="7" class="chip"/>
+    <text x="405" y="275" class="mono-small">paper.xml</text>
+    <rect x="484" y="254" width="92" height="34" rx="7" ry="7" class="chip"/>
+    <text x="497" y="275" class="mono-small">sections/*.md</text>
+    <rect x="588" y="254" width="92" height="34" rx="7" ry="7" class="chip"/>
+    <text x="605" y="275" class="mono-small">tables/*.json</text>
+    <rect x="692" y="254" width="102" height="34" rx="7" ry="7" class="chip"/>
+    <text x="708" y="275" class="mono-small">references.json</text>
+
+    <!-- Step row 1 -->
+    <g id="workflow_steps_top">
+      <rect x="376" y="330" width="90" height="86" rx="9" ry="9" class="card"/>
+      <text x="391" y="349" class="metric-label">1</text>
+      <circle cx="421" cy="369" r="11" class="blue-soft-fill"/>
+      <path d="M414 366 h14 M421 359 v14" class="accent-line"/>
+      <text x="391" y="392" class="body-strong">Paper acquisition</text>
+      <text x="391" y="406" class="tiny">Scopus, DOI lists,</text>
+      <text x="391" y="415" class="tiny">or local full-text folders</text>
+
+      <rect x="486" y="330" width="90" height="86" rx="9" ry="9" class="card"/>
+      <text x="501" y="349" class="metric-label">2</text>
+      <rect x="516" y="357" width="30" height="23" rx="4" ry="4" class="blue-soft-fill"/>
+      <line x1="521" y1="364" x2="541" y2="364" class="soft-line"/>
+      <line x1="521" y1="370" x2="541" y2="370" class="soft-line"/>
+      <line x1="521" y1="376" x2="536" y2="376" class="soft-line"/>
+      <text x="501" y="392" class="body-strong">Full-text parsing</text>
+      <text x="501" y="406" class="tiny">Elsevier XML -&gt; sections,</text>
+      <text x="501" y="415" class="tiny">tables, equations, refs</text>
+
+      <rect x="596" y="330" width="90" height="86" rx="9" ry="9" class="card"/>
+      <text x="611" y="349" class="metric-label">3</text>
+      <rect x="621" y="357" width="38" height="22" rx="11" ry="11" class="chip-blue"/>
+      <circle cx="632" cy="368" r="3.5" class="blue-fill"/>
+      <circle cx="642" cy="368" r="3.5" class="teal-fill"/>
+      <circle cx="652" cy="368" r="3.5" class="muted-fill"/>
+      <text x="611" y="392" class="body-strong">LLM file selection</text>
+      <text x="611" y="406" class="tiny">Select minimum relevant</text>
+      <text x="611" y="415" class="tiny">sections and tables</text>
+
+      <rect x="706" y="330" width="90" height="86" rx="9" ry="9" class="card"/>
+      <text x="721" y="349" class="metric-label">4</text>
+      <path d="M730 357 h24 v24 h-24 z" fill="#dce9f3" stroke="#bfd3e4" stroke-width="1"/>
+      <path d="M736 365 h12 M736 371 h12 M736 377 h8" class="soft-line"/>
+      <text x="721" y="392" class="body-strong">Schema extraction</text>
+      <text x="721" y="406" class="tiny">LLM fills CP JSON schema</text>
+      <text x="721" y="415" class="tiny">and `parameters.registry`</text>
+
+      <path d="M466 373 h20" class="accent-line" marker-end="url(#arrow_blue)"/>
+      <path d="M576 373 h20" class="accent-line" marker-end="url(#arrow_blue)"/>
+      <path d="M686 373 h20" class="accent-line" marker-end="url(#arrow_blue)"/>
+    </g>
+
+    <!-- Center bridge -->
+    <g id="workflow_bridge">
+      <path d="M751 432 v28 c0 10 -8 18 -18 18 h-273 c-10 0 -18 8 -18 18 v12" class="soft-line" marker-end="url(#arrow_soft)"/>
+      <rect x="521" y="446" width="152" height="34" rx="17" ry="17" class="chip-blue"/>
+      <text x="539" y="467" class="body-strong">Structured intermediate payload</text>
+    </g>
+
+    <!-- Step row 2 -->
+    <g id="workflow_steps_bottom">
+      <rect x="376" y="512" width="124" height="96" rx="9" ry="9" class="card"/>
+      <text x="392" y="531" class="metric-label">5</text>
+      <text x="392" y="551" class="body-strong">Structure normalization</text>
+      <text x="392" y="565" class="tiny">reference_resolution</text>
+      <text x="392" y="575" class="tiny">parameter_normalization</text>
+      <text x="392" y="585" class="tiny">unit_normalization</text>
+      <text x="392" y="595" class="tiny">material_phase_normalization</text>
+
+      <rect x="518" y="512" width="124" height="96" rx="9" ry="9" class="card"/>
+      <text x="534" y="531" class="metric-label">6</text>
+      <text x="534" y="551" class="body-strong">Linking and grounding</text>
+      <text x="534" y="565" class="tiny">condition_binding</text>
+      <text x="534" y="575" class="tiny">model_equation_binding</text>
+      <text x="534" y="585" class="tiny">evidence_grounding</text>
+      <text x="534" y="595" class="tiny">char spans and table cells</text>
+
+      <rect x="660" y="512" width="136" height="96" rx="9" ry="9" class="card"/>
+      <text x="676" y="531" class="metric-label">7</text>
+      <text x="676" y="551" class="body-strong">LLM evaluation committee</text>
+      <text x="676" y="565" class="tiny">evidence judge</text>
+      <text x="676" y="575" class="tiny">normalization judge</text>
+      <text x="676" y="585" class="tiny">consistency judge + meta judge</text>
+      <text x="676" y="595" class="tiny">document verdict and audits</text>
+
+      <path d="M500 560 h18" class="accent-line" marker-end="url(#arrow_blue)"/>
+      <path d="M642 560 h18" class="accent-line" marker-end="url(#arrow_blue)"/>
+    </g>
+
+    <!-- Artifacts lane -->
+    <g id="workflow_artifacts">
+      <rect x="376" y="632" width="420" height="96" rx="9" ry="9" class="accent-card"/>
+      <text x="394" y="652" class="metric-label">8</text>
+      <text x="394" y="672" class="panel-title" font-size="11.5px">Finalization and ingest</text>
+      <text x="394" y="691" class="small">Confidence fusion produces parameter-level and document-level quality signals, then the pipeline builds `parameter_claims` and the finalized hierarchy for downstream DB ingest, retrieval, review, and analytics.</text>
+
+      <rect x="394" y="703" width="90" height="16" rx="8" ry="8" class="chip"/>
+      <text x="406" y="714" class="mono-small">quality_tier</text>
+      <rect x="492" y="703" width="112" height="16" rx="8" ry="8" class="chip"/>
+      <text x="504" y="714" class="mono-small">document_confidence</text>
+      <rect x="612" y="703" width="78" height="16" rx="8" ry="8" class="chip"/>
+      <text x="625" y="714" class="mono-small">evidence_objects</text>
+      <rect x="698" y="703" width="84" height="16" rx="8" ry="8" class="chip-blue"/>
+      <text x="710" y="714" class="mono-small">parameter_claims</text>
+    </g>
+
+    <!-- Output rail -->
+    <g id="workflow_output_rail">
+      <rect x="749" y="234" width="45" height="58" rx="8" ry="8" class="chip-blue"/>
+      <text x="758" y="255" class="mono-small">paper</text>
+      <text x="758" y="266" class="mono-small">assets</text>
+
+      <rect x="749" y="466" width="45" height="58" rx="8" ry="8" class="chip-blue"/>
+      <text x="757" y="487" class="mono-small">bound</text>
+      <text x="757" y="498" class="mono-small">records</text>
+
+      <rect x="749" y="544" width="45" height="58" rx="8" ry="8" class="chip-teal"/>
+      <text x="756" y="565" class="mono-small">audit</text>
+      <text x="754" y="576" class="mono-small">stack</text>
+
+      <rect x="749" y="622" width="45" height="58" rx="8" ry="8" class="chip"/>
+      <text x="754" y="643" class="mono-small">DB</text>
+      <text x="754" y="654" class="mono-small">use</text>
+
+      <path d="M728 373 h21 v-98" class="soft-line"/>
+      <path d="M796 373 h16" class="soft-line"/>
+      <path d="M796 495 h16" class="soft-line"/>
+      <path d="M796 573 h16" class="soft-line"/>
+      <path d="M796 651 h16" class="soft-line"/>
+    </g>
+  </g>
+
+  <!-- Schema -->
+  <g id="schema_panel">
+    <rect x="36" y="326" width="300" height="252" rx="10" ry="10" class="panel"/>
+    <text x="54" y="349" class="panel-kicker">SCHEMA / STRUCTURED REPRESENTATION</text>
+    <text x="54" y="370" class="panel-title">Hierarchical objects encode scientific scope, not just fields</text>
+
+    <rect x="54" y="386" width="264" height="154" rx="8" ry="8" fill="#0f1e2c"/>
+    <text x="68" y="406" class="mono" fill="#d8f0ff">{</text>
+    <text x="82" y="406" class="mono" fill="#8bd2ff">"document"</text>
+    <text x="142" y="406" class="mono" fill="#d8f0ff">: { ... },</text>
+    <text x="82" y="423" class="mono" fill="#8bd2ff">"materials"</text>
+    <text x="144" y="423" class="mono" fill="#d8f0ff">: [</text>
+    <text x="98" y="440" class="mono" fill="#bde7ff">{ "material_id": "mat_rene_88dt",</text>
+    <text x="112" y="457" class="mono" fill="#bde7ff">"phases": [ ... ] }</text>
+    <text x="82" y="474" class="mono" fill="#d8f0ff">],</text>
+    <text x="82" y="491" class="mono" fill="#8bd2ff">"process_states"</text>
+    <text x="169" y="491" class="mono" fill="#d8f0ff">: [ ... ],</text>
+    <text x="82" y="508" class="mono" fill="#8bd2ff">"conditions"</text>
+    <text x="151" y="508" class="mono" fill="#d8f0ff">: [ ... ],</text>
+    <text x="82" y="525" class="mono" fill="#8bd2ff">"models"</text>
+    <text x="130" y="525" class="mono" fill="#d8f0ff">: [ ... ],</text>
+    <text x="82" y="542" class="mono" fill="#8bd2ff">"evidence_objects"</text>
+    <text x="185" y="542" class="mono" fill="#d8f0ff">: [ ... ],</text>
+    <text x="82" y="559" class="mono" fill="#8bd2ff">"parameter_claims"</text>
+    <text x="185" y="559" class="mono" fill="#d8f0ff">: [ ... ]</text>
+    <text x="68" y="576" class="mono" fill="#d8f0ff">}</text>
+
+    <path d="M260 431 C286 431, 286 457, 260 457" class="soft-line"/>
+    <text x="265" y="446" class="tiny">phase ownership</text>
+    <path d="M260 535 C286 535, 286 559, 260 559" class="soft-line"/>
+    <text x="265" y="550" class="tiny">claim-level trust unit</text>
+
+    <rect x="54" y="548" width="264" height="18" rx="8" ry="8" class="chip-teal"/>
+    <text x="66" y="560" class="small">Design principle: keep material identity, process state, condition, model, provenance, and evidence separable.</text>
+  </g>
+
+  <!-- Table challenge -->
+  <g id="challenge_panel">
+    <rect x="36" y="594" width="300" height="154" rx="10" ry="10" class="panel"/>
+    <text x="54" y="617" class="panel-kicker">TABLE / IMAGE EXTRACTION CHALLENGE</text>
+    <text x="54" y="638" class="panel-title">From difficult tables to grounded claims</text>
+
+    <rect x="54" y="654" width="72" height="60" rx="7" ry="7" class="card"/>
+    <rect x="62" y="662" width="56" height="10" rx="3" ry="3" class="blue-soft-fill"/>
+    <line x1="62" y1="678" x2="118" y2="678" class="thin-line"/>
+    <line x1="62" y1="686" x2="118" y2="686" class="thin-line"/>
+    <line x1="62" y1="694" x2="118" y2="694" class="thin-line"/>
+    <line x1="80" y1="662" x2="80" y2="714" class="thin-line"/>
+    <line x1="98" y1="662" x2="98" y2="714" class="thin-line"/>
+    <text x="58" y="726" class="tiny">Image-backed / irregular table</text>
+
+    <path d="M132 684 h30" class="accent-line" marker-end="url(#arrow_blue)"/>
+    <rect x="166" y="660" width="48" height="18" rx="9" ry="9" class="chip"/>
+    <text x="178" y="672" class="mono-small">OCR</text>
+    <rect x="166" y="684" width="48" height="18" rx="9" ry="9" class="chip-blue"/>
+    <text x="179" y="696" class="mono-small">LLM</text>
+    <rect x="166" y="708" width="48" height="18" rx="9" ry="9" class="chip-teal"/>
+    <text x="171" y="720" class="mono-small">normalize</text>
+
+    <path d="M220 693 h24" class="accent-line" marker-end="url(#arrow_blue)"/>
+    <rect x="248" y="654" width="70" height="60" rx="7" ry="7" class="accent-card"/>
+    <text x="257" y="672" class="mono-small">claim_id: pc_rene88_tau0_111</text>
+    <text x="257" y="684" class="mono-small">canonical_name: initial_slip_strength</text>
+    <text x="257" y="696" class="mono-small">value: 525 MPa</text>
+    <text x="257" y="708" class="mono-small">evidence_ids: [ev_tab2_fcc, ...]</text>
+
+    <text x="54" y="737" class="small">The pipeline resolves row and column semantics, normalizes units and scope, and links the final claim back to table snippets, file spans, and reusable `evidence_objects`.</text>
+  </g>
+
+  <!-- Evaluation -->
+  <g id="evaluation_panel">
+    <rect x="852" y="146" width="301" height="214" rx="10" ry="10" class="panel"/>
+    <text x="870" y="169" class="panel-kicker">EVALUATION</text>
+    <text x="870" y="190" class="panel-title">Multi-level quality assessment with a real case-study example</text>
+
+    <rect x="870" y="206" width="61" height="52" rx="8" ry="8" class="card"/>
+    <text x="878" y="221" class="metric-label">EXTRACTION</text>
+    <text x="878" y="244" class="metric-value">100</text>
+    <text x="878" y="254" class="tiny">case study score</text>
+
+    <rect x="942" y="206" width="61" height="52" rx="8" ry="8" class="card"/>
+    <text x="950" y="221" class="metric-label">GROUNDING</text>
+    <text x="950" y="244" class="metric-value">100</text>
+    <text x="950" y="254" class="tiny">evidence score</text>
+
+    <rect x="1014" y="206" width="61" height="52" rx="8" ry="8" class="card"/>
+    <text x="1022" y="221" class="metric-label">CONSISTENCY</text>
+    <text x="1022" y="244" class="metric-value">100</text>
+    <text x="1022" y="254" class="tiny">schema score</text>
+
+    <rect x="1086" y="206" width="49" height="52" rx="8" ry="8" class="card"/>
+    <text x="1092" y="221" class="metric-label">VERDICT</text>
+    <text x="1092" y="244" class="metric-value" font-size="13px">PASS</text>
+    <text x="1092" y="254" class="tiny">document-level</text>
+
+    <text x="870" y="277" class="small">Benchmark design in code covers extraction correctness, judge correctness and calibration, and database utility. The values above come from the opened Acta Materialia case study; replace with corpus-level results for the final poster.</text>
+
+    <rect x="870" y="295" width="265" height="47" rx="8" ry="8" class="accent-card"/>
+    <text x="882" y="311" class="metric-label">CASE-STUDY DIMENSIONS</text>
+    <line x1="936" y1="323" x2="1115" y2="323" class="thin-line"/>
+    <rect x="936" y="317" width="179" height="7" rx="3.5" ry="3.5" fill="#dce9f3"/>
+    <rect x="936" y="317" width="179" height="7" rx="3.5" ry="3.5" fill="#123B63"/>
+    <text x="882" y="323" class="tiny">schema consistency</text>
+
+    <line x1="936" y1="333" x2="1115" y2="333" class="thin-line"/>
+    <rect x="936" y="327" width="179" height="7" rx="3.5" ry="3.5" fill="#dce8e6"/>
+    <rect x="936" y="327" width="179" height="7" rx="3.5" ry="3.5" fill="#6B8A8F"/>
+    <text x="882" y="333" class="tiny">evidence grounding</text>
+
+    <line x1="936" y1="343" x2="1115" y2="343" class="thin-line"/>
+    <rect x="936" y="337" width="179" height="7" rx="3.5" ry="3.5" fill="#dce9f3"/>
+    <rect x="936" y="337" width="179" height="7" rx="3.5" ry="3.5" fill="#123B63"/>
+    <text x="882" y="343" class="tiny">provenance quality</text>
+  </g>
+
+  <!-- Results -->
+  <g id="results_panel">
+    <rect x="852" y="380" width="301" height="236" rx="10" ry="10" class="panel"/>
+    <text x="870" y="403" class="panel-kicker">REPRESENTATIVE RESULTS / USE CASES</text>
+    <text x="870" y="424" class="panel-title">Machine-readable outputs from one extracted paper</text>
+
+    <rect x="870" y="440" width="126" height="72" rx="8" ry="8" class="card"/>
+    <text x="882" y="456" class="metric-label">MODEL CARD</text>
+    <text x="882" y="472" class="body-strong">Hardening law</text>
+    <text x="882" y="486" class="mono-small">models[0].constitutive_description</text>
+    <text x="882" y="497" class="mono-small">hardening.slip_hardening_law = "Voce"</text>
+
+    <rect x="1009" y="440" width="126" height="72" rx="8" ry="8" class="card"/>
+    <text x="1021" y="456" class="metric-label">CLAIM CARD</text>
+    <text x="1021" y="472" class="body-strong">Slip-system parameter</text>
+    <text x="1021" y="486" class="mono-small">initial_slip_strength = 525 MPa</text>
+    <text x="1021" y="497" class="mono-small">scope = family, {111} slip family</text>
+
+    <rect x="870" y="523" width="126" height="72" rx="8" ry="8" class="card"/>
+    <text x="882" y="539" class="metric-label">BINDING CARD</text>
+    <text x="882" y="555" class="body-strong">Material / phase-aware context</text>
+    <text x="882" y="569" class="mono-small">material_id = mat_rene_88dt</text>
+    <text x="882" y="580" class="mono-small">process_state_id = ps_fully_annealed</text>
+
+    <rect x="1009" y="523" width="126" height="72" rx="8" ry="8" class="card"/>
+    <text x="1021" y="539" class="metric-label">EVIDENCE CARD</text>
+    <text x="1021" y="555" class="body-strong">Grounded provenance</text>
+    <text x="1021" y="569" class="mono-small">origin_type = calibrated</text>
+    <text x="1021" y="580" class="mono-small">evidence_ids = [ev_tab2_fcc, ev_model_setup]</text>
+
+    <rect x="870" y="604" width="265" height="12" rx="6" ry="6" class="chip-blue"/>
+    <text x="881" y="612" class="tiny">Opened case-study output: 10 materials | 2 process states | 1 condition | 1 model | 17 evidence_objects | 52 parameter_claims</text>
+  </g>
+
+  <!-- Takeaways -->
+  <g id="takeaways_panel">
+    <rect x="852" y="634" width="301" height="114" rx="10" ry="10" class="panel-alt"/>
+    <text x="870" y="657" class="panel-kicker">TAKE-HOME MESSAGE</text>
+    <text x="870" y="678" class="panel-title">Why CPextractor matters</text>
+
+    <circle cx="880" cy="696" r="3.5" class="blue-fill"/>
+    <text x="891" y="699" class="body">Converts unstructured CP literature into structured, validated, evidence-grounded knowledge.</text>
+    <circle cx="880" cy="714" r="3.5" class="blue-fill"/>
+    <text x="891" y="717" class="body">Preserves provenance, scope, and uncertainty so extracted parameters remain scientifically reusable.</text>
+    <circle cx="880" cy="732" r="3.5" class="blue-fill"/>
+    <text x="891" y="735" class="body">Creates dataset infrastructure for reproducible constitutive modeling, retrieval, and analytics.</text>
+  </g>
+
+  <!-- Footer -->
+  <g id="footer_panel">
+    <rect x="36" y="768" width="1117" height="41" rx="10" ry="10" class="panel"/>
+    <text x="54" y="787" class="metric-label">ACKNOWLEDGMENTS / FUNDING</text>
+    <text x="54" y="801" class="small">Add collaborators, funding sources, grant numbers, and conference-specific acknowledgment text here.</text>
+
+    <text x="540" y="787" class="metric-label">PROJECT OUTPUTS</text>
+    <text x="540" y="801" class="small">Database tables, review queue, evidence-grounded RAG, parameter analytics, and reusable structured datasets.</text>
+
+    <text x="930" y="787" class="metric-label">LINKS</text>
+    <text x="930" y="801" class="small">GitHub / project page / dataset DOI / demo QR placeholders</text>
+  </g>
+</svg>

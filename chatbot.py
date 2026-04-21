@@ -11,11 +11,14 @@ import yaml
 from psycopg.rows import dict_row
 from openai import OpenAI
 
+from db.parameter_vector_schema import build_select_projection, get_table_columns
+
 
 SYSTEM_PROMPT = (
     "You are a CP (crystal plasticity) scientific assistant. "
     "Answer only with information supported by provided evidence. "
     "If evidence is insufficient, say uncertainty clearly. "
+    "When equation evidence is directly relevant, include the equation in LaTeX using standalone $$...$$ blocks. "
     "Always return valid JSON."
 )
 
@@ -55,33 +58,15 @@ def retrieve_chunks(conn: psycopg.Connection, vec: str, k: int) -> List[Dict[str
 
 
 def retrieve_parameter_vectors(conn: psycopg.Connection, vec: str, k: int) -> List[Dict[str, Any]]:
+    projection = build_select_projection(
+        get_table_columns(conn, "parameter_vectors"),
+        snippet_fields={"evidence_snippet", "retrieval_text"},
+        snippet_limit=1000,
+    )
     return conn.execute(
-        """
+        f"""
         SELECT
-          doi,
-          claim_id,
-          material_id,
-          material_name,
-          sample_id,
-          sample_label,
-          condition_id,
-          condition_label,
-          canonical_name,
-          symbol,
-          domain,
-          phase_id,
-          phase_name,
-          mechanism,
-          family_id,
-          family_name,
-          model_id,
-          value_text,
-          unit,
-          origin_type,
-          evidence_file,
-          evidence_kind,
-          left(evidence_snippet, 1000) AS evidence_snippet,
-          left(retrieval_text, 1000) AS retrieval_text,
+          {projection},
           1 - (embedding <=> %s::vector) AS score
         FROM parameter_vectors
         WHERE embedding IS NOT NULL
@@ -110,6 +95,119 @@ def _safe_like_query(query: str) -> str:
     # Normalize whitespace and trim very long input to keep SQL fast/stable.
     q = re.sub(r"\s+", " ", query).strip()
     return q[:300]
+
+
+def _candidate_fulltext_roots(cfg: Dict[str, Any]) -> List[Path]:
+    roots: List[Path] = []
+    for raw in [
+        ((cfg.get("pipeline", {}) or {}).get("local_fulltext_input_root")),
+        ((cfg.get("paths", {}) or {}).get("fulltext")),
+        "data/fulltext",
+    ]:
+        if not raw:
+            continue
+        p = Path(str(raw))
+        if p.exists() and p not in roots:
+            roots.append(p)
+    return roots
+
+
+def _safe_id_for_doi(doi: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9._-]+", "_", doi or "")
+
+
+def _query_terms(query: str) -> List[str]:
+    tokens = re.findall(r"[A-Za-z0-9_+\-/.]+", (query or "").lower())
+    return [t for t in tokens if len(t) >= 2]
+
+
+def _collect_candidate_dois(
+    chunk_hits: List[Dict[str, Any]],
+    parameter_hits: List[Dict[str, Any]],
+    structured_hits: List[Dict[str, Any]],
+    limit: int = 6,
+) -> List[str]:
+    ordered: List[str] = []
+    seen = set()
+    for group in (parameter_hits, structured_hits, chunk_hits):
+        for row in group:
+            doi = str(row.get("doi") or "").strip()
+            if not doi or doi in seen:
+                continue
+            seen.add(doi)
+            ordered.append(doi)
+            if len(ordered) >= limit:
+                return ordered
+    return ordered
+
+
+def _equation_score(record: Dict[str, Any], terms: List[str], query: str) -> float:
+    haystack = " ".join(
+        [
+            str(record.get("label") or ""),
+            str(record.get("section_title") or ""),
+            str(record.get("text") or ""),
+            str(record.get("latex") or ""),
+        ]
+    ).lower()
+    score = 0.0
+    for term in terms:
+        if term in haystack:
+            score += 1.0
+    if record.get("kind") == "display_formula":
+        score += 0.25
+    if any(k in (query or "").lower() for k in ("equation", "formula", "constitutive", "hardening", "slip", "flow rule", "evolution law")):
+        score += 0.5
+    return score
+
+
+def retrieve_equation_hits(
+    cfg: Dict[str, Any],
+    query: str,
+    chunk_hits: List[Dict[str, Any]],
+    parameter_hits: List[Dict[str, Any]],
+    structured_hits: List[Dict[str, Any]],
+    limit: int = 8,
+) -> List[Dict[str, Any]]:
+    terms = _query_terms(query)
+    doi_candidates = _collect_candidate_dois(chunk_hits, parameter_hits, structured_hits)
+    if not doi_candidates:
+        return []
+
+    hits: List[Dict[str, Any]] = []
+    for doi in doi_candidates:
+        folder = _safe_id_for_doi(doi)
+        for root in _candidate_fulltext_roots(cfg):
+            index_path = root / folder / "equations" / "index.json"
+            if not index_path.exists():
+                continue
+            try:
+                records = json.loads(index_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                score = _equation_score(record, terms, query)
+                if score <= 0:
+                    continue
+                hits.append(
+                    {
+                        "doi": doi,
+                        "score": score,
+                        "equation_index": record.get("equation_index"),
+                        "label": record.get("label"),
+                        "kind": record.get("kind"),
+                        "section_title": record.get("section_title"),
+                        "text": record.get("text"),
+                        "latex": record.get("latex"),
+                        "text_file": record.get("text_file"),
+                    }
+                )
+            break
+
+    hits.sort(key=lambda x: (x.get("score") or 0), reverse=True)
+    return hits[:limit]
 
 
 def retrieve_structured(conn: psycopg.Connection, query: str, k: int) -> List[Dict[str, Any]]:
@@ -237,6 +335,7 @@ def build_user_prompt(
     parameter_hits: List[Dict[str, Any]],
     table_row_hits: List[Dict[str, Any]],
     structured_hits: List[Dict[str, Any]],
+    equation_hits: List[Dict[str, Any]],
 ) -> Tuple[str, Dict[str, Any]]:
     evidence: Dict[str, Any] = {}
     lines: List[str] = [f"Question:\n{query}\n", "Evidence:"]
@@ -284,6 +383,16 @@ def build_user_prompt(
             f"evidence_text={h.get('evidence_text')}\n"
         )
 
+    for i, h in enumerate(equation_hits, start=1):
+        eid = f"Q{i}"
+        evidence[eid] = {"type": "equation", **h}
+        lines.append(
+            f"[{eid}] doi={h.get('doi')} equation_index={h.get('equation_index')} label={h.get('label')} "
+            f"kind={h.get('kind')} section={h.get('section_title')} score={h.get('score')}\n"
+            f"text={h.get('text')}\n"
+            f"latex=$${h.get('latex') or ''}$$\n"
+        )
+
     lines.append(
         "Return JSON only with keys: "
         "answer, confidence(high/medium/low), evidence_ids(array), "
@@ -300,8 +409,9 @@ def call_llm(
     parameter_hits: List[Dict[str, Any]],
     table_row_hits: List[Dict[str, Any]],
     structured_hits: List[Dict[str, Any]],
+    equation_hits: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    prompt, evidence_map = build_user_prompt(query, chunk_hits, parameter_hits, table_row_hits, structured_hits)
+    prompt, evidence_map = build_user_prompt(query, chunk_hits, parameter_hits, table_row_hits, structured_hits, equation_hits)
     resp = client.chat.completions.create(
         model=llm_model,
         temperature=0,
@@ -320,6 +430,7 @@ def call_llm(
         "parameter_hits": parameter_hits,
         "table_row_hits": table_row_hits,
         "structured_hits": structured_hits,
+        "equation_hits": equation_hits,
     }
     parsed["evidence_map"] = evidence_map
     return parsed
@@ -331,6 +442,7 @@ def retrieve_only_payload(
     parameter_hits: List[Dict[str, Any]],
     table_row_hits: List[Dict[str, Any]],
     structured_hits: List[Dict[str, Any]],
+    equation_hits: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     return {
         "query": query,
@@ -344,6 +456,7 @@ def retrieve_only_payload(
             "parameter_hits": parameter_hits,
             "table_row_hits": table_row_hits,
             "structured_hits": structured_hits,
+            "equation_hits": equation_hits,
         },
     }
 
@@ -356,6 +469,7 @@ def ensure_parent_dir(path: str) -> None:
 
 def run_one(
     conn: psycopg.Connection,
+    cfg: Dict[str, Any],
     client: Optional[OpenAI],
     query: str,
     embedding_model: str,
@@ -380,12 +494,13 @@ def run_one(
             (f"%{_safe_like_query(query)}%", k_chunks),
         ).fetchall()
         parameter_hits: List[Dict[str, Any]] = conn.execute(
-            """
+            f"""
             SELECT
-              doi, claim_id, canonical_name, symbol, domain, phase_id, mechanism, family_id, family_name,
-              value_text, unit, origin_type, evidence_file, evidence_kind,
-              left(evidence_snippet, 1000) AS evidence_snippet,
-              left(retrieval_text, 1000) AS retrieval_text,
+              {build_select_projection(
+                  get_table_columns(conn, "parameter_vectors"),
+                  snippet_fields={"evidence_snippet", "retrieval_text"},
+                  snippet_limit=1000,
+              )},
               NULL::float AS score
             FROM parameter_vectors
             WHERE retrieval_text ILIKE %s
@@ -410,10 +525,11 @@ def run_one(
         table_row_hits = retrieve_table_row_vectors(conn, vec, k_params)
 
     structured_hits = retrieve_structured(conn, query, k_struct)
+    equation_hits = retrieve_equation_hits(cfg, query, chunk_hits, parameter_hits, structured_hits)
 
     if retrieve_only:
-        return retrieve_only_payload(query, chunk_hits, parameter_hits, table_row_hits, structured_hits)
-    return call_llm(client, llm_model, query, chunk_hits, parameter_hits, table_row_hits, structured_hits)
+        return retrieve_only_payload(query, chunk_hits, parameter_hits, table_row_hits, structured_hits, equation_hits)
+    return call_llm(client, llm_model, query, chunk_hits, parameter_hits, table_row_hits, structured_hits, equation_hits)
 
 
 def parse_args() -> argparse.Namespace:
@@ -456,6 +572,7 @@ def main() -> None:
         if args.query:
             result = run_one(
                 conn=conn,
+                cfg=cfg,
                 client=client,
                 query=args.query,
                 embedding_model=embedding_model,
@@ -485,6 +602,7 @@ def main() -> None:
             try:
                 result = run_one(
                     conn=conn,
+                    cfg=cfg,
                     client=client,
                     query=query,
                     embedding_model=embedding_model,

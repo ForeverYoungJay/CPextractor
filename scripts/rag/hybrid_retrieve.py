@@ -4,6 +4,8 @@ import os
 
 import psycopg
 from psycopg.rows import dict_row
+
+from db.parameter_vector_schema import build_select_projection, get_table_columns
 from openai import OpenAI
 
 
@@ -60,30 +62,25 @@ def main() -> None:
         (vec, vec, args.k),
     ).fetchall()
 
+    projection = build_select_projection(
+        get_table_columns(conn, "parameter_vectors"),
+        snippet_fields={"evidence_snippet"},
+        snippet_limit=280,
+    )
     param_rows = conn.execute(
-        """
+        f"""
         SELECT
-          doi,
-          claim_id,
-          material_id,
-          material_name,
-          sample_id,
-          sample_label,
-          condition_id,
-          condition_label,
-          canonical_name,
-          symbol,
-          phase_id,
-          phase_name,
-          family_name,
-          value_text,
-          unit,
-          origin_type,
-          left(evidence_snippet, 280) AS snippet,
-          1 - (embedding <=> %s::vector) AS score
-        FROM parameter_vectors
-        WHERE embedding IS NOT NULL
-        ORDER BY embedding <=> %s::vector
+          p.*,
+          left(p.evidence_snippet, 280) AS snippet,
+          1 - (p.embedding <=> %s::vector) AS score
+        FROM (
+          SELECT
+            {projection},
+            embedding
+          FROM parameter_vectors
+          WHERE embedding IS NOT NULL
+        ) AS p
+        ORDER BY p.embedding <=> %s::vector
         LIMIT %s;
         """,
         (vec, vec, args.k),

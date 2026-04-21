@@ -15,8 +15,30 @@ def _with_claim_id_first(item: Dict[str, Any], claim_id: str) -> Dict[str, Any]:
 def assign_stable_claim_ids(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     params = extracted_json.get("parameters") or {}
     registry = params.get("registry") or []
+    claims = extracted_json.get("parameter_claims") or []
     assigned = 0
     preserved = 0
+
+    if isinstance(claims, list) and claims:
+        claim_count = 0
+        for idx, item in enumerate(claims):
+            if not isinstance(item, dict):
+                continue
+            claim_count += 1
+            existing = str(item.get("claim_id") or item.get("parameter_id") or "").strip()
+            if existing:
+                preserved += 1
+                claims[idx] = _with_claim_id_first(item, existing)
+                continue
+            claim_id = f"claim_{idx + 1:04d}"
+            claims[idx] = _with_claim_id_first(item, claim_id)
+            assigned += 1
+        extracted_json["parameter_claims"] = claims
+        return extracted_json, {
+            "assigned_count": assigned,
+            "preserved_count": preserved,
+            "registry_count": claim_count,
+        }
 
     if not isinstance(registry, list):
         return extracted_json, {

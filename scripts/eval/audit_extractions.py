@@ -9,12 +9,7 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from llm.evaluator import run_llm_evaluation
 from postprocess.record_links import inflate_registry_from_claims
-from postprocess.workflow import (
-    run_structure_normalization,
-    run_linking,
-    run_deterministic_validation,
-    run_finalization,
-)
+from postprocess.document_backfill import backfill_document_metadata
 from postprocess.compact_export import write_compact_summary
 
 
@@ -63,24 +58,18 @@ def main() -> None:
             "source_file": source_name,
             "prefer_extractor_raw": source_name == "materials_extracted.extractor_raw.json",
         }
-        extracted, structure_reports = run_structure_normalization(
+        extracted, document_backfill_report = backfill_document_metadata(
             extracted,
             paper_dir=str(paper_dir),
+            doi_hint=None,
         )
-        reports.update(structure_reports)
-        extracted, linking_reports = run_linking(
-            extracted,
-            paper_dir=str(paper_dir),
+        reports["document_backfill"] = document_backfill_report
+        path.write_text(
+            json.dumps(extracted, ensure_ascii=False, indent=2),
+            encoding="utf-8",
         )
-        reports.update(linking_reports)
-        extracted, validation_reports = run_deterministic_validation(extracted)
-        reports.update(validation_reports)
 
         if bool(llm_cfg.get("enable_evaluator", False)):
-            (paper_dir / "materials_extracted.pre_evaluator.json").write_text(
-                json.dumps(extracted, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
             evaluation, eval_metrics = run_llm_evaluation(
                 paper_dir=str(paper_dir),
                 extracted_json=extracted,
@@ -90,8 +79,8 @@ def main() -> None:
                 parameter_limit=int(llm_cfg.get("evaluate_parameter_limit", 40)),
                 field_batch_size=int(llm_cfg.get("evaluate_parameter_batch_size", 12)),
                 per_evidence_chars=int(llm_cfg.get("evaluate_evidence_chars", 800)),
-                quality_report=reports.get("quality_checks"),
-                evidence_report=reports.get("evidence_grounding"),
+                quality_report={},
+                evidence_report={},
                 feedback_artifact_path=llm_cfg.get("evaluation_feedback_json"),
             )
             reports["llm_evaluation"] = evaluation
@@ -101,14 +90,6 @@ def main() -> None:
                 encoding="utf-8",
             )
 
-        extracted, final_reports = run_finalization(
-            extracted,
-            evaluation_report=reports.get("llm_evaluation"),
-            quality_report=reports.get("quality_checks"),
-        )
-        reports.update(final_reports)
-
-        path.write_text(json.dumps(extracted, ensure_ascii=False, indent=2), encoding="utf-8")
         (paper_dir / "postprocess_report.json").write_text(
             json.dumps(reports, ensure_ascii=False, indent=2),
             encoding="utf-8",

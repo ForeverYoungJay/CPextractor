@@ -1,0 +1,310 @@
+{
+  "schema_version": "4.3.0",
+  "materials": [
+    {
+      "material_id": "string or null",
+      "name": "string or null",
+      "aliases": [
+        "string"
+      ],
+      "formula": "string or null",
+      "material_class": "steel / titanium_alloy / nickel_superalloy / magnesium_alloy / zirconium_alloy / aluminum_alloy / copper_alloy / ceramic / intermetallic / polymer / composite / other / null",
+      "phase_mode": "single_phase / multi_phase / null",
+      "crystal_aggregate": "single_crystal / polycrystal / bicrystal / oligocrystal / null",
+      "composition": {
+        "basis": "wt_percent / at_percent / mol_percent / fraction / null",
+        "components": [
+          {
+            "component": "string or null",
+            "value": "number or string or null",
+            "unit": "string or null",
+            "notes": "string or null"
+          }
+        ],
+        "notes": "string or null"
+      },
+      "notes": "string or null"
+    }
+  ],
+  "process_states": [
+    {
+      "process_state_id": "string or null",
+      "material_id": "string or null",
+      "label": "string or null",
+      "state_type": "as_received / as_cast / as_built / annealed / solution_treated / aged / quenched / cold_worked / hot_worked / rolled / forged / extruded / irradiated / hydrogen_charged / fatigue_damaged / other / null",
+      "processing_route": "string or null",
+      "processing_steps": [
+        {
+          "step_type": "casting / additive_manufacturing / rolling / forging / extrusion / annealing / solution_treatment / aging / quenching / machining / polishing / coating / charging / irradiation / other / null",
+          "temperature": {
+            "value": "number or null",
+            "unit": "K / C / null",
+            "reported_value": "number or string or null",
+            "reported_unit": "string or null"
+          },
+          "time": {
+            "value": "number or null",
+            "unit": "s / min / h / null",
+            "reported_value": "number or string or null",
+            "reported_unit": "string or null"
+          },
+          "strain": {
+            "value": "number or null",
+            "unit": "fraction / % / null"
+          },
+          "deformation_amount": {
+            "value": "number or null",
+            "unit": "fraction / % / true_strain / engineering_strain / null",
+            "description": "string or null"
+          },
+          "notes": "string or null"
+        }
+      ],
+      "state_variables": [
+        {
+          "name": "string or null",
+          "value": "number or string or null",
+          "unit": "string or null",
+          "notes": "string or null"
+        }
+      ],
+      "notes": "string or null"
+    }
+  ],
+  "models": [
+    {
+      "model_id": "string or null",
+      "name": "string or null",
+      "model_class": "crystal_plasticity / crystal_plasticity_damage / phase_field / continuum_damage / finite_element / fft / other / null",
+      "framework": "cpfe / umat / vumat / damask / evpfft / vpsc / abaqus / custom / other / null",
+      "kinematics": "small_strain / finite_strain / null",
+      "rate_dependence": "rate_dependent / rate_independent / null",
+      "single_or_polycrystal": "single_crystal / polycrystal / null",
+      "representation_mode": "homogeneous / heterogeneous / grain_boundary_affected / explicit_interface / null",
+      "implementation": {
+        "software": "string or null",
+        "solver": "string or null",
+        "subroutine": "string or null",
+        "version": "string or null",
+        "notes": "string or null"
+      },
+      "constitutive_laws": {
+        "elasticity": "anisotropic / isotropic / other / null",
+        "slip_kinetics": "power_law / thermal_activation / sinh / other / null",
+        "hardening": "voce / kalidindi / latent_hardening / dislocation_based / other / null",
+        "twinning": "none / ptr / detwinning / other / null",
+        "damage": "none / phenomenological / continuum_damage / cohesive / other / null",
+        "notes": "string or null"
+      },
+      "notes": "string or null"
+    }
+  ],
+  "conditions": [
+    {
+      "condition_id": "string or null",
+      "label": "string or null",
+      "condition_role": "calibration / validation / characterization / simulation_case / experiment / service_like / unspecified / null",
+      "loading_mode": "uniaxial_tension / compression / shear / cyclic / fatigue / creep / torsion / bending / indentation / null",
+      "control_mode": "strain_controlled / stress_controlled / displacement_controlled / mixed / null",
+      "stress_state": "uniaxial / biaxial / triaxial / plane_strain / multiaxial / null",
+      "temperature": {
+        "value": "number or null",
+        "unit": "K / C / null",
+        "reported_value": "number or string or null",
+        "reported_unit": "string or null",
+        "history": "isothermal / non_isothermal / null"
+      },
+      "strain_rate": {
+        "value": "number or null",
+        "unit": "string or null",
+        "reported_value": "number or string or null",
+        "reported_unit": "string or null",
+        "range": "string or null"
+      },
+      "fatigue": {
+        "mode": "lcf / hcf / vhcf / strain_controlled / stress_controlled / null",
+        "load_ratio": "string or null",
+        "frequency": {
+          "value": "number or null",
+          "unit": "Hz / null"
+        },
+        "notes": "string or null"
+      },
+      "indentation": {
+        "indenter_type": "berkovich / spherical / cono_spherical / vickers / knoop / custom / null",
+        "tip_radius": {
+          "value": "number or null",
+          "unit": "string or null"
+        },
+        "max_load": {
+          "value": "number or null",
+          "unit": "string or null"
+        },
+        "depth": {
+          "value": "number or null",
+          "unit": "string or null"
+        },
+        "notes": "string or null"
+      },
+      "environment": {
+        "medium": "air / vacuum / hydrogen / inert_gas / liquid / null",
+        "pressure": {
+          "value": "number or null",
+          "unit": "string or null"
+        },
+        "notes": "string or null"
+      },
+      "notes": "string or null"
+    }
+  ],
+  "mechanisms": [
+    {
+      "mechanism_id": "string or null",
+      "microstructure_id": "string or null",
+      "model_id": "string or null",
+      "mechanism_type": "slip / twinning / cleavage / damage / transformation / other / null",
+      "level": "global / phase / family / system / null",
+      "name": "string or null",
+      "family_name": "string or null",
+      "plane": {
+        "as_written": "string or null",
+        "indices": [
+          "number"
+        ],
+        "basis": "hkl / hkil / null"
+      },
+      "direction": {
+        "as_written": "string or null",
+        "indices": [
+          "number"
+        ],
+        "basis": "uvw / uvtw / null"
+      },
+      "system_label": "string or null",
+      "parent_mechanism_id": "string or null",
+      "active": "yes / no / null",
+      "notes": "string or null"
+    }
+  ],
+  "microstructure_features": [
+    {
+      "feature_id": "string or null",
+      "feature_family": "constituent / grain_structure / texture / precipitates / defects / porosity / interfaces / morphology / local_region / other / null",
+      "feature_name": "string or null",
+      "representation_mode": "homogeneous / heterogeneous / grain_boundary_affected / explicit_interface / null",
+      "parameterization_scope": "shared / constituent_specific / region_specific / interface_specific / null",
+      "value_type": "scalar / vector / range / categorical / text / null",
+      "value": "number or string or null",
+      "unit": "string or null",
+      "description": "string or null",
+      "method": "ebsd / xrd / sem / tem / om / narrative / table / figure / other / null",
+      "constituent": {
+        "constituent_type": "phase / precipitate / inclusion / pore / grain_boundary_region / matrix_region / other / null",
+        "name": "string or null",
+        "aliases": [
+          "string"
+        ],
+        "role": "matrix / precipitate / inclusion / transformed_product / pore / parent / product / interface_region / other / null",
+        "fraction": {
+          "value": "number or null",
+          "unit": "fraction / % / null",
+          "reported_value": "number or string or null",
+          "reported_unit": "string or null",
+          "basis": "volume / area / weight / unknown / null",
+          "notes": "string or null"
+        },
+        "crystal_structure": {
+          "crystal_system": "string or null",
+          "bravais_lattice": "string or null",
+          "lattice_type": "string or null",
+          "space_group": "string or null",
+          "notes": "string or null"
+        },
+        "notes": "string or null"
+      },
+      "applies_to": {
+        "material_id": "string or null",
+        "process_state_id": "string or null",
+        "condition_id": "string or null"
+      },
+      "evidence_ids": [
+        "string"
+      ],
+      "notes": "string or null"
+    }
+  ],
+  "parameter_claims": [
+    {
+      "claim_id": "string or null",
+      "parameter": {
+        "canonical_name": "string or null",
+        "parameter_family": "elastic_constants / slip_kinetics / hardening / latent_hardening / twinning / damage / thermal / numerical / other / null",
+        "raw_name": "string or null",
+        "symbol_reported": "string or null",
+        "domain": "elastic / plastic / twinning / damage / thermal / numerical / other / null",
+        "description": "string or null"
+      },
+      "assertion": {
+        "value_type": "scalar / vector / matrix / range / expression / categorical / null",
+        "reported_value": "number or string or null",
+        "reported_unit": "string or null",
+        "normalized_value": "number or string or null",
+        "normalized_unit": "string or null",
+        "value_si": "number or string or null",
+        "si_unit": "string or null",
+        "qualifier": "string or null",
+        "valid_range": "string or null"
+      },
+      "applies_to": {
+        "material_id": "string or null",
+        "microstructure_id": "string or null",
+        "process_state_id": "string or null",
+        "model_id": "string or null",
+        "condition_id": "string or null",
+        "mechanism_id": "string or null",
+        "scope": "global / phase / family / system / null",
+        "target_description": "string or null",
+        "notes": "string or null"
+      },
+      "provenance": {
+        "origin_type": "original / adopted / calibrated / adopted_then_calibrated / null",
+        "reference_ids": [
+          "string"
+        ],
+        "adopted_from_reference_ids": [
+          "string"
+        ],
+        "calibration_based_on_reference_ids": [
+          "string"
+        ],
+        "calibration_in_this_study": "yes / no / null",
+        "calibration_method": "manual_fitting / inverse_modeling / optimization / bayesian / machine_learning / null",
+        "notes": "string or null"
+      },
+      "evidence_ids": [
+        "string"
+      ],
+      "notes": "string or null"
+    }
+  ],
+  "evidence_objects": [
+    {
+      "evidence_id": "string or null",
+      "evidence_type": "section_span / table_cell / table_row / figure_caption / equation / mixed / null",
+      "extraction_method": "manual / text_llm / table_text_llm / table_image_ocr_llm / figure_caption_llm / equation_parse / other / null",
+      "source_file": "string or null",
+      "source_id": "string or null",
+      "section_heading": "string or null",
+      "page": "number or null",
+      "locator": {
+        "row_name": "string or null",
+        "column_name": "string or null",
+        "value": "string or null",
+        "excerpt": "string or null"
+      },
+      "snippet": "string or null",
+      "notes": "string or null"
+    }
+  ],
+  "global_notes": "string or null"
+}

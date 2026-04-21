@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from postprocess.record_links import resolve_evidence_objects
+
 
 def _safe_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
@@ -37,7 +39,7 @@ def _materials(extracted_json: Dict[str, Any]) -> List[Dict[str, Any]]:
         "material_id": None,
         "name": legacy.get("name"),
         "formula": legacy.get("chemical_formula"),
-        "phases": _safe_list(legacy.get("phases")),
+        "constituents": _safe_list(legacy.get("phases")),
     }]
 
 
@@ -50,8 +52,16 @@ def _material_lookup(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]
     return out
 
 
-def _sample_lookup(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def _process_state_lookup(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
+    for process_state in _safe_list(extracted_json.get("process_states")):
+        if not isinstance(process_state, dict):
+            continue
+        process_state_id = str(process_state.get("process_state_id") or "").strip()
+        if process_state_id:
+            out[process_state_id] = process_state
+    if out:
+        return out
     for sample in _safe_list(extracted_json.get("samples")):
         if not isinstance(sample, dict):
             continue
@@ -83,17 +93,29 @@ def _model_lookup(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
-def _phase_lookup(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def _constituent_lookup(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
+    for constituent in _safe_list(extracted_json.get("constituents")):
+        if not isinstance(constituent, dict):
+            continue
+        constituent_id = str(constituent.get("constituent_id") or "").strip()
+        if constituent_id:
+            out[constituent_id] = constituent
+    if out:
+        return out
     for material in _materials(extracted_json):
         if not isinstance(material, dict):
             continue
-        for phase in _safe_list(material.get("phases")):
-            if not isinstance(phase, dict):
+        for constituent in _safe_list(material.get("constituents") or material.get("phases")):
+            if not isinstance(constituent, dict):
                 continue
-            phase_id = str(phase.get("phase_id") or "").strip()
-            if phase_id:
-                out[phase_id] = phase
+            constituent_id = str(
+                constituent.get("constituent_id")
+                or constituent.get("phase_id")
+                or ""
+            ).strip()
+            if constituent_id:
+                out[constituent_id] = constituent
     return out
 
 
@@ -125,14 +147,14 @@ def _material_composition_summary(material: Dict[str, Any]) -> str:
     return "; ".join(bit for bit in bits if bit)
 
 
-def _phase_summary(phase: Dict[str, Any]) -> str:
-    phase = _safe_dict(phase)
+def _constituent_summary(constituent: Dict[str, Any]) -> str:
+    constituent = _safe_dict(constituent)
     parts = [
-        _first_non_empty(phase.get("name")),
-        _first_non_empty(_safe_dict(phase.get("crystal_structure")).get("lattice_type")),
-        _first_non_empty(_safe_dict(phase.get("microstructure")).get("grain_structure")),
+        _first_non_empty(constituent.get("name")),
+        _first_non_empty(_safe_dict(constituent.get("crystal_structure")).get("lattice_type")),
+        _first_non_empty(_safe_dict(constituent.get("microstructure")).get("grain_structure")),
     ]
-    grain_size = _safe_dict(_safe_dict(phase.get("microstructure")).get("grain_size"))
+    grain_size = _safe_dict(_safe_dict(constituent.get("microstructure")).get("grain_size"))
     if grain_size.get("value") not in (None, ""):
         parts.append(
             f"grain size {grain_size.get('value')} {_first_non_empty(grain_size.get('unit'))}".strip()
@@ -140,13 +162,13 @@ def _phase_summary(phase: Dict[str, Any]) -> str:
     return "; ".join(part for part in parts if part)
 
 
-def _sample_summary(sample: Dict[str, Any]) -> str:
-    sample = _safe_dict(sample)
+def _process_state_summary(process_state: Dict[str, Any]) -> str:
+    process_state = _safe_dict(process_state)
     parts = [
-        _first_non_empty(sample.get("label")),
-        _first_non_empty(sample.get("processing_state")),
+        _first_non_empty(process_state.get("name"), process_state.get("label")),
+        _first_non_empty(process_state.get("processing_state")),
     ]
-    overrides = _safe_dict(sample.get("microstructure_overrides"))
+    overrides = _safe_dict(process_state.get("microstructure_overrides"))
     grain_size = _safe_dict(overrides.get("grain_size"))
     if grain_size.get("value") not in (None, ""):
         parts.append(f"grain size {grain_size.get('value')} {_first_non_empty(grain_size.get('unit'))}".strip())
@@ -175,7 +197,20 @@ def _evidence_snippet_for_claim(claim: Dict[str, Any], extracted_json: Dict[str,
     evidence = _safe_dict(claim.get("evidence"))
     table_evidence = _safe_dict(evidence.get("table_evidence"))
     source = _safe_dict(claim.get("source")) or _safe_dict(claim.get("provenance"))
-    return _first_non_empty(evidence.get("evidence_text"), table_evidence.get("excerpt"), table_evidence.get("value"), source.get("notes"))
+    if evidence.get("evidence_text") or table_evidence:
+        return _first_non_empty(evidence.get("evidence_text"), table_evidence.get("excerpt"), table_evidence.get("value"), source.get("notes"))
+    evidence_ids = [str(v).strip() for v in _safe_list(claim.get("evidence_ids")) if str(v).strip()]
+    for obj in resolve_evidence_objects(extracted_json, evidence_ids):
+        if not isinstance(obj, dict):
+            continue
+        locator = _safe_dict(obj.get("locator"))
+        return _first_non_empty(
+            obj.get("snippet"),
+            locator.get("excerpt"),
+            locator.get("value"),
+            source.get("notes"),
+        )
+    return _first_non_empty(source.get("notes"))
 
 
 def _provenance_for_claim(claim: Dict[str, Any], extracted_json: Dict[str, Any]) -> Dict[str, Any]:
@@ -188,9 +223,9 @@ def _provenance_for_claim(claim: Dict[str, Any], extracted_json: Dict[str, Any])
 def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> List[Dict[str, Any]]:
     claims = _safe_list(extracted_json.get("parameter_claims"))
     material_by_id = _material_lookup(extracted_json)
-    sample_by_id = _sample_lookup(extracted_json)
+    process_state_by_id = _process_state_lookup(extracted_json)
     condition_by_id = _condition_lookup(extracted_json)
-    phase_by_id = _phase_lookup(extracted_json)
+    constituent_by_id = _constituent_lookup(extracted_json)
     model_by_id = _model_lookup(extracted_json)
     all_materials = _materials(extracted_json)
     rows: List[Dict[str, Any]] = []
@@ -202,43 +237,50 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
         if not claim_id:
             continue
 
-        canonical_name = _first_non_empty(claim.get("canonical_name"))
-        symbol = _first_non_empty(claim.get("symbol"))
-        domain = _first_non_empty(claim.get("domain"))
-        reported_value = claim.get("value", claim.get("reported_value"))
-        reported_unit = _first_non_empty(claim.get("unit", claim.get("reported_unit")))
+        parameter = _safe_dict(claim.get("parameter"))
+        assertion = _safe_dict(claim.get("assertion"))
+        canonical_name = _first_non_empty(claim.get("canonical_name"), parameter.get("canonical_name"))
+        symbol = _first_non_empty(claim.get("symbol"), parameter.get("symbol_reported"))
+        domain = _first_non_empty(claim.get("domain"), parameter.get("domain"))
+        reported_value = _first_non_empty(claim.get("value"), claim.get("reported_value"), assertion.get("reported_value"))
+        reported_unit = _first_non_empty(claim.get("unit"), claim.get("reported_unit"), assertion.get("reported_unit"))
         provenance = _provenance_for_claim(claim, extracted_json)
         origin_type = _first_non_empty(_safe_dict(provenance).get("origin_type"))
 
         binding = _safe_dict(claim.get("applies_to"))
         material_id = _first_non_empty(binding.get("material_id"))
-        sample_id = _first_non_empty(binding.get("sample_id"))
+        process_state_id = _first_non_empty(binding.get("process_state_id"), binding.get("sample_id"))
         condition_id = _first_non_empty(binding.get("condition_id"))
-        phase_id = _first_non_empty(binding.get("phase_id"))
+        constituent_id = _first_non_empty(binding.get("constituent_id"), binding.get("phase_id"))
         mechanism = _first_non_empty(binding.get("mechanism"))
         family_id = _first_non_empty(binding.get("family_id"))
         family_name = _first_non_empty(binding.get("family_name"))
-        model_id = _first_non_empty(claim.get("model_id"))
+        model_id = _first_non_empty(binding.get("model_id"), claim.get("model_id"))
+        branch_id = _first_non_empty(binding.get("branch_id"))
+        system_ids = [str(s).strip() for s in _safe_list(binding.get("system_ids")) if str(s).strip()]
 
         material = material_by_id.get(material_id) if material_id else {}
         if not material and len(all_materials) == 1:
             material = all_materials[0]
             material_id = _first_non_empty(material.get("material_id"), material_id)
-        sample = sample_by_id.get(sample_id) if sample_id else {}
+        process_state = process_state_by_id.get(process_state_id) if process_state_id else {}
         condition = condition_by_id.get(condition_id) if condition_id else {}
-        phase = phase_by_id.get(phase_id) if phase_id else {}
+        constituent = constituent_by_id.get(constituent_id) if constituent_id else {}
         model = model_by_id.get(model_id) if model_id else {}
 
         material_name = _first_non_empty(material.get("name"))
-        sample_label = _first_non_empty(sample.get("label"))
+        process_state_name = _first_non_empty(process_state.get("name"), process_state.get("label"))
         condition_label = _first_non_empty(condition.get("label"))
-        phase_name = _first_non_empty(phase.get("name"))
+        constituent_name = _first_non_empty(constituent.get("name"))
 
         source = _safe_dict(claim.get("source")) or _safe_dict(claim.get("provenance"))
         evidence = _safe_dict(claim.get("evidence"))
         table_evidence = _safe_dict(evidence.get("table_evidence"))
-        evidence_kind = "table_cell" if table_evidence else "inline"
-        evidence_file = _first_non_empty(evidence.get("file"))
+        evidence_ids = [str(v).strip() for v in _safe_list(claim.get("evidence_ids")) if str(v).strip()]
+        evidence_object = resolve_evidence_objects(extracted_json, evidence_ids)
+        first_evidence = evidence_object[0] if evidence_object else {}
+        evidence_kind = "table_cell" if table_evidence else _first_non_empty(first_evidence.get("evidence_type"), "inline")
+        evidence_file = _first_non_empty(evidence.get("file"), first_evidence.get("source_file"))
         evidence_snippet = _evidence_snippet_for_claim(claim, extracted_json)
         provenance_bits = []
         for key in ("references", "adopted_from_references", "calibration_based_on_references"):
@@ -257,15 +299,17 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
                 f"Material ID: {_first_non_empty(material_id, 'none')}",
                 f"Material: {_first_non_empty(material_name, _material_summary_from_entity(material, extracted_json) if material else 'unknown')}",
                 f"Composition: {_first_non_empty(_material_composition_summary(material), 'none')}",
-                f"Sample ID: {_first_non_empty(sample_id, 'none')}",
-                f"Sample: {_first_non_empty(sample_label, _sample_summary(sample), 'none')}",
+                f"Process state ID: {_first_non_empty(process_state_id, 'none')}",
+                f"Process state: {_first_non_empty(process_state_name, _process_state_summary(process_state), 'none')}",
                 f"Condition ID: {_first_non_empty(condition_id, 'none')}",
                 f"Condition: {_first_non_empty(condition_label, _condition_summary(condition), 'none')}",
-                f"Phase: {_first_non_empty(phase_id, 'none')}",
-                f"Phase name: {_first_non_empty(phase_name, _phase_summary(phase), 'none')}",
+                f"Constituent ID: {_first_non_empty(constituent_id, 'none')}",
+                f"Constituent: {_first_non_empty(constituent_name, _constituent_summary(constituent), 'none')}",
                 f"Mechanism: {_first_non_empty(mechanism, 'none')}",
                 f"Family: {_first_non_empty(family_name, family_id, 'none')}",
                 f"Model ID: {_first_non_empty(model_id, 'none')}",
+                f"Branch ID: {_first_non_empty(branch_id, 'none')}",
+                f"System IDs: {_first_non_empty(', '.join(system_ids), 'none')}",
                 f"Model: {_first_non_empty(_safe_dict(model).get('framework'), 'unknown')}",
                 f"Domain: {_first_non_empty(domain, 'unknown')}",
                 f"Parameter: {_first_non_empty(canonical_name, 'unknown')}",
@@ -285,19 +329,25 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
                 "claim_id": claim_id,
                 "material_id": material_id,
                 "material_name": material_name,
-                "sample_id": sample_id,
-                "sample_label": sample_label,
+                "process_state_id": process_state_id,
+                "process_state_name": process_state_name,
+                "sample_id": process_state_id,
+                "sample_label": process_state_name,
                 "condition_id": condition_id,
                 "condition_label": condition_label,
                 "canonical_name": canonical_name,
                 "symbol": symbol,
                 "domain": domain,
-                "phase_id": phase_id,
-                "phase_name": phase_name,
+                "constituent_id": constituent_id,
+                "constituent_name": constituent_name,
+                "phase_id": constituent_id,
+                "phase_name": constituent_name,
                 "mechanism": mechanism,
                 "family_id": family_id,
                 "family_name": family_name,
                 "model_id": model_id,
+                "branch_id": branch_id,
+                "system_ids": system_ids,
                 "value_text": _first_non_empty(reported_value),
                 "unit": reported_unit,
                 "origin_type": origin_type,
@@ -308,10 +358,14 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
                 "metadata": {
                     "origin_type": origin_type,
                     "material_id": material_id,
-                    "sample_id": sample_id,
+                    "process_state_id": process_state_id,
+                    "sample_id": process_state_id,
                     "condition_id": condition_id,
-                    "phase_id": phase_id,
+                    "constituent_id": constituent_id,
+                    "phase_id": constituent_id,
                     "model_id": model_id,
+                    "branch_id": branch_id,
+                    "system_ids": system_ids,
                 },
             }
         )

@@ -1,0 +1,234 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">CPextractor current architecture</title>
+  <desc id="desc">Architecture diagram of the current CPextractor pipeline: literature acquisition, parsing, LLM extraction, deterministic postprocessing, rule validation, evidence grounding, multi-agent committee, policy-adjusted routing, confidence fusion, and downstream outputs.</desc>
+
+  <defs>
+    <style>
+      .bg { fill: #f7f7f5; }
+      .panel { fill: #fffdf8; stroke: #d6d3d1; stroke-width: 2; }
+      .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; }
+      .teal { fill: #e6fffb; stroke: #0f766e; stroke-width: 2; }
+      .blue { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; }
+      .amber { fill: #fff7ed; stroke: #c2410c; stroke-width: 2; }
+      .purple { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; }
+      .green { fill: #f0fdf4; stroke: #4d7c0f; stroke-width: 2; }
+      .gray { fill: #f8fafc; stroke: #64748b; stroke-width: 2; }
+      .danger { fill: #fff1f2; stroke: #be123c; stroke-width: 2; }
+      .title { font: 700 30px "Aptos", "Segoe UI", sans-serif; fill: #111827; }
+      .section { font: 700 18px "Aptos", "Segoe UI", sans-serif; fill: #0f172a; letter-spacing: 0.08em; }
+      .h2 { font: 700 24px "Aptos", "Segoe UI", sans-serif; fill: #111827; }
+      .h3 { font: 700 18px "Aptos", "Segoe UI", sans-serif; fill: #111827; }
+      .txt { font: 500 16px "Aptos", "Segoe UI", sans-serif; fill: #1f2937; }
+      .small { font: 500 14px "Aptos", "Segoe UI", sans-serif; fill: #475569; }
+      .mono { font: 600 14px "SFMono-Regular", Consolas, monospace; fill: #334155; }
+      .caps { font: 700 14px "Aptos", "Segoe UI", sans-serif; fill: #475569; letter-spacing: 0.12em; }
+      .line { fill: none; stroke: #64748b; stroke-width: 3; stroke-linecap: round; }
+      .lineTeal { fill: none; stroke: #0f766e; stroke-width: 3; stroke-linecap: round; }
+      .lineBlue { fill: none; stroke: #2563eb; stroke-width: 3; stroke-linecap: round; }
+      .lineAmber { fill: none; stroke: #c2410c; stroke-width: 3; stroke-linecap: round; }
+      .linePurple { fill: none; stroke: #7c3aed; stroke-width: 3; stroke-linecap: round; }
+      .lineGreen { fill: none; stroke: #4d7c0f; stroke-width: 3; stroke-linecap: round; }
+      .lineDanger { fill: none; stroke: #be123c; stroke-width: 3; stroke-linecap: round; }
+    </style>
+
+    <marker id="arrowGray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#0f766e"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowAmber" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#c2410c"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#4d7c0f"/>
+    </marker>
+    <marker id="arrowDanger" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#be123c"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="980" class="bg"/>
+
+  <text x="70" y="64" class="title">CPextractor: Current Evidence-Grounded Curation Pipeline</text>
+  <text x="70" y="92" class="txt">From crystal-plasticity papers to audited parameter claims, calibrated confidence, and database / retrieval outputs</text>
+
+  <!-- top main flow -->
+  <g id="flow">
+    <rect x="60" y="130" width="210" height="160" rx="16" ry="16" class="teal"/>
+    <text x="85" y="160" class="caps">STEP 1</text>
+    <text x="85" y="188" class="h2">Literature Intake</text>
+    <text x="85" y="215" class="txt">Scopus search</text>
+    <text x="85" y="238" class="txt">Configured DOI list</text>
+    <text x="85" y="261" class="txt">Local full-text folders</text>
+    <text x="85" y="285" class="small">Entry point: pipeline target collection</text>
+
+    <rect x="310" y="130" width="230" height="160" rx="16" ry="16" class="blue"/>
+    <text x="335" y="160" class="caps">STEP 2</text>
+    <text x="335" y="188" class="h2">Parse Full Text</text>
+    <text x="335" y="215" class="txt">Elsevier XML -&gt; local assets</text>
+    <text x="335" y="238" class="mono">paper.xml / sections/*.md</text>
+    <text x="335" y="261" class="mono">tables/*.md / references.json</text>
+    <text x="335" y="285" class="small">Reusable evidence package for extraction and audit</text>
+
+    <rect x="580" y="130" width="250" height="160" rx="16" ry="16" class="amber"/>
+    <text x="605" y="160" class="caps">STEP 3</text>
+    <text x="605" y="188" class="h2">Two-Stage LLM Extraction</text>
+    <text x="605" y="215" class="txt">File selection</text>
+    <text x="605" y="238" class="txt">Schema-constrained extraction</text>
+    <text x="605" y="261" class="mono">parameters.registry</text>
+    <text x="605" y="285" class="small">Candidate structured records before trust scoring</text>
+
+    <rect x="870" y="130" width="270" height="160" rx="16" ry="16" class="purple"/>
+    <text x="895" y="160" class="caps">STEP 4</text>
+    <text x="895" y="188" class="h2">Deterministic Postprocess</text>
+    <text x="895" y="215" class="txt">Reference resolution and normalization</text>
+    <text x="895" y="238" class="txt">Material / phase / scope / binding resolution</text>
+    <text x="895" y="261" class="txt">Provenance normalization</text>
+    <text x="895" y="285" class="small">Implemented in postprocess workflow modules</text>
+
+    <rect x="1180" y="130" width="340" height="160" rx="16" ry="16" class="green"/>
+    <text x="1205" y="160" class="caps">STEP 5</text>
+    <text x="1205" y="188" class="h2">Claim-Centric Finalization</text>
+    <text x="1205" y="215" class="mono">parameter_claims</text>
+    <text x="1205" y="238" class="txt">final hierarchy: materials -&gt; phases -&gt; conditions -&gt; models</text>
+    <text x="1205" y="261" class="txt">compact export and downstream DB-ready structure</text>
+    <text x="1205" y="285" class="small">Minimal trusted unit for review, retrieval, and analytics</text>
+
+    <path d="M270 210 L310 210" class="lineTeal" marker-end="url(#arrowTeal)"/>
+    <path d="M540 210 L580 210" class="lineBlue" marker-end="url(#arrowBlue)"/>
+    <path d="M830 210 L870 210" class="lineAmber" marker-end="url(#arrowAmber)"/>
+    <path d="M1140 210 L1180 210" class="linePurple" marker-end="url(#arrowPurple)"/>
+  </g>
+
+  <!-- qa stack -->
+  <g id="qa_stack">
+    <rect x="60" y="340" width="760" height="570" rx="18" ry="18" class="panel"/>
+    <text x="85" y="372" class="section">QUALITY CONTROL STACK</text>
+    <text x="85" y="404" class="h2">Rules, grounding, committee merge, and policy adjustment</text>
+
+    <rect x="90" y="438" width="310" height="130" rx="14" ry="14" class="gray"/>
+    <text x="115" y="466" class="caps">LAYER 1</text>
+    <text x="115" y="494" class="h3">Rule Validation</text>
+    <text x="115" y="520" class="txt">Missing evidence</text>
+    <text x="115" y="542" class="txt">Missing key parameter values</text>
+    <text x="115" y="564" class="txt">Unit / sign / scope consistency checks</text>
+    <text x="115" y="586" class="mono">quality_checks + rule_score</text>
+
+    <rect x="430" y="438" width="350" height="130" rx="14" ry="14" class="teal"/>
+    <text x="455" y="466" class="caps">LAYER 2</text>
+    <text x="455" y="494" class="h3">Evidence Grounding</text>
+    <text x="455" y="520" class="txt">Map extracted claims back to file spans or table cells</text>
+    <text x="455" y="542" class="txt">Store evidence location and reusable evidence_objects</text>
+    <text x="455" y="564" class="txt">Track grounding status for downstream penalties</text>
+    <text x="455" y="586" class="mono">evidence_grounding report</text>
+
+    <rect x="90" y="610" width="690" height="230" rx="14" ry="14" class="box"/>
+    <text x="115" y="640" class="caps">LAYER 3</text>
+    <text x="115" y="668" class="h3">Multi-Agent LLM Evaluation</text>
+
+    <rect x="115" y="694" width="190" height="44" class="teal"/>
+    <rect x="305" y="694" width="120" height="44" class="teal"/>
+    <rect x="425" y="694" width="90" height="44" class="teal"/>
+    <rect x="515" y="694" width="240" height="44" class="teal"/>
+    <text x="132" y="721" class="txt">Evidence judge</text>
+    <text x="328" y="721" class="txt">pass/warn/fail</text>
+    <text x="454" y="721" class="txt">score</text>
+    <text x="535" y="721" class="txt">supportiveness and provenance check</text>
+
+    <rect x="115" y="738" width="190" height="44" class="green"/>
+    <rect x="305" y="738" width="120" height="44" class="green"/>
+    <rect x="425" y="738" width="90" height="44" class="green"/>
+    <rect x="515" y="738" width="240" height="44" class="green"/>
+    <text x="132" y="765" class="txt">Normalization judge</text>
+    <text x="328" y="765" class="txt">pass/warn/fail</text>
+    <text x="454" y="765" class="txt">score</text>
+    <text x="535" y="765" class="txt">canonical mapping, unit, SI conversion</text>
+
+    <rect x="115" y="782" width="190" height="44" class="amber"/>
+    <rect x="305" y="782" width="120" height="44" class="amber"/>
+    <rect x="425" y="782" width="90" height="44" class="amber"/>
+    <rect x="515" y="782" width="240" height="44" class="amber"/>
+    <text x="132" y="809" class="txt">Consistency judge</text>
+    <text x="328" y="809" class="txt">pass/warn/fail</text>
+    <text x="454" y="809" class="txt">score</text>
+    <text x="535" y="809" class="txt">binding, scope, cross-record coherence</text>
+
+    <path d="M245 568 L245 610" class="line" marker-end="url(#arrowGray)"/>
+    <path d="M605 568 L605 610" class="line" marker-end="url(#arrowGray)"/>
+  </g>
+
+  <!-- merge and meta -->
+  <g id="merge_meta">
+    <rect x="850" y="340" width="700" height="255" rx="18" ry="18" class="panel"/>
+    <text x="875" y="372" class="section">COMMITTEE MERGE</text>
+    <text x="875" y="404" class="h2">Parameter-level consensus plus document-level adjudication</text>
+
+    <rect x="885" y="438" width="295" height="124" rx="14" ry="14" class="purple"/>
+    <text x="910" y="468" class="caps">MERGE LOGIC</text>
+    <text x="910" y="496" class="txt">Collect three votes per parameter record</text>
+    <text x="910" y="518" class="txt">Raw verdict: fail if any fail, else warning if any warning</text>
+    <text x="910" y="540" class="txt">Average score and preserve disagreement metadata</text>
+    <text x="910" y="562" class="mono">committee.votes + review_required</text>
+
+    <rect x="1210" y="438" width="305" height="124" rx="14" ry="14" class="blue"/>
+    <text x="1235" y="468" class="caps">META JUDGE</text>
+    <text x="1235" y="496" class="txt">Document-level verdict</text>
+    <text x="1235" y="518" class="txt">Uses committee outputs + rule report + evidence report</text>
+    <text x="1235" y="540" class="txt">Returns overall_score, critical_issues, summary</text>
+    <text x="1235" y="562" class="mono">overall_score + verdict</text>
+
+    <path d="M1180 500 L1210 500" class="linePurple" marker-end="url(#arrowPurple)"/>
+  </g>
+
+  <!-- routing -->
+  <g id="routing">
+    <rect x="850" y="620" width="700" height="290" rx="18" ry="18" class="panel"/>
+    <text x="875" y="652" class="section">ROUTING AND FINAL DECISION</text>
+    <text x="875" y="684" class="h2">Policy-adjusted routing after committee merge</text>
+
+    <rect x="890" y="720" width="250" height="90" rx="14" ry="14" class="gray"/>
+    <text x="916" y="750" class="h3">Policy adjustment</text>
+    <text x="916" y="775" class="small">Relax low-risk table grounding issues</text>
+    <text x="916" y="795" class="small">Suppress false unit-conversion penalties</text>
+
+    <rect x="1170" y="720" width="160" height="90" rx="14" ry="14" class="gray"/>
+    <text x="1190" y="750" class="h3">review_required?</text>
+    <text x="1190" y="775" class="small">after disagreement</text>
+    <text x="1190" y="795" class="small">and policy checks</text>
+
+    <rect x="1360" y="700" width="155" height="70" rx="12" ry="12" class="green"/>
+    <text x="1400" y="729" class="h3">No</text>
+    <text x="1378" y="751" class="small">go to fusion</text>
+
+    <rect x="1360" y="800" width="155" height="70" rx="12" ry="12" class="danger"/>
+    <text x="1401" y="829" class="h3">Yes</text>
+    <text x="1370" y="851" class="small">manual review queue</text>
+
+    <rect x="890" y="834" width="440" height="54" rx="12" ry="12" class="green"/>
+    <text x="915" y="867" class="txt">Confidence fusion = rule_score + LLM audit score + grounding / issue penalties</text>
+
+    <path d="M1140 765 L1170 765" class="line" marker-end="url(#arrowGray)"/>
+    <path d="M1330 748 L1360 735" class="lineGreen" marker-end="url(#arrowGreen)"/>
+    <path d="M1330 782 L1360 835" class="lineDanger" marker-end="url(#arrowDanger)"/>
+    <path d="M1438 770 L1438 790 L1110 790 L1110 834" class="lineGreen" marker-end="url(#arrowGreen)"/>
+  </g>
+
+  <!-- outputs -->
+  <g id="outputs">
+    <rect x="60" y="925" width="1490" height="35" rx="12" ry="12" class="box"/>
+    <text x="85" y="948" class="txt">Outputs: document_confidence_score | parameter confidence | quality_tier (gold / silver / candidate) | review escalation | DB ingest gate | audit artifacts | parameter_claims for retrieval and analytics</text>
+  </g>
+
+  <!-- cross-panel arrows -->
+  <path d="M820 730 L850 730" class="line" marker-end="url(#arrowGray)"/>
+  <path d="M820 660 L850 500" class="line" marker-end="url(#arrowGray)"/>
+  <path d="M1220 290 L1220 320 L430 320 L430 438" class="line" marker-end="url(#arrowGray)"/>
+  <path d="M1220 290 L1220 340" class="line" marker-end="url(#arrowGray)"/>
+</svg>

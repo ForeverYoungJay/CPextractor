@@ -11,6 +11,17 @@ def _safe_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
 
 
+def _first_non_empty(*values: Any) -> Any:
+    for value in values:
+        if isinstance(value, str):
+            if value.strip():
+                return value
+            continue
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
 def provenance_map(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
     for record in _safe_list(extracted_json.get("provenance_records")):
@@ -56,6 +67,10 @@ def claim_map(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 
 def resolve_primary_phase(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
+    constituents = _safe_list(extracted_json.get("constituents"))
+    for constituent in constituents:
+        if isinstance(constituent, dict):
+            return constituent
     materials = _safe_list(extracted_json.get("materials"))
     for material in materials:
         if not isinstance(material, dict):
@@ -64,25 +79,17 @@ def resolve_primary_phase(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
         for phase in phases:
             if isinstance(phase, dict):
                 return phase
-    material = _safe_dict(extracted_json.get("material"))
-    phases = _safe_list(material.get("phases"))
-    for phase in phases:
-        if isinstance(phase, dict):
-            return phase
     return {}
 
 
 def resolve_primary_crystal_structure(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
-    phase = resolve_primary_phase(extracted_json)
-    phase_cs = _safe_dict(phase.get("crystal_structure"))
-    if phase_cs:
-        return phase_cs
+    constituent = resolve_primary_phase(extracted_json)
+    constituent_cs = _safe_dict(constituent.get("crystal_structure"))
+    if constituent_cs:
+        return constituent_cs
     materials = _safe_list(extracted_json.get("materials"))
     if materials:
-        first_material = _safe_dict(materials[0])
-        phases = _safe_list(first_material.get("phases"))
-        if phases:
-            return _safe_dict(_safe_dict(phases[0]).get("crystal_structure"))
+        return _safe_dict(_safe_dict(materials[0]).get("crystal_structure"))
     material = _safe_dict(extracted_json.get("material"))
     return _safe_dict(material.get("crystal_structure"))
 
@@ -151,7 +158,7 @@ def resolve_binding_record(extracted_json: Dict[str, Any], item: Dict[str, Any])
     return {
         "binding_id": None,
         "scope": _safe_dict(item.get("applies_to")).get("scope"),
-        "phase_id": _safe_dict(item.get("applies_to")).get("phase_id"),
+        "constituent_id": _first_non_empty(_safe_dict(item.get("applies_to")).get("constituent_id"), _safe_dict(item.get("applies_to")).get("phase_id")),
         "mechanism": _safe_dict(item.get("applies_to")).get("mechanism"),
         "family_id": _safe_dict(item.get("applies_to")).get("family_id"),
         "family_name": _safe_dict(item.get("applies_to")).get("family_name"),
@@ -200,7 +207,7 @@ def project_parameter_item(extracted_json: Dict[str, Any], idx: int, item: Dict[
         })
         applies_to = {
             "scope": binding.get("scope"),
-            "phase_id": binding.get("phase_id"),
+            "constituent_id": _first_non_empty(binding.get("constituent_id"), binding.get("phase_id")),
             "mechanism": binding.get("mechanism"),
             "family_id": binding.get("family_id"),
             "family_name": binding.get("family_name"),

@@ -15,6 +15,8 @@ The extractor should answer five linked questions for each paper:
 - `parameter_claims[]` remains the atomic review and database unit.
 - `materials[]`, `process_states[]`, `conditions[]`, `models[]`, `mechanisms`, and `microstructure_features[]` are support graphs for binding and interpretation.
 - Keep nested `materials[] -> phases[]` because the existing postprocess and compatibility projection already assume phase ownership under a material.
+- Keep physical material constitution separate from modeling representation.
+  A schema should not collapse single-phase versus multi-phase, single-crystal versus polycrystal, and homogeneous versus heterogeneous modeling into one field.
 - Keep `process_states[]` separate from `conditions[]`.
   Processing state means material history or specimen state.
   Condition means deformation, testing, calibration, or service-like loading context.
@@ -45,6 +47,21 @@ Use for stable material identity:
 - aliases used in the paper
 - composition
 - phase catalog
+- physical phase constitution
+- physical crystal aggregation
+
+Recommended physical descriptors on `materials[]`:
+
+- `phase_mode`: `single_phase` or `multi_phase`
+- `crystal_aggregate`: `single_crystal`, `polycrystal`, `bicrystal`, or `oligocrystal`
+
+These are separate axes.
+They should cover combinations such as:
+
+- single-phase + single crystal
+- single-phase + polycrystal
+- multi-phase + single crystal
+- multi-phase + polycrystal
 
 Do not overload `materials[]` with every heat treatment or test case.
 
@@ -83,8 +100,16 @@ Use for:
 - rate dependence
 - hardening law
 - implementation platform
+- modeling representation assumption
 
 A parameter claim should point to `model_id` when the model is explicit.
+
+Recommended modeling descriptor on `models[]`:
+
+- `representation_mode`: `homogeneous`, `heterogeneous`, `grain_boundary_affected`, or `explicit_interface`
+
+This is distinct from the physical material description.
+For example, a paper may study a polycrystal but still fit one homogeneous parameter set.
 
 ### `microstructure_features[]`
 
@@ -96,6 +121,9 @@ Use for contextual structure facts that are not parameters:
 - precipitates
 - porosity
 - selected grains
+
+Use this object to hold constituent-specific or region-specific facts after the higher-level material axes are already declared.
+For example, phase fractions, grain-boundary regions, or selected grains belong here, while `single_phase` versus `multi_phase` belongs in `materials[].phase_mode`.
 
 Each feature should say:
 
@@ -145,6 +173,8 @@ This two-stage approach is better than forcing the extractor to predict final sp
 ## Schema Changes Added In v3.2
 
 - `materials[].aliases`
+- `materials[].phase_mode`
+- `materials[].crystal_aggregate`
 - `materials[].source_label`
 - `materials[].phases[].source_label`
 - `materials[].phases[].volume_fraction.basis`
@@ -152,6 +182,7 @@ This two-stage approach is better than forcing the extractor to predict final sp
 - `process_states[].state_variables[]`
 - `conditions[].condition_role`
 - `models[].applies_to`
+- `models[].representation_mode`
 - `microstructure_features[].feature_family`
 - `microstructure_features[].feature_name`
 - `microstructure_features[].value_type`

@@ -1,0 +1,158 @@
+{
+  "schema_version": "2.0.0",
+  "record_id": "string or null",
+  "source_document": {
+    "title": "string or null",
+    "authors": [
+      "string"
+    ],
+    "year": "number or null",
+    "journal_or_venue": "string or null",
+    "doi": "string or null",
+    "url": "string or null"
+  },
+  "material": {
+    "name": "string or null",
+    "chemical_formula": "string or null",
+    "phase": "single / multi / null",
+    "crystal_structure": "string or null",
+    "notes": "string or null"
+  },
+  "microstructure": {
+    "grain_structure": "single_crystal / polycrystal / bicrystal / null",
+    "grain_size": {
+      "value": "number or null",
+      "unit": "string or null"
+    },
+    "texture_or_orientation": "string or null",
+    "notes": "string or null"
+  },
+  "constitutive_model": {
+    "framework": "CPFE / FFT / EVPFFT / VPSC / DAMASK / UMAT / custom / null",
+    "kinematics": "finite_strain / small_strain / null",
+    "rate_dependence": "rate_dependent / rate_independent / unknown / null",
+    "flow_rule": "string or null",
+    "hardening_law": "string or null",
+    "notes": "string or null"
+  },
+  "elastic_parameters": {
+    "symmetry": "isotropic / cubic / hexagonal / orthotropic / unknown / null",
+    "constants": [
+      {
+        "canonical_name": "string or null",
+        "symbol": "string or null",
+        "description": "string or null",
+        "value": "number or null",
+        "unit": "string or null",
+        "temperature_dependent": "yes / no / null",
+        "source": {
+          "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
+          "adopted_from_reference_ids": [
+            "string"
+          ],
+          "calibration_based_on_reference_ids": [
+            "string"
+          ],
+          "reference_ids": [
+            "string"
+          ],
+          "calibration_method": "string or null",
+          "calibration_targets": [
+            "string"
+          ],
+          "validation_targets": [
+            "string"
+          ],
+          "evidence_text": "string or null",
+          "evidence_section": "string or null"
+        },
+        "notes": "string or null",
+        "confidence": "high / medium / low / null"
+      }
+    ],
+    "notes": "string or null"
+  },
+  "plastic_parameters": {
+    "flow_rule": "string or null",
+    "parameters": [
+      {
+        "canonical_name": "string or null",
+        "symbol": "string or null",
+        "description": "string or null",
+        "value": "number or null",
+        "unit": "string or null",
+        "applies_to": {
+          "phase_id": "string or null",
+          "mechanism": "slip / twinning / all_slip / all_twin / all_mechanisms / null",
+          "family_name": "string or null",
+          "system_count": "number or null"
+        },
+        "temperature_dependent": "yes / no / null",
+        "strain_rate_dependent": "yes / no / null",
+        "valid_range": "string or null",
+        "source": {
+          "origin_type": "original / adopted / mixed_adopted_and_calibrated / null",
+          "adopted_from_reference_ids": [
+            "string"
+          ],
+          "calibration_based_on_reference_ids": [
+            "string"
+          ],
+          "reference_ids": [
+            "string"
+          ],
+          "calibration_method": "manual_fitting / inverse_modeling / optimization / bayesian / null",
+          "calibration_targets": [
+            "string"
+          ],
+          "validation_targets": [
+            "string"
+          ],
+          "evidence_text": "string or null",
+          "evidence_section": "string or null"
+        },
+        "notes": "string or null",
+        "confidence": "high / medium / low / null"
+      }
+    ],
+    "notes": "string or null"
+  },
+  "loading_and_environment": {
+    "loading_mode": "uniaxial_tension / compression / shear / indentation / cyclic / creep / null",
+    "strain_rate": {
+      "value": "number or null",
+      "unit": "string or null"
+    },
+    "temperature": {
+      "value": "number or null",
+      "unit": "string or null"
+    },
+    "notes": "string or null"
+  },
+  "fit_quality": {
+    "fit_targets": [
+      "string"
+    ],
+    "reported_metrics": [
+      {
+        "name": "string or null",
+        "value": "number or string or null",
+        "unit": "string or null"
+      }
+    ],
+    "qualitative_assessment": "good / medium / poor / null",
+    "validated_on_independent_case": "yes / no / null",
+    "notes": "string or null"
+  },
+  "references": [
+    {
+      "reference_id": "string or null",
+      "type": "paper / dataset / thesis / report / code / other / null",
+      "citation": "string or null",
+      "doi": "string or null",
+      "url": "string or null",
+      "notes": "string or null"
+    }
+  ],
+  "global_notes": "string or null"
+}

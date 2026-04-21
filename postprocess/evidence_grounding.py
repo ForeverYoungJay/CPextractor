@@ -643,18 +643,132 @@ def _best_match(evidence_text: str, files: List[Path], symbol: str | None, value
     return best
 
 
+def _evidence_object_map(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for record in extracted_json.get("evidence_objects") or []:
+        if not isinstance(record, dict):
+            continue
+        evidence_id = str(record.get("evidence_id") or "").strip()
+        if evidence_id:
+            out[evidence_id] = record
+    return out
+
+
+def _candidate_files_from_evidence_object(paper_dir: str, evidence_object: Dict[str, Any]) -> List[Path]:
+    root = Path(paper_dir)
+    files: List[Path] = []
+    source_file = str(evidence_object.get("source_file") or "").strip()
+    source_id = str(evidence_object.get("source_id") or "").strip()
+
+    if source_file:
+        candidates = [
+            root / source_file,
+            root / "sections" / source_file,
+            root / "tables" / source_file,
+            root / "equations" / source_file,
+        ]
+        for path in candidates:
+            if path.exists() and path not in files:
+                files.append(path)
+
+    if source_id:
+        candidates = [
+            root / source_id,
+            root / "sections" / source_id,
+            root / "tables" / source_id,
+            root / "equations" / source_id,
+            root / "tables" / Path(source_id).with_suffix(".json"),
+            root / "sections" / Path(source_id).with_suffix(".md"),
+        ]
+        for path in candidates:
+            if path.exists() and path not in files:
+                files.append(path)
+
+    return files
+
+
+def _evidence_from_object(evidence_object: Dict[str, Any]) -> Dict[str, Any]:
+    locator = evidence_object.get("locator") if isinstance(evidence_object.get("locator"), dict) else {}
+    table_coord = evidence_object.get("table_coord") if isinstance(evidence_object.get("table_coord"), dict) else {}
+    excerpt = str(locator.get("excerpt") or "").strip() or None
+    snippet = str(evidence_object.get("snippet") or "").strip() or None
+    value = str(locator.get("value") or evidence_object.get("value") or "").strip() or None
+    row_name = str(locator.get("row_name") or evidence_object.get("row_name") or "").strip() or None
+    column_name = str(locator.get("column_name") or evidence_object.get("column_name") or "").strip() or None
+    row_index = table_coord.get("row")
+    column_index = table_coord.get("col")
+    table_evidence = {
+        "row_name": row_name,
+        "column_name": column_name,
+        "value": value,
+        "excerpt": excerpt or snippet,
+        "row_index": row_index,
+        "column_index": column_index,
+    }
+    table_evidence = {k: v for k, v in table_evidence.items() if v not in (None, "", [])}
+    out = {
+        "evidence_text": snippet or excerpt or value,
+        "table_evidence": table_evidence or None,
+    }
+    return {k: v for k, v in out.items() if v not in (None, "", [], {})}
+
+
 def verify_evidence_grounding(extracted_json: Dict[str, Any], paper_dir: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
-    evidence_objects: List[Dict[str, Any]] = []
     exact = normalized = prefix = source_backed = fuzzy = table_cell = missing = not_found = 0
+    existing_evidence = _evidence_object_map(extracted_json)
+    missing_evidence_object = 0
+    claims_without_evidence_ids = 0
 
     for idx, _, item in iter_parameter_items_with_index(extracted_json):
         src = item.get("source", {}) if isinstance(item.get("source"), dict) else {}
-        evidence = _evidence_payload(item, src)
-        src["__evidence__"] = evidence
-        location: Dict[str, Any] = {}
-        files = _candidate_files(paper_dir, location)
-        hit = _best_match(str(evidence.get("evidence_text") or ""), files, item.get("symbol"), item.get("value"), src)
+        evidence_ids = src.get("evidence_ids") if isinstance(src.get("evidence_ids"), list) else []
+        if not evidence_ids and isinstance(item.get("evidence_ids"), list):
+            evidence_ids = item.get("evidence_ids")
+
+        evidence_object = None
+        resolved_ids: List[str] = []
+        for evidence_id in evidence_ids:
+            key = str(evidence_id or "").strip()
+            if not key:
+                continue
+            if key in existing_evidence:
+                resolved_ids.append(key)
+                if evidence_object is None:
+                    evidence_object = existing_evidence[key]
+
+        if not evidence_ids:
+            claims_without_evidence_ids += 1
+        if evidence_ids and not resolved_ids:
+            missing_evidence_object += 1
+
+        evidence = _evidence_from_object(evidence_object) if isinstance(evidence_object, dict) else _evidence_payload(item, src)
+        source_for_match = dict(src)
+        source_for_match["__evidence__"] = evidence
+
+        files = _candidate_files_from_evidence_object(paper_dir, evidence_object or {})
+        if not files:
+            location: Dict[str, Any] = {}
+            files = _candidate_files(paper_dir, location)
+
+        if isinstance(evidence_object, dict) and str(evidence_object.get("evidence_type") or "").strip().lower() == "equation":
+            hit = {
+                "status": "source_backed",
+                "matched_file": evidence_object.get("source_file"),
+                "char_start": None,
+                "char_end": None,
+                "line_start": None,
+                "line_end": None,
+                "matched_span": evidence.get("evidence_text"),
+                "context_window": evidence.get("evidence_text"),
+                "row_name": None,
+                "column_name": None,
+                "value": evidence.get("evidence_text"),
+                "table_cell": None,
+            }
+        else:
+            hit = _best_match(str(evidence.get("evidence_text") or ""), files, item.get("symbol"), item.get("value"), source_for_match)
+
         status = hit.get("status")
         if status == "exact_match":
             exact += 1
@@ -673,51 +787,20 @@ def verify_evidence_grounding(extracted_json: Dict[str, Any], paper_dir: str) ->
         else:
             not_found += 1
 
-        evidence_id = f"ev_{idx + 1:04d}"
-        evidence_type = "section_span"
-        if hit.get("table_cell"):
-            evidence_type = "table_cell"
-        elif str(location.get("kind") or "").strip().lower() == "table":
-            evidence_type = "table_cell"
-        elif str(location.get("kind") or "").strip().lower() == "equation":
-            evidence_type = "equation"
-        elif str(location.get("kind") or "").strip().lower() == "caption":
-            evidence_type = "caption"
-
         row = {
             "location": claim_location(item, idx),
             "canonical_name": item.get("canonical_name"),
             "symbol": item.get("symbol"),
             "evidence_kind": "table" if isinstance(evidence.get("table_evidence"), dict) else "text",
             "evidence_location_id": None,
-            "evidence_id": evidence_id,
+            "evidence_ids": resolved_ids,
+            "missing_evidence_object": bool(evidence_ids and not resolved_ids),
             **hit,
         }
         rows.append(row)
-        evidence_objects.append({
-            "evidence_id": evidence_id,
-            "evidence_type": evidence_type,
-            "file": hit.get("matched_file"),
-            "line_start": hit.get("line_start"),
-            "line_end": hit.get("line_end"),
-            "char_start": hit.get("char_start"),
-            "char_end": hit.get("char_end"),
-            "snippet": hit.get("matched_span") or evidence.get("evidence_text"),
-            "context_window": hit.get("context_window"),
-            "row_name": hit.get("row_name"),
-            "column_name": hit.get("column_name"),
-            "value": hit.get("value") or hit.get("matched_span") or evidence.get("evidence_text"),
-            "table_coord": {
-                "row": (hit.get("table_cell") or {}).get("row_index"),
-                "col": (hit.get("table_cell") or {}).get("column_index"),
-            } if hit.get("table_cell") else None,
-            "status": status,
-        })
 
         if isinstance(src, dict):
-            src["evidence_ids"] = [evidence_id]
             src.pop("_table_match", None)
-            src.pop("__evidence__", None)
             src.pop("grounding_status", None)
             src.pop("grounding_span", None)
             item["source"] = src
@@ -725,8 +808,6 @@ def verify_evidence_grounding(extracted_json: Dict[str, Any], paper_dir: str) ->
             item["evidence"] = evidence
         item.pop("grounding_status", None)
         item.pop("grounding", None)
-
-    extracted_json["evidence_objects"] = evidence_objects
 
     total = len(rows)
     report = {
@@ -739,6 +820,8 @@ def verify_evidence_grounding(extracted_json: Dict[str, Any], paper_dir: str) ->
         "table_cell_match": table_cell,
         "missing_evidence_text": missing,
         "not_found": not_found,
+        "claims_without_evidence_ids": claims_without_evidence_ids,
+        "missing_evidence_object": missing_evidence_object,
         "evidence_grounding_score": round(
             (
                 (exact + (0.9 * normalized) + (0.7 * prefix) + (0.75 * source_backed) + (0.8 * table_cell) + (0.4 * fuzzy))
@@ -747,7 +830,7 @@ def verify_evidence_grounding(extracted_json: Dict[str, Any], paper_dir: str) ->
             ) if total else 0.0,
             2,
         ),
-        "evidence_objects": evidence_objects,
+        "evidence_object_count": len(existing_evidence),
         "rows": rows,
     }
     return extracted_json, report
