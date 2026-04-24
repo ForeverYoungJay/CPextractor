@@ -76,15 +76,26 @@ def main() -> None:
     gate_on_evaluation = bool(pipeline_cfg.get("gate_on_evaluation", True))
     gate_block_verdicts = {
         str(v).strip().lower()
-        for v in (pipeline_cfg.get("db_ingest_block_verdicts", ["fail"]) or ["fail"])
+        for v in (pipeline_cfg.get("db_ingest_block_verdicts", ["rejected"]) or ["rejected"])
     }
     gate_min_confidence = float(pipeline_cfg.get("db_ingest_min_document_confidence_score", 65.0))
-    gate_block_review_escalation_on_pass = bool(pipeline_cfg.get("db_ingest_block_review_escalation_on_pass", False))
-    gate_review_escalation_pass_min_confidence = float(
-        pipeline_cfg.get("db_ingest_review_escalation_pass_min_confidence_score", 85.0)
+    gate_block_review_escalation_on_accepted = bool(
+        pipeline_cfg.get(
+            "db_ingest_block_review_escalation_on_accepted",
+            pipeline_cfg.get("db_ingest_block_review_escalation_on_pass", False),
+        )
     )
-    gate_review_escalation_pass_max_review_required = int(
-        pipeline_cfg.get("db_ingest_review_escalation_pass_max_review_required_parameters", 2)
+    gate_review_escalation_accepted_min_confidence = float(
+        pipeline_cfg.get(
+            "db_ingest_review_escalation_accepted_min_confidence_score",
+            pipeline_cfg.get("db_ingest_review_escalation_pass_min_confidence_score", 85.0),
+        )
+    )
+    gate_review_escalation_accepted_max_review_required = int(
+        pipeline_cfg.get(
+            "db_ingest_review_escalation_accepted_max_review_required_parameters",
+            pipeline_cfg.get("db_ingest_review_escalation_pass_max_review_required_parameters", 2),
+        )
     )
 
     for paper_dir in paper_dirs:
@@ -104,9 +115,9 @@ def main() -> None:
             blocked_verdicts=gate_block_verdicts,
             min_document_confidence_score=gate_min_confidence,
             paper_dir=str(paper_dir),
-            block_review_escalation_on_pass=gate_block_review_escalation_on_pass,
-            review_escalation_pass_min_confidence_score=gate_review_escalation_pass_min_confidence,
-            review_escalation_pass_max_review_required_parameters=gate_review_escalation_pass_max_review_required,
+            block_review_escalation_on_accepted=gate_block_review_escalation_on_accepted,
+            review_escalation_accepted_min_confidence_score=gate_review_escalation_accepted_min_confidence,
+            review_escalation_accepted_max_review_required_parameters=gate_review_escalation_accepted_max_review_required,
         )
         (paper_dir / "postprocess_report.json").write_text(
             json.dumps(reports, ensure_ascii=False, indent=2),

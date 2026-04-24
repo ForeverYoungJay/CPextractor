@@ -31,10 +31,52 @@ from llm.extractor import (
     _inject_legacy_compat_views_from_v3,
     _merge_source_enrichment,
     _normalize_equation_references_in_payload,
+    _render_table_rows_with_alignment,
+    _table_json_full_text,
 )
 
 
 class ExtractorV3Tests(unittest.TestCase):
+    def test_render_table_rows_with_alignment_expands_multirow_header_and_inherits_grouped_cells(self):
+        rows = [
+            ["Temp.", "Grain size", "Model parameters"],
+            ["", "", "γ ̇ 0", "f ̇ 0", "γ t w", "n", "m", "C R S S b a s a l", "C R S S R a t i o"],
+            ["298 K", "9 μ m", "0.001", "0.02", "0.129", "0.08", "0.04", "9.5", "1:3:4:5.5:2"],
+            ["5 μ m", "0.001", "0.02", "0.129", "0.05", "0.04", "12.5", "1:3:4:5.5:2"],
+        ]
+
+        rendered = _render_table_rows_with_alignment(rows, max_rows=len(rows), max_cells_per_row=10)
+
+        self.assertIn("c3=Model parameters / γ ̇ 0", rendered[0])
+        self.assertIn("c9=C R S S R a t i o", rendered[0])
+        self.assertEqual("Header row 1: c1=Temp. | c2=Grain size | c3=Model parameters | c4=<EMPTY> | c5=<EMPTY> | c6=<EMPTY> | c7=<EMPTY> | c8=<EMPTY> | c9=<EMPTY>", rendered[1])
+        self.assertEqual("Header row 2: c1=<EMPTY> | c2=<EMPTY> | c3=γ ̇ 0 | c4=f ̇ 0 | c5=γ t w | c6=n | c7=m | c8=C R S S b a s a l | c9=C R S S R a t i o", rendered[2])
+        self.assertIn("Temp.=<INHERITED:298 K>", rendered[4])
+        self.assertIn("Grain size=5 μ m", rendered[4])
+        self.assertIn("Model parameters / γ ̇ 0=0.001", rendered[4])
+        self.assertIn("f ̇ 0=0.02", rendered[4])
+
+    def test_table_json_full_text_serializes_comparison_table_as_self_describing_rows(self):
+        table_json = {
+            "caption": "Elastic constants, c/a ratio (HCP), Zener ratio (FCC), and initial slip strength ( τ 0 , i ) values for different slip modes in investigated materials.",
+            "rows": [
+                ["Structure", "", "Material", "", "Ratio", "", "Elastic constants (GPa)", "Ref.", "", "τ 0 , i for slip modes (MPa)", "Ref."],
+                ["", "", "", "", "Zener", "", "C 11", "C 12", "C 44", "", "", "{ 1 1 ¯ 1 } 〈 110 〉", ""],
+                ["FCC", "", "René 88DT", "", "2.23", "", "267.1", "170.5", "107.6", "[72]", "", "525", "–"],
+                ["", "Inconel 718-PS", "", "2.72", "", "259.6", "179.0", "109.6", "[73]", "", "495", "–"],
+                ["", "", "", "", "c / a", "", "C 11", "C 12", "C 13", "C 33", "C 44", "", "", "Prismatic 〈 a 〉", "Basal 〈 a 〉", "Pyramidal I 〈 c + a 〉", ""],
+                ["HCP", "", "Titanium Ti–6Al–4V", "", "1.588", "", "162", "", "", "92", "", "", "69", "", "", "181", "", "", "47", "", "", "[76,77]", "", "370", "420", "590", "[78]"],
+            ],
+        }
+
+        rendered = _table_json_full_text(table_json)
+
+        self.assertIn("Comparative row: Structure=FCC, Material=René 88DT, Zener=2.23", rendered)
+        self.assertIn("τ0,i for { 1 1 ¯ 1 } 〈 110 〉=525 MPa", rendered)
+        self.assertIn("HCP slip-mode columns: Prismatic 〈 a 〉, Basal 〈 a 〉, Pyramidal I 〈 c + a 〉", rendered)
+        self.assertIn("Comparative row: Structure=HCP, Material=Titanium Ti–6Al–4V, c/a=1.588, C11=162 GPa", rendered)
+        self.assertIn("Prismatic 〈 a 〉=370 MPa, Basal 〈 a 〉=420 MPa, Pyramidal I 〈 c + a 〉=590 MPa", rendered)
+
     def test_inject_legacy_compat_views_from_v3_keeps_v3_and_projects_legacy(self):
         payload = {
             "schema_version": "3.0.0",
@@ -162,9 +204,10 @@ class ExtractorV3Tests(unittest.TestCase):
     def test_main_schema_exposes_direct_binding_fields(self):
         self.assertEqual("5.0.2", EXTRACT_SCHEMA_SKELETON["schema_version"])
         self.assertIn("document", EXTRACT_SCHEMA_SKELETON)
-        self.assertIn("study", EXTRACT_SCHEMA_SKELETON)
+        self.assertNotIn("study", EXTRACT_SCHEMA_SKELETON)
         self.assertIsInstance(EXTRACT_SCHEMA_SKELETON["process_states"][0]["state_type"], list)
         self.assertIn("governing_equation_ids", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0])
+        self.assertIn("branch_ids", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["applies_to"])
         self.assertIn("calibration", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["provenance"])
         self.assertIn("target_type", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["provenance"]["calibration"])
         self.assertIn("constituents", EXTRACT_SCHEMA_SKELETON)
@@ -176,8 +219,30 @@ class ExtractorV3Tests(unittest.TestCase):
 
     def test_prompt_requires_many_to_many_equation_binding(self):
         self.assertIn("Treat `models[].constitutive_branches[].governing_equation_ids` as a full multi-equation array", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("parameter_claims[].applies_to.branch_ids", EXTRACT_USER_PROMPT_TEMPLATE)
+
+    def test_prompt_requires_claim_specific_table_evidence_packaging(self):
+        self.assertIn("prefer claim-specific evidence packaging over whole-table summaries", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Do not leave `locator.value=null` when the same table excerpt gives an explicit parameter value", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("A reviewer should be able to see the exact condition-value mapping without re-reading the whole table", EXTRACT_USER_PROMPT_TEMPLATE)
         self.assertIn("Multiple branches may share the same equation, and one branch or one parameter may also bind to multiple equations", EXTRACT_USER_PROMPT_TEMPLATE)
         self.assertIn("do not force one equation per branch or one equation per parameter", EXTRACT_USER_PROMPT_TEMPLATE)
+
+    def test_prompt_uses_governing_equation_ids_instead_of_equation_evidence(self):
+        self.assertIn("Do not create equation-only `evidence_objects[]` entries", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Store equation support through `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Do not put equation evidence IDs in `materials[].evidence_ids`, `models[].evidence_ids`, `constitutive_branches[].evidence_ids`, `parameter_claims[].evidence_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
+
+    def test_prompt_supports_multi_branch_parameter_binding(self):
+        self.assertIn("Use `parameter_claims[].applies_to.branch_ids` for branch linkage in every case", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("same parameter claim is explicitly shared across multiple constitutive branches", EXTRACT_USER_PROMPT_TEMPLATE)
+
+    def test_prompt_requires_zener_claims_and_explicit_constituent_handling(self):
+        self.assertIn("treat explicitly reported auxiliary elastic descriptors such as `Zener ratio`, `c/a`", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("emit a dedicated `zener_ratio` claim for each material", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("If `materials[].phase_mode=multi_phase`, actively check whether the excerpt also gives explicit named constituents", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("do not leave `constituents[]` empty in that case", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("leave `constituents[]` empty, and note that the constituent-level identities were not explicitly recoverable", EXTRACT_USER_PROMPT_TEMPLATE)
 
     def test_inject_legacy_compat_accepts_mechanism_list_shape(self):
         payload = {

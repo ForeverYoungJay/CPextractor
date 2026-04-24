@@ -111,7 +111,7 @@ def _scope_consistency_issues(extracted_json: Dict[str, Any], app: Dict[str, Any
 
     rule = _ALLOWED_SCOPE_RULES[scope]
     constituent_id = app.get("constituent_id")
-    branch_id = app.get("branch_id")
+    branch_ids = app.get("branch_ids") if isinstance(app.get("branch_ids"), list) else []
     system_ids = app.get("system_ids") or []
     constituents = extracted_json.get("constituents") if isinstance(extracted_json.get("constituents"), list) else []
 
@@ -126,12 +126,12 @@ def _scope_consistency_issues(extracted_json: Dict[str, Any], app: Dict[str, Any
             "path": _param_path(block, idx) + ".applies_to.constituent_id",
             "message": f"scope={scope} requires constituent_id",
         })
-    if rule["branch_id"] and not branch_id:
+    if rule["branch_id"] and not branch_ids:
         issues.append({
             "type": "scope_inconsistency",
             "severity": "medium",
-            "path": _param_path(block, idx) + ".applies_to.branch_id",
-            "message": f"scope={scope} requires branch_id",
+            "path": _param_path(block, idx) + ".applies_to.branch_ids",
+            "message": f"scope={scope} requires branch_ids",
         })
     if rule["system_ids"] and not system_ids:
         issues.append({

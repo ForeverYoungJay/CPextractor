@@ -26,7 +26,7 @@ The runtime flow is:
    - normalization judge
    - consistency judge
    - meta judge
-8. fuse rule score and judge score into final confidence and quality tier
+8. fuse rule checks, grounding status, and judge verdicts into final confidence and quality tier
 9. build `parameter_claims`
 10. gate low-quality papers from formal DB ingest
 11. ingest structured records, chunks, embeddings, references, and evaluation artifacts
@@ -91,12 +91,13 @@ The QA stack is layered rather than a single LLM verdict.
 - evidence support
 - normalization correctness
 - document consistency
-- document-level meta verdict
+- document-level meta verdict: `accepted / flagged / rejected`
 
 ### Layer 4: Confidence Fusion And Tiering
 - `document_confidence_score`
 - `document_confidence`
 - `quality_tier = gold / silver / candidate`
+- database ingest gate uses document verdict plus `document_confidence_score`, rejected-parameter count, and review escalation
 
 ## Database Outputs
 

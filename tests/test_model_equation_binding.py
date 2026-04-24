@@ -75,6 +75,10 @@ class ModelEquationBindingTests(unittest.TestCase):
             claim = updated["parameter_claims"][0]
             self.assertEqual(["eq_0007"], claim["governing_equation_ids"])
             self.assertEqual(1, len(claim["governing_equations"]))
+            self.assertNotIn("equation_evidence_ids", model)
+            self.assertNotIn("equation_evidence_ids", model["constitutive_branches"][0])
+            self.assertNotIn("equation_evidence_ids", claim)
+            self.assertEqual([], updated["evidence_objects"])
 
     def test_bind_model_equations_promotes_branch_equations_into_model_union(self):
         with tempfile.TemporaryDirectory() as tmpdir:

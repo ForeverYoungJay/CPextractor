@@ -11,6 +11,23 @@ from db.ingest_ref import ingest_references
 REVIEW_DECISION_FILENAME = "review_decision.json"
 
 
+def _normalize_verdict(value: Any, default: str = "") -> str:
+    raw = str(value or "").strip().lower()
+    mapping = {
+        "accepted": "accepted",
+        "pass": "accepted",
+        "passed": "accepted",
+        "flagged": "flagged",
+        "warning": "flagged",
+        "warn": "flagged",
+        "needs_review": "flagged",
+        "rejected": "rejected",
+        "fail": "rejected",
+        "failed": "rejected",
+    }
+    return mapping.get(raw, default)
+
+
 def _load_review_decision(paper_dir: str | None) -> Dict[str, Any]:
     if not paper_dir:
         return {}
@@ -33,19 +50,28 @@ def build_ingest_gate_report(
     blocked_verdicts: Set[str],
     min_document_confidence_score: float,
     paper_dir: str | None = None,
-    block_review_escalation_on_pass: bool = False,
-    review_escalation_pass_min_confidence_score: float = 85.0,
-    review_escalation_pass_max_review_required_parameters: int = 2,
+    block_review_escalation_on_accepted: bool = False,
+    review_escalation_accepted_min_confidence_score: float = 85.0,
+    review_escalation_accepted_max_review_required_parameters: int = 2,
 ) -> Dict[str, Any]:
     evaluation_report = evaluation_report or {}
     confidence_report = confidence_report or {}
     extracted_json = extracted_json or {}
     review_decision = _load_review_decision(paper_dir)
 
-    eval_verdict = str(evaluation_report.get("verdict") or "").strip().lower()
+    eval_verdict = _normalize_verdict(evaluation_report.get("verdict"))
     doc_conf_score = float(confidence_report.get("document_confidence_score") or 0.0)
     review_escalation = evaluation_report.get("review_escalation") or {}
-    fail_parameter_count = int(confidence_report.get("fail_parameter_count") or 0)
+    rejected_parameter_count = int(
+        confidence_report.get("rejected_parameter_count")
+        if confidence_report.get("rejected_parameter_count") is not None
+        else (confidence_report.get("fail_parameter_count") or 0)
+    )
+    flagged_parameter_count = int(
+        confidence_report.get("flagged_parameter_count")
+        if confidence_report.get("flagged_parameter_count") is not None
+        else (confidence_report.get("warning_parameter_count") or 0)
+    )
     review_required_parameter_count = int(confidence_report.get("review_required_parameter_count") or 0)
     review_recommended = bool(confidence_report.get("review_recommended"))
     approved_for_ingest = bool(review_decision.get("approved_for_ingest"))
@@ -55,21 +81,21 @@ def build_ingest_gate_report(
         parameter_claim_count = len(((extracted_json.get("parameters") or {}).get("registry") or []))
     empty_extraction = parameter_claim_count == 0
 
-    high_confidence_pass_with_limited_review = (
-        eval_verdict == "pass"
-        and fail_parameter_count == 0
+    high_confidence_accepted_with_limited_review = (
+        eval_verdict == "accepted"
+        and rejected_parameter_count == 0
         and not empty_extraction
-        and doc_conf_score >= review_escalation_pass_min_confidence_score
-        and review_required_parameter_count <= review_escalation_pass_max_review_required_parameters
+        and doc_conf_score >= review_escalation_accepted_min_confidence_score
+        and review_required_parameter_count <= review_escalation_accepted_max_review_required_parameters
     )
     review_escalation_blocks = review_escalation_required and (
-        block_review_escalation_on_pass or not high_confidence_pass_with_limited_review
+        block_review_escalation_on_accepted or not high_confidence_accepted_with_limited_review
     )
 
     blocked_by_default = enabled and (
         (eval_verdict in blocked_verdicts if eval_verdict else False)
         or doc_conf_score < min_document_confidence_score
-        or fail_parameter_count > 0
+        or rejected_parameter_count > 0
         or empty_extraction
         or review_escalation_blocks
     )
@@ -84,7 +110,9 @@ def build_ingest_gate_report(
         "min_document_confidence_score": min_document_confidence_score,
         "blocked_verdicts": sorted(blocked_verdicts),
         "parameter_claim_count": parameter_claim_count,
-        "fail_parameter_count": fail_parameter_count,
+        "rejected_parameter_count": rejected_parameter_count,
+        "flagged_parameter_count": flagged_parameter_count,
+        "fail_parameter_count": rejected_parameter_count,
         "review_required_parameter_count": review_required_parameter_count,
         "review_escalation_required": review_escalation_required,
         "review_escalation_blocks": review_escalation_blocks,
@@ -92,15 +120,15 @@ def build_ingest_gate_report(
         "gate_reasons": {
             "blocked_verdict": bool(eval_verdict and eval_verdict in blocked_verdicts),
             "low_document_confidence": doc_conf_score < min_document_confidence_score,
-            "has_fail_parameters": fail_parameter_count > 0,
+            "has_rejected_parameters": rejected_parameter_count > 0,
             "empty_extraction": empty_extraction,
             "review_escalation": review_escalation_required,
         },
         "soft_review_escalation_policy": {
-            "block_review_escalation_on_pass": block_review_escalation_on_pass,
-            "pass_min_confidence_score": review_escalation_pass_min_confidence_score,
-            "pass_max_review_required_parameters": review_escalation_pass_max_review_required_parameters,
-            "high_confidence_pass_with_limited_review": high_confidence_pass_with_limited_review,
+            "block_review_escalation_on_accepted": block_review_escalation_on_accepted,
+            "accepted_min_confidence_score": review_escalation_accepted_min_confidence_score,
+            "accepted_max_review_required_parameters": review_escalation_accepted_max_review_required_parameters,
+            "high_confidence_accepted_with_limited_review": high_confidence_accepted_with_limited_review,
         },
         "manual_override": {
             "approved_for_ingest": approved_for_ingest,

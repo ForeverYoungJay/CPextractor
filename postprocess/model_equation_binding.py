@@ -410,8 +410,6 @@ def _resolve_equation_bundle(
     *,
     equation_by_id: Dict[str, Dict[str, Any]],
     equation_lookup: Dict[str, str],
-    evidence_objects: List[Dict[str, Any]],
-    evidence_by_id: Dict[str, Dict[str, Any]],
     owner_prefix: str,
     owner_id: str,
 ) -> Tuple[List[str], List[Dict[str, Any]], List[str], int]:
@@ -434,7 +432,6 @@ def _resolve_equation_bundle(
             normalized_ids.append(eq_key)
 
     resolved_equations: List[Dict[str, Any]] = []
-    equation_evidence_ids: List[str] = []
     for eq_id in normalized_ids:
         eq = equation_by_id.get(eq_id)
         if not eq:
@@ -447,28 +444,8 @@ def _resolve_equation_bundle(
             "latex": eq.get("latex"),
             "text_file": eq.get("text_file"),
         })
-        evidence_id = f"ev_eq_{owner_prefix}_{owner_id}_{eq_id}"
-        equation_evidence_ids.append(evidence_id)
-        if evidence_id not in evidence_by_id:
-            evidence_record = {
-                "evidence_id": evidence_id,
-                "evidence_type": "equation",
-                "extraction_method": "equation_parse",
-                "source_file": eq.get("source_file") or "equations/index.json",
-                "source_id": eq_id,
-                "section_heading": eq.get("section_title"),
-                "locator": {
-                    "value": eq.get("label"),
-                    "excerpt": eq.get("text"),
-                },
-                "snippet": eq.get("text"),
-                "latex": eq.get("latex"),
-                "equation_id": eq_id,
-            }
-            evidence_objects.append(evidence_record)
-            evidence_by_id[evidence_id] = evidence_record
 
-    return normalized_ids, resolved_equations, equation_evidence_ids, len(resolved_equations)
+    return normalized_ids, resolved_equations, [], len(resolved_equations)
 
 
 def _load_equation_index(paper_dir: str) -> List[Dict[str, Any]]:
@@ -569,11 +546,6 @@ def bind_model_equations(
     equation_lookup = _build_equation_lookup(equation_rows)
 
     evidence_objects = [row for row in _safe_list(extracted.get("evidence_objects")) if isinstance(row, dict)]
-    evidence_by_id = {
-        str(row.get("evidence_id") or "").strip(): row
-        for row in evidence_objects
-        if str(row.get("evidence_id") or "").strip()
-    }
 
     bound_models = 0
     bound_equations = 0
@@ -588,15 +560,12 @@ def bind_model_equations(
             _safe_list(row.get("equation_ids")),
             equation_by_id=equation_by_id,
             equation_lookup=equation_lookup,
-            evidence_objects=evidence_objects,
-            evidence_by_id=evidence_by_id,
             owner_prefix="model",
             owner_id=model_id,
         )
 
         row["equation_ids"] = normalized_ids
         row["equations"] = resolved_equations
-        row["equation_evidence_ids"] = equation_evidence_ids
 
         branches = [b for b in _safe_list(row.get("constitutive_branches")) if isinstance(b, dict)]
         out_branches: List[Dict[str, Any]] = []
@@ -608,14 +577,11 @@ def bind_model_equations(
                 _safe_list(branch_row.get("governing_equation_ids")),
                 equation_by_id=equation_by_id,
                 equation_lookup=equation_lookup,
-                evidence_objects=evidence_objects,
-                evidence_by_id=evidence_by_id,
                 owner_prefix="branch",
                 owner_id=branch_id,
             )
             branch_row["governing_equation_ids"] = branch_eq_ids
             branch_row["governing_equations"] = branch_eqs
-            branch_row["equation_evidence_ids"] = branch_ev_ids
             resolved_count += branch_count
             out_branches.append(branch_row)
         if out_branches:
@@ -634,7 +600,7 @@ def bind_model_equations(
                 if eq_key and eq_key not in merged_model_ids:
                     merged_model_ids.append(eq_key)
             normalized_ids = merged_model_ids
-            resolved_equations, equation_evidence_ids = [], []
+            resolved_equations = []
             for eq_id in normalized_ids:
                 eq = equation_by_id.get(eq_id)
                 if not eq:
@@ -647,29 +613,8 @@ def bind_model_equations(
                     "latex": eq.get("latex"),
                     "text_file": eq.get("text_file"),
                 })
-                evidence_id = f"ev_eq_model_{model_id}_{eq_id}"
-                equation_evidence_ids.append(evidence_id)
-                if evidence_id not in evidence_by_id:
-                    evidence_record = {
-                        "evidence_id": evidence_id,
-                        "evidence_type": "equation",
-                        "extraction_method": "equation_parse",
-                        "source_file": "equations/index.json",
-                        "source_id": eq_id,
-                        "section_heading": eq.get("section_title"),
-                        "locator": {
-                            "value": eq.get("label"),
-                            "excerpt": eq.get("text"),
-                        },
-                        "snippet": eq.get("text"),
-                        "latex": eq.get("latex"),
-                        "equation_id": eq_id,
-                    }
-                    evidence_objects.append(evidence_record)
-                    evidence_by_id[evidence_id] = evidence_record
             row["equation_ids"] = normalized_ids
             row["equations"] = resolved_equations
-            row["equation_evidence_ids"] = equation_evidence_ids
 
         if resolved_equations:
             bound_models += 1
@@ -689,14 +634,11 @@ def bind_model_equations(
             _safe_list(claim_row.get("governing_equation_ids")),
             equation_by_id=equation_by_id,
             equation_lookup=equation_lookup,
-            evidence_objects=evidence_objects,
-            evidence_by_id=evidence_by_id,
             owner_prefix="claim",
             owner_id=claim_id,
         )
         claim_row["governing_equation_ids"] = claim_eq_ids
         claim_row["governing_equations"] = claim_eqs
-        claim_row["equation_evidence_ids"] = claim_ev_ids
         bound_equations += claim_count
         model_id = str(_safe_dict(claim_row.get("applies_to")).get("model_id") or "").strip()
         if model_id and claim_eq_ids:
@@ -714,7 +656,7 @@ def bind_model_equations(
             extra_ids = claim_eqs_by_model.get(model_id, [])
             if extra_ids:
                 merged_ids = _merge_unique(_safe_list(row.get("equation_ids")) + extra_ids)
-                resolved_equations, equation_evidence_ids = [], []
+                resolved_equations = []
                 for eq_id in merged_ids:
                     eq = equation_by_id.get(eq_id)
                     if not eq:
@@ -727,29 +669,8 @@ def bind_model_equations(
                         "latex": eq.get("latex"),
                         "text_file": eq.get("text_file"),
                     })
-                    evidence_id = f"ev_eq_model_{model_id}_{eq_id}"
-                    equation_evidence_ids.append(evidence_id)
-                    if evidence_id not in evidence_by_id:
-                        evidence_record = {
-                            "evidence_id": evidence_id,
-                            "evidence_type": "equation",
-                            "extraction_method": "equation_parse",
-                            "source_file": eq.get("source_file") or "equations/index.json",
-                            "source_id": eq_id,
-                            "section_heading": eq.get("section_title"),
-                            "locator": {
-                                "value": eq.get("label"),
-                                "excerpt": eq.get("text"),
-                            },
-                            "snippet": eq.get("text"),
-                            "latex": eq.get("latex"),
-                            "equation_id": eq_id,
-                        }
-                        evidence_objects.append(evidence_record)
-                        evidence_by_id[evidence_id] = evidence_record
                 row["equation_ids"] = merged_ids
                 row["equations"] = resolved_equations
-                row["equation_evidence_ids"] = equation_evidence_ids
             refreshed_models.append(row)
         extracted["models"] = refreshed_models
 

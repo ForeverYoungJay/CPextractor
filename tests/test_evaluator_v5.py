@@ -50,7 +50,7 @@ class EvaluatorV5Tests(unittest.TestCase):
                     "applies_to": {
                         "scope": "branch",
                         "model_id": "model_cp",
-                        "branch_id": "branch_flow",
+                        "branch_ids": ["branch_flow"],
                     },
                     "evidence_ids": ["ev_1"],
                     "evidence": {"evidence_text": "tau0 = 85 MPa"},
@@ -125,7 +125,7 @@ class EvaluatorV5Tests(unittest.TestCase):
                         "scope": "branch",
                         "material_id": "mat_1",
                         "model_id": "model_cp",
-                        "branch_id": "branch_flow",
+                        "branch_ids": ["branch_flow"],
                     },
                     "governing_equation_ids": ["(3)", "(4)"],
                     "provenance": {"origin_type": "calibrated"},
@@ -189,7 +189,7 @@ class EvaluatorV5Tests(unittest.TestCase):
             self.assertEqual(["(3)", "(4)"], row["branch_context"]["governing_equation_ids"])
             self.assertEqual(["(3)", "(4)", "(5)"], row["model_context"]["equation_ids"])
             self.assertEqual("extractor_raw_document_backfill_v5", row["evaluator_mode"])
-            self.assertEqual(["ev_1"], row["source"]["evidence_ids"])
+            self.assertEqual(["ev_1"], row["evidence_linkage"]["claim_evidence_ids"])
             self.assertTrue(row["inferred_support"])
             self.assertEqual("table", row["inferred_support"][0]["source_type"])
 

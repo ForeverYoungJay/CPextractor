@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">CPextractor chatbot workflow</title>
+  <desc id="desc">Workflow diagram for the CPextractor evidence-grounded chatbot, from user query through hybrid retrieval, evidence packaging, LLM synthesis, and UI output.</desc>
+
+  <defs>
+    <linearGradient id="hero" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#123B63"/>
+      <stop offset="100%" stop-color="#2A6F97"/>
+    </linearGradient>
+    <style>
+      .bg { fill: #f6f8fb; }
+      .panel { fill: #ffffff; stroke: #d9e3ec; stroke-width: 2; }
+      .panel-alt { fill: #eef4f8; stroke: #d9e3ec; stroke-width: 2; }
+      .route { fill: #fbfdff; stroke: #c8d7e3; stroke-width: 1.6; }
+      .accent { fill: url(#hero); stroke: #123B63; stroke-width: 2; }
+      .warm { fill: #fff4ec; stroke: #f0ccb2; stroke-width: 1.6; }
+      .title { font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif; font-size: 34px; font-weight: 700; fill: #102033; }
+      .subtitle { font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif; font-size: 18px; font-weight: 500; fill: #5a6b7b; }
+      .kicker { font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.16em; fill: #2A6F97; }
+      .box-title { font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif; font-size: 21px; font-weight: 700; fill: #102033; }
+      .box-title-invert { font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif; font-size: 22px; font-weight: 700; fill: #ffffff; }
+      .body { font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif; font-size: 16px; font-weight: 500; fill: #102033; }
+      .small { font-family: "Aptos", "Helvetica Neue", "Segoe UI", Arial, sans-serif; font-size: 14px; font-weight: 500; fill: #5a6b7b; }
+      .mono { font-family: "SFMono-Regular", "Consolas", monospace; font-size: 14px; font-weight: 500; fill: #123B63; }
+      .chip { fill: #edf4fb; stroke: #bfd3e4; stroke-width: 1; }
+      .line { stroke: #2A6F97; stroke-width: 3.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .soft-line { stroke: #9bb6c8; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .arrow { fill: #2A6F97; }
+      .dot { fill: #123B63; }
+    </style>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" class="arrow"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="900"/>
+
+  <text x="64" y="66" class="title">CPextractor Chatbot: Evidence-Grounded Answering over Papers and Structured Claims</text>
+  <text x="64" y="98" class="subtitle">The chatbot does not answer from the raw model alone. It first retrieves chunks, parameter claims, table rows, structured JSON hits, and equations, then constrains synthesis to those evidence items.</text>
+
+  <rect x="64" y="132" width="1472" height="126" rx="22" ry="22" class="accent"/>
+  <text x="92" y="164" class="kicker" fill="#dbe8f3">STEP 1</text>
+  <text x="92" y="196" class="box-title-invert">User query enters the retrieval pipeline</text>
+  <text x="92" y="224" class="body" fill="#ffffff">Example: “What hardening parameters were used for FCC aluminum, and what evidence supports them?”</text>
+  <rect x="1140" y="158" width="360" height="66" rx="14" ry="14" fill="#ffffff" fill-opacity="0.10" stroke="#ffffff" stroke-opacity="0.22" stroke-width="1.4"/>
+  <text x="1164" y="186" class="small" fill="#ffffff">Runtime controls from Streamlit UI</text>
+  <text x="1164" y="209" class="mono" fill="#ffffff">embedding model | LLM model | top-k | retrieve-only</text>
+
+  <rect x="64" y="292" width="1472" height="302" rx="24" ry="24" class="panel-alt"/>
+  <text x="92" y="324" class="kicker">STEP 2</text>
+  <text x="92" y="354" class="box-title">Hybrid retrieval gathers multiple evidence views of the corpus</text>
+
+  <rect x="92" y="386" width="268" height="174" rx="18" ry="18" class="route"/>
+  <text x="112" y="416" class="box-title">Vector route A</text>
+  <text x="112" y="446" class="body">`chunks`</text>
+  <text x="112" y="472" class="small">Paragraph-level text snippets from sections and full text.</text>
+  <rect x="112" y="494" width="208" height="26" rx="13" ry="13" class="chip"/>
+  <text x="124" y="512" class="mono">semantic search over paper text</text>
+
+  <rect x="384" y="386" width="268" height="174" rx="18" ry="18" class="route"/>
+  <text x="404" y="416" class="box-title">Vector route B</text>
+  <text x="404" y="446" class="body">`parameter_vectors`</text>
+  <text x="404" y="472" class="small">Claim-level structured retrieval with material, phase, condition, value, and evidence snippet.</text>
+  <rect x="404" y="494" width="214" height="26" rx="13" ry="13" class="chip"/>
+  <text x="416" y="512" class="mono">claim-centric scientific retrieval</text>
+
+  <rect x="676" y="386" width="268" height="174" rx="18" ry="18" class="route"/>
+  <text x="696" y="416" class="box-title">Vector route C</text>
+  <text x="696" y="446" class="body">`table_row_vectors`</text>
+  <text x="696" y="472" class="small">Retrieves row-wise table content when numeric answers live in tabular evidence.</text>
+  <rect x="696" y="494" width="198" height="26" rx="13" ry="13" class="chip"/>
+  <text x="708" y="512" class="mono">table-row semantic matching</text>
+
+  <rect x="968" y="386" width="268" height="174" rx="18" ry="18" class="route"/>
+  <text x="988" y="416" class="box-title">Structured route</text>
+  <text x="988" y="446" class="body">`extractions.extracted_json`</text>
+  <text x="988" y="472" class="small">ILIKE-based lookup over claim fields, symbols, descriptions, and document JSON.</text>
+  <rect x="988" y="494" width="204" height="26" rx="13" ry="13" class="chip"/>
+  <text x="1000" y="512" class="mono">field-aware SQL retrieval</text>
+
+  <rect x="1260" y="386" width="248" height="174" rx="18" ry="18" class="route"/>
+  <text x="1280" y="416" class="box-title">Equation route</text>
+  <text x="1280" y="446" class="body">`equations/index.json`</text>
+  <text x="1280" y="472" class="small">Pulls candidate constitutive equations and LaTeX when the question is model- or formula-related.</text>
+  <rect x="1280" y="494" width="172" height="26" rx="13" ry="13" class="chip"/>
+  <text x="1292" y="512" class="mono">formula-aware retrieval</text>
+
+  <path d="M226 560 L226 586" class="soft-line" marker-end="url(#arrow)"/>
+  <path d="M518 560 L518 586" class="soft-line" marker-end="url(#arrow)"/>
+  <path d="M810 560 L810 586" class="soft-line" marker-end="url(#arrow)"/>
+  <path d="M1102 560 L1102 586" class="soft-line" marker-end="url(#arrow)"/>
+  <path d="M1384 560 L1384 586" class="soft-line" marker-end="url(#arrow)"/>
+
+  <rect x="392" y="616" width="816" height="126" rx="20" ry="20" class="panel"/>
+  <text x="420" y="648" class="kicker">STEP 3</text>
+  <text x="420" y="678" class="box-title">Evidence packaging assigns stable IDs before synthesis</text>
+  <text x="420" y="706" class="body">`build_user_prompt(...)` formats every retrieved item into a numbered evidence bundle:</text>
+  <text x="420" y="732" class="mono">C1... = chunk hits | P1... = parameter vectors | T1... = table rows | S1... = structured hits | Q1... = equations</text>
+
+  <path d="M800 742 L800 780" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="64" y="786" width="676" height="90" rx="18" ry="18" class="warm"/>
+  <text x="88" y="820" class="box-title">Step 4: LLM synthesis is evidence-constrained</text>
+  <text x="88" y="848" class="small">The system prompt forces the model to answer only from provided evidence, state uncertainty when support is missing, and return structured JSON.</text>
+
+  <rect x="770" y="770" width="766" height="106" rx="18" ry="18" class="panel"/>
+  <text x="794" y="802" class="box-title">Step 5: UI shows both answer and audit trail</text>
+  <text x="794" y="830" class="small">Streamlit renders `answer`, `confidence`, `claims`, `gaps`, and expandable retrieval tabs so the user can inspect the exact evidence behind the response.</text>
+  <text x="794" y="854" class="mono">chunks | parameter vectors | structured hits | equations</text>
+
+  <path d="M740 832 L770 832" class="line" marker-end="url(#arrow)"/>
+
+  <circle cx="1450" cy="182" r="4.5" class="dot"/>
+  <circle cx="1480" cy="182" r="4.5" class="dot"/>
+  <circle cx="1510" cy="182" r="4.5" class="dot"/>
+</svg>

@@ -14,6 +14,23 @@ _STRESS_FACTORS = {
 }
 
 
+def _normalize_verdict(value: Any, default: str = "") -> str:
+    raw = str(value or "").strip().lower()
+    mapping = {
+        "accepted": "accepted",
+        "pass": "accepted",
+        "passed": "accepted",
+        "flagged": "flagged",
+        "warning": "flagged",
+        "warn": "flagged",
+        "needs_review": "flagged",
+        "rejected": "rejected",
+        "fail": "rejected",
+        "failed": "rejected",
+    }
+    return mapping.get(raw, default)
+
+
 def _score_to_bucket(score: float) -> str:
     if score >= 85:
         return "high"
@@ -23,10 +40,10 @@ def _score_to_bucket(score: float) -> str:
 
 
 def _quality_tier(*, doc_bucket: str, verdict: str | None, doc_score: float) -> str:
-    verdict = str(verdict or "").strip().lower()
-    if doc_bucket == "high" and verdict == "pass" and doc_score >= 85:
+    verdict = _normalize_verdict(verdict)
+    if doc_bucket == "high" and verdict == "accepted" and doc_score >= 85:
         return "gold"
-    if doc_bucket in {"high", "medium"} and verdict in {"pass", "warning"} and doc_score >= 60:
+    if doc_bucket in {"high", "medium"} and verdict in {"accepted", "flagged"} and doc_score >= 60:
         return "silver"
     return "candidate"
 
@@ -93,7 +110,7 @@ def _is_high_risk_table_claim(item: Dict[str, Any], audit: Dict[str, Any]) -> bo
     uncertainty_types = {str(v or "").strip().lower() for v in (audit.get("uncertainty_types") or []) if str(v or "").strip()}
     if error_types & {"wrong_value", "provenance_conflict", "missing_key_field", "cross_material_mixup", "model_variant_confusion"}:
         return True
-    if str(audit.get("verdict") or "").strip().lower() == "fail" and not uncertainty_types.issubset({"missing_evidence", "weak_grounding", "table_parse_uncertain"}):
+    if _normalize_verdict(audit.get("verdict")) == "rejected" and not uncertainty_types.issubset({"missing_evidence", "weak_grounding", "table_parse_uncertain"}):
         return True
     if item.get("value") in (None, "") and item.get("value_SI") in (None, ""):
         return True
@@ -188,29 +205,25 @@ def fuse_confidence(
         grounding_status = _grounding_status(extracted_json, item)
         penalty += _grounding_penalty(extracted_json, item)
 
-        llm_score = audit.get("score")
         adjusted = audit.get("policy_adjusted_consensus") if isinstance(audit.get("policy_adjusted_consensus"), dict) else {}
-        if isinstance(adjusted.get("score"), (int, float)):
-            llm_score = adjusted.get("score")
-        if isinstance(llm_score, (int, float)):
-            fused = (0.20 * max(0.0, 100.0 - penalty)) + (0.65 * float(llm_score)) + (0.15 * base)
-        else:
-            fused = (0.45 * max(0.0, 100.0 - penalty)) + (0.55 * base)
+        fused = (0.45 * max(0.0, 100.0 - penalty)) + (0.55 * base)
 
-        llm_verdict = str(adjusted.get("verdict") or audit.get("verdict") or "").strip().lower()
+        llm_verdict = _normalize_verdict(adjusted.get("verdict") or audit.get("verdict"))
         error_types = {str(v or "").strip().lower() for v in (audit.get("error_types") or []) if str(v or "").strip()}
         uncertainty_types = {str(v or "").strip().lower() for v in (audit.get("uncertainty_types") or []) if str(v or "").strip()}
-        if llm_verdict == "fail" and "wrong_unit_conversion" in error_types and _si_conversion_consistent(item):
-            llm_verdict = "warning"
+        if llm_verdict == "rejected" and "wrong_unit_conversion" in error_types and _si_conversion_consistent(item):
+            llm_verdict = "flagged"
         table_based = _is_table_based_claim(extracted_json, item)
         if table_based and uncertainty_types and uncertainty_types.issubset({"missing_evidence", "weak_grounding", "table_parse_uncertain"}) and not _is_high_risk_table_claim(item, audit):
-            if llm_verdict == "fail":
-                llm_verdict = "warning"
+            if llm_verdict == "rejected":
+                llm_verdict = "flagged"
             fused = max(fused, 72.0)
-        if llm_verdict == "fail":
-            fused = min(fused, 59.0)
-        elif llm_verdict == "warning":
+        if llm_verdict == "rejected":
+            fused = min(fused, 54.0)
+        elif llm_verdict == "flagged":
             fused = min(fused, 84.0)
+        elif llm_verdict == "accepted":
+            fused = max(fused, 70.0)
 
         review_required = bool(adjusted.get("review_required")) if "review_required" in adjusted else bool(audit.get("review_required"))
         if "wrong_unit_conversion" in error_types and _si_conversion_consistent(item):
@@ -229,7 +242,7 @@ def fuse_confidence(
         item["quality_assessment"]["final_confidence_score"] = round(fused, 2)
         item["quality_assessment"]["rule_issue_count"] = len(issues)
         item["quality_assessment"]["llm_audited"] = bool(audit)
-        item["quality_assessment"]["llm_verdict"] = audit.get("verdict")
+        item["quality_assessment"]["llm_verdict"] = llm_verdict or _normalize_verdict(audit.get("verdict"))
         item["quality_assessment"]["grounding_status"] = grounding_status
 
         param_scores.append({
@@ -240,7 +253,7 @@ def fuse_confidence(
             "score": round(fused, 2),
             "confidence": bucket,
             "rule_issue_count": len(issues),
-            "llm_verdict": llm_verdict or audit.get("verdict"),
+            "llm_verdict": llm_verdict or _normalize_verdict(audit.get("verdict")),
             "review_required": review_required,
             "grounding_status": grounding_status,
             "table_based": table_based,
@@ -248,16 +261,15 @@ def fuse_confidence(
 
     quality_skipped = bool(quality_report.get("skipped"))
     doc_rule_score = None if quality_skipped else float(quality_report.get("rule_score") or 0.0)
-    doc_llm_score = float(evaluation_report.get("overall_score") or 0.0) if evaluation_report else None
     if quality_skipped:
-        final_doc_score = doc_llm_score if doc_llm_score is not None else 100.0
-    elif doc_llm_score is None:
-        final_doc_score = float(doc_rule_score or 0.0)
+        final_doc_score = 100.0
+    elif doc_rule_score is None:
+        final_doc_score = 100.0
     else:
-        final_doc_score = (0.55 * float(doc_rule_score or 0.0)) + (0.45 * doc_llm_score)
+        final_doc_score = float(doc_rule_score or 0.0)
 
-    fail_count = sum(1 for r in param_scores if str(r.get("llm_verdict") or "").strip().lower() == "fail")
-    warning_count = sum(1 for r in param_scores if str(r.get("llm_verdict") or "").strip().lower() == "warning")
+    rejected_count = sum(1 for r in param_scores if _normalize_verdict(r.get("llm_verdict")) == "rejected")
+    flagged_count = sum(1 for r in param_scores if _normalize_verdict(r.get("llm_verdict")) == "flagged")
     review_required_count = sum(1 for r in param_scores if r.get("review_required"))
     not_grounded_count = sum(
         1 for r in param_scores
@@ -266,22 +278,27 @@ def fuse_confidence(
     review_escalation = ((evaluation_report.get("review_escalation") or {}) if isinstance(evaluation_report, dict) else {})
     disagreement_count = int(review_escalation.get("disagreement_count") or 0)
 
-    final_doc_score -= fail_count * 8.0
-    final_doc_score -= warning_count * 3.0
+    doc_verdict = _normalize_verdict(evaluation_report.get("verdict")) if isinstance(evaluation_report, dict) else ""
+    if doc_verdict == "rejected":
+        final_doc_score = min(final_doc_score, 54.0)
+    elif doc_verdict == "flagged":
+        final_doc_score = min(final_doc_score, 84.0)
+
+    final_doc_score -= rejected_count * 8.0
+    final_doc_score -= flagged_count * 3.0
     final_doc_score -= min(10.0, not_grounded_count * 2.5)
     final_doc_score -= min(8.0, disagreement_count * 1.5)
     final_doc_score = max(0.0, final_doc_score)
 
     doc_bucket = _score_to_bucket(final_doc_score)
-    doc_verdict = evaluation_report.get("verdict") if isinstance(evaluation_report, dict) else None
     quality_tier = _quality_tier(doc_bucket=doc_bucket, verdict=doc_verdict, doc_score=float(final_doc_score))
     soft_review_only = (
-        fail_count == 0
-        and str(doc_verdict or "").strip().lower() == "pass"
+        rejected_count == 0
+        and doc_verdict == "accepted"
         and final_doc_score >= 85.0
         and review_required_count <= 2
     )
-    if fail_count or (review_required_count and not soft_review_only):
+    if rejected_count or (review_required_count and not soft_review_only):
         quality_tier = "candidate"
     extracted_json["quality_tier"] = quality_tier
     report = {
@@ -290,16 +307,18 @@ def fuse_confidence(
         "quality_tier": quality_tier,
         "rule_score": round(doc_rule_score, 2) if doc_rule_score is not None else None,
         "rule_checks_skipped": quality_skipped,
-        "llm_score": round(doc_llm_score, 2) if doc_llm_score is not None else None,
+        "llm_score": None,
         "parameter_confidence": param_scores,
-        "fail_parameter_count": fail_count,
-        "warning_parameter_count": warning_count,
+        "rejected_parameter_count": rejected_count,
+        "flagged_parameter_count": flagged_count,
+        "fail_parameter_count": rejected_count,
+        "warning_parameter_count": flagged_count,
         "review_required_parameter_count": review_required_count,
         "disagreement_count": disagreement_count,
         "review_recommended": (
             doc_bucket == "low"
             or any(r["confidence"] == "low" for r in param_scores)
-            or fail_count > 0
+            or rejected_count > 0
             or review_required_count > 0
             or bool(review_escalation.get("required"))
         ),

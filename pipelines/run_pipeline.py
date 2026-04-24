@@ -205,14 +205,28 @@ def main():
     local_dois_mode = bool(pipeline_cfg.get("use_local_fulltext_dois", skip_fulltext_download))
     configured_dois = pipeline_cfg.get("dois", []) or []
     gate_on_evaluation = bool(pipeline_cfg.get("gate_on_evaluation", True))
-    gate_block_verdicts = {str(v).strip().lower() for v in (pipeline_cfg.get("db_ingest_block_verdicts", ["fail"]) or ["fail"])}
+    gate_block_verdicts = {
+        str(v).strip().lower()
+        for v in (pipeline_cfg.get("db_ingest_block_verdicts", ["rejected"]) or ["rejected"])
+    }
     gate_min_confidence = float(pipeline_cfg.get("db_ingest_min_document_confidence_score", 65.0))
-    gate_block_review_escalation_on_pass = bool(pipeline_cfg.get("db_ingest_block_review_escalation_on_pass", False))
-    gate_review_escalation_pass_min_confidence = float(
-        pipeline_cfg.get("db_ingest_review_escalation_pass_min_confidence_score", 85.0)
+    gate_block_review_escalation_on_accepted = bool(
+        pipeline_cfg.get(
+            "db_ingest_block_review_escalation_on_accepted",
+            pipeline_cfg.get("db_ingest_block_review_escalation_on_pass", False),
+        )
     )
-    gate_review_escalation_pass_max_review_required = int(
-        pipeline_cfg.get("db_ingest_review_escalation_pass_max_review_required_parameters", 2)
+    gate_review_escalation_accepted_min_confidence = float(
+        pipeline_cfg.get(
+            "db_ingest_review_escalation_accepted_min_confidence_score",
+            pipeline_cfg.get("db_ingest_review_escalation_pass_min_confidence_score", 85.0),
+        )
+    )
+    gate_review_escalation_accepted_max_review_required = int(
+        pipeline_cfg.get(
+            "db_ingest_review_escalation_accepted_max_review_required_parameters",
+            pipeline_cfg.get("db_ingest_review_escalation_pass_max_review_required_parameters", 2),
+        )
     )
     skip_quality_checks = bool(pipeline_cfg.get("skip_quality_checks", True))
     image_table_cfg = pipeline_cfg.get("image_backed_tables", {}) or {}
@@ -417,9 +431,9 @@ def main():
                 blocked_verdicts=gate_block_verdicts,
                 min_document_confidence_score=gate_min_confidence,
                 paper_dir=paper_dir,
-                block_review_escalation_on_pass=gate_block_review_escalation_on_pass,
-                review_escalation_pass_min_confidence_score=gate_review_escalation_pass_min_confidence,
-                review_escalation_pass_max_review_required_parameters=gate_review_escalation_pass_max_review_required,
+                block_review_escalation_on_accepted=gate_block_review_escalation_on_accepted,
+                review_escalation_accepted_min_confidence_score=gate_review_escalation_accepted_min_confidence,
+                review_escalation_accepted_max_review_required_parameters=gate_review_escalation_accepted_max_review_required,
             )
             blocked_by_gate = bool(reports["ingest_gate"].get("blocked"))
 

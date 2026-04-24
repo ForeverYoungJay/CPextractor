@@ -115,7 +115,117 @@ def load_md_files(folder: str) -> List[Dict[str, Any]]:
     return out
 
 
-def _table_json_summary(table_json: Dict[str, Any], max_rows: int = 8, max_cells_per_row: int = 10) -> str:
+def _is_comparative_parameter_table_json(table_json: Dict[str, Any]) -> bool:
+    caption = str(table_json.get("caption") or "").lower()
+    rows = table_json.get("rows")
+    if "elastic constants" in caption and ("slip strength" in caption or "zener ratio" in caption):
+        return True
+    if not isinstance(rows, list) or not rows:
+        return False
+    first_row = " ".join(str(cell or "") for cell in rows[0]).lower()
+    return "material" in first_row and ("elastic constants" in first_row or "slip modes" in first_row)
+
+
+def _numeric_token(text: Any) -> str | None:
+    token = str(text or "").strip().replace("−", "-").replace("–", "-")
+    if re.fullmatch(r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?", token):
+        return token
+    return None
+
+
+def _citation_token(text: Any) -> str | None:
+    token = str(text or "").strip()
+    if re.fullmatch(r"\[[^\]]+\]", token):
+        return token
+    return None
+
+
+def _render_comparative_parameter_matrix(table_json: Dict[str, Any], max_rows: int | None = None) -> str:
+    rows = table_json.get("rows")
+    caption = str(table_json.get("caption") or "").strip()
+    if not isinstance(rows, list):
+        return caption
+
+    lines: List[str] = []
+    if caption:
+        lines.append(f"Caption: {caption}")
+
+    fcc_slip_label = None
+    hcp_slip_labels: List[str] = []
+    current_structure = None
+    rendered_data_rows = 0
+
+    for row in rows:
+        if max_rows is not None and rendered_data_rows >= max_rows:
+            break
+        if not isinstance(row, list):
+            continue
+        cells = [str(cell or "").strip() for cell in row]
+        if not any(cells):
+            continue
+        joined = " ".join(cells)
+
+        if "Zener" in joined and "C 11" in joined:
+            fcc_slip_label = next((cell for cell in cells if "{ 1 1" in cell or "110" in cell), None)
+            continue
+        if "Prismatic" in joined or "Basal" in joined or "Pyramidal" in joined:
+            current_structure = "HCP"
+            hcp_slip_labels = [cell for cell in cells if any(tok in cell for tok in ("Prismatic", "Basal", "Pyramidal"))]
+            lines.append(
+                "HCP slip-mode columns: " + ", ".join(hcp_slip_labels)
+                if hcp_slip_labels else "HCP slip-mode columns detected."
+            )
+            continue
+
+        explicit_structure = next((cell for cell in cells[:2] if cell in {"FCC", "HCP", "BCC"}), None)
+        if explicit_structure:
+            current_structure = explicit_structure
+
+        material = next(
+            (
+                cell for cell in cells[:4]
+                if cell
+                and cell not in {"FCC", "HCP", "BCC"}
+                and _numeric_token(cell) is None
+                and _citation_token(cell) is None
+            ),
+            None,
+        )
+        if not material or current_structure not in {"FCC", "HCP"}:
+            continue
+
+        numeric_values = [token for token in (_numeric_token(cell) for cell in cells) if token is not None]
+        citations = [token for token in (_citation_token(cell) for cell in cells) if token is not None]
+
+        if current_structure == "FCC" and len(numeric_values) >= 5:
+            slip_label = fcc_slip_label or "active slip mode"
+            lines.append(
+                f"Comparative row: Structure=FCC, Material={material}, Zener={numeric_values[0]}, "
+                f"C11={numeric_values[1]} GPa, C12={numeric_values[2]} GPa, C44={numeric_values[3]} GPa, "
+                f"τ0,i for {slip_label}={numeric_values[4]} MPa"
+                + (f", Ref={citations[0]}" if citations else "")
+            )
+            rendered_data_rows += 1
+            continue
+
+        if current_structure == "HCP" and hcp_slip_labels and len(numeric_values) >= len(hcp_slip_labels):
+            slip_values = numeric_values[-len(hcp_slip_labels):]
+            prefix_parts = [f"Structure=HCP", f"Material={material}"]
+            if len(numeric_values) > len(hcp_slip_labels):
+                prefix_parts.append(f"c/a={numeric_values[0]}")
+            if len(numeric_values) > len(hcp_slip_labels) + 1:
+                prefix_parts.append(f"C11={numeric_values[1]} GPa")
+            slip_parts = [f"{label}={value} MPa" for label, value in zip(hcp_slip_labels, slip_values)]
+            line = "Comparative row: " + ", ".join(prefix_parts + slip_parts)
+            if citations:
+                line += f", Ref={citations[-1]}"
+            lines.append(line)
+            rendered_data_rows += 1
+
+    return "\n".join(lines).strip()
+
+
+def _table_json_summary(table_json: Dict[str, Any], max_rows: int = 8, max_cells_per_row: int = 16) -> str:
     caption = str(table_json.get("caption") or "").strip()
     rows = table_json.get("rows")
     if table_json.get("table_kind") == "image_backed":
@@ -130,6 +240,8 @@ def _table_json_summary(table_json: Dict[str, Any], max_rows: int = 8, max_cells
         if local_path:
             parts.append("This table has a local image and can be passed directly to the extraction model.")
         return "\n".join(parts).strip()
+    if _is_comparative_parameter_table_json(table_json):
+        return _render_comparative_parameter_matrix(table_json, max_rows=max_rows)
     if not isinstance(rows, list):
         return caption
 
@@ -142,11 +254,13 @@ def _table_json_summary(table_json: Dict[str, Any], max_rows: int = 8, max_cells
     return "\n".join(lines).strip()
 
 
-def _table_json_full_text(table_json: Dict[str, Any], max_cells_per_row: int = 20) -> str:
+def _table_json_full_text(table_json: Dict[str, Any], max_cells_per_row: int = 40) -> str:
     caption = str(table_json.get("caption") or "").strip()
     rows = table_json.get("rows")
     if table_json.get("table_kind") == "image_backed":
         return _table_json_summary(table_json, max_rows=1000, max_cells_per_row=max_cells_per_row)
+    if _is_comparative_parameter_table_json(table_json):
+        return _render_comparative_parameter_matrix(table_json, max_rows=None)
     if not isinstance(rows, list):
         return caption
 
@@ -164,35 +278,51 @@ def _render_table_rows_with_alignment(
     max_cells_per_row: int,
 ) -> List[str]:
     rendered: List[str] = []
-    normalized_rows: List[List[str]] = []
+    raw_rows: List[List[str]] = []
     for row in rows[:max_rows]:
         if not isinstance(row, list):
             continue
         normalized = [str(cell).strip() for cell in row[:max_cells_per_row]]
         if not any(cell for cell in normalized):
             continue
-        normalized_rows.append(normalized)
+        raw_rows.append(normalized)
+
+    normalized_rows, header_row_count = _normalize_table_rows_for_render(raw_rows)
 
     if not normalized_rows:
         return rendered
 
-    header = normalized_rows[0]
-    header_labels = [cell or f"col_{idx + 1}" for idx, cell in enumerate(header)]
-    rendered.append(
-        "Columns: " + " | ".join(f"c{idx + 1}={label}" for idx, label in enumerate(header_labels))
-    )
+    base_header_rows = normalized_rows[:header_row_count]
+    active_header_rows = list(base_header_rows)
+    header_labels = _build_render_header_labels(active_header_rows)
+    rendered.append("Columns: " + " | ".join(f"c{idx + 1}={label}" for idx, label in enumerate(header_labels)))
 
     for idx, row in enumerate(normalized_rows, start=1):
-        if idx == 1:
+        if idx <= header_row_count:
             rendered.append(
-                "Header row: " + " | ".join(
+                f"Header row {idx}: " + " | ".join(
                     f"c{col_idx + 1}={cell or '<EMPTY>'}" for col_idx, cell in enumerate(row)
                 )
             )
             continue
 
+        if _looks_like_headerish_row(row):
+            active_header_rows = base_header_rows + [row]
+            header_labels = _build_render_header_labels(active_header_rows)
+            rendered.append(
+                f"Subheader row {idx}: " + " | ".join(
+                    f"c{col_idx + 1}={cell or '<EMPTY>'}" for col_idx, cell in enumerate(row)
+                )
+            )
+            rendered.append(
+                f"Columns after row {idx}: " + " | ".join(
+                    f"c{col_idx + 1}={label}" for col_idx, label in enumerate(header_labels)
+                )
+            )
+            continue
+
         cells: List[str] = []
-        row_key = row[0] if row else ""
+        row_key = _row_key_from_cells(row)
         if row_key:
             cells.append(f"row_key={row_key}")
         for col_idx, header_label in enumerate(header_labels):
@@ -200,6 +330,169 @@ def _render_table_rows_with_alignment(
             cells.append(f"{header_label}={value or '<EMPTY>'}")
         rendered.append(f"Row {idx}: " + " | ".join(cells))
     return rendered
+
+
+def _looks_like_data_row(row: List[str]) -> bool:
+    numeric_like = 0
+    for cell in row:
+        cell_norm = str(cell or "").strip()
+        if not cell_norm:
+            continue
+        compact = cell_norm.replace("−", "-").replace("–", "-").replace(" ", "")
+        if re.fullmatch(r"\[[^\]]+\]", compact):
+            continue
+        if re.fullmatch(r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?::[-+]?(?:\d+(?:\.\d+)?|\.\d+))+?", compact):
+            numeric_like += 1
+            continue
+        if re.fullmatch(r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?", compact):
+            numeric_like += 1
+    return numeric_like >= 3
+
+
+def _looks_like_headerish_row(row: List[str]) -> bool:
+    non_empty = [str(cell or "").strip() for cell in row if str(cell or "").strip()]
+    if len(non_empty) < 2 or _looks_like_data_row(row):
+        return False
+    header_tokens = 0
+    for token in non_empty:
+        token_norm = token.lower()
+        if re.search(r"(material|structure|ratio|ref|elastic|constant|slip|mode|prismatic|basal|pyramidal|c11|c12|c13|c33|c44|zener|c/a|τ|tau)", token_norm):
+            header_tokens += 1
+            continue
+        if re.search(r"[A-Za-zα-ωΑ-Ω]", token):
+            header_tokens += 1
+    return header_tokens >= max(2, len(non_empty) // 2)
+
+
+def _row_key_from_cells(row: List[str]) -> str:
+    for cell in row:
+        token = str(cell or "").strip()
+        if token and not token.startswith("<INHERITED:"):
+            return token
+    for cell in row:
+        token = str(cell or "").strip()
+        if token.startswith("<INHERITED:"):
+            return token
+    return ""
+
+
+def _pad_row(row: List[str], width: int, *, align: str) -> List[str]:
+    if len(row) >= width:
+        return row[:width]
+    missing = width - len(row)
+    if align == "right":
+        return ([""] * missing) + row
+    return row + ([""] * missing)
+
+
+def _fill_header_row(row: List[str]) -> List[str]:
+    filled: List[str] = []
+    last_non_empty = max((idx for idx, cell in enumerate(row) if str(cell or "").strip()), default=-1)
+    for idx, cell in enumerate(row):
+        value = str(cell or "").strip()
+        if value:
+            filled.append(value)
+            continue
+        if idx > last_non_empty:
+            filled.append("")
+            continue
+        carry = ""
+        for back_idx in range(idx - 1, -1, -1):
+            if row[back_idx]:
+                carry = str(row[back_idx]).strip()
+                break
+        filled.append(carry)
+    return filled
+
+
+def _build_render_header_labels(header_rows: List[List[str]]) -> List[str]:
+    if not header_rows:
+        return []
+    width = max(len(row) for row in header_rows)
+    layered: List[List[str]] = []
+    for row_idx, row in enumerate(header_rows):
+        padded = _pad_row(row, width, align="left")
+        if row_idx == 0:
+            layered.append(_fill_header_row(padded))
+            continue
+
+        filled: List[str] = []
+        last_non_empty = max((idx for idx, cell in enumerate(padded) if str(cell or "").strip()), default=-1)
+        for col_idx, cell in enumerate(padded):
+            value = str(cell or "").strip()
+            if value:
+                filled.append(value)
+                continue
+            if col_idx > last_non_empty:
+                filled.append("")
+                continue
+            if col_idx > 0 and all(
+                str(parent[col_idx] or "").strip() == str(parent[col_idx - 1] or "").strip()
+                for parent in layered
+            ):
+                filled.append(filled[-1] if filled else "")
+            else:
+                filled.append("")
+        layered.append(filled)
+
+    labels: List[str] = []
+    for col_idx in range(width):
+        parts: List[str] = []
+        for row in layered:
+            part = str(row[col_idx] or "").strip()
+            if part and (not parts or parts[-1] != part):
+                parts.append(part)
+        labels.append(" / ".join(parts) if parts else f"col_{col_idx + 1}")
+    return labels
+
+
+def _normalize_table_rows_for_render(rows: List[List[str]]) -> Tuple[List[List[str]], int]:
+    if not rows:
+        return [], 0
+
+    width = max(len(row) for row in rows)
+    header_row_count = 1
+    for idx, row in enumerate(rows[1:], start=1):
+        if _looks_like_data_row(row):
+            header_row_count = idx
+            break
+    else:
+        header_row_count = min(len(rows), 2)
+
+    normalized: List[List[str]] = []
+    data_context = [""] * width
+    for idx, row in enumerate(rows):
+        if idx < header_row_count:
+            normalized.append(_pad_row(row, width, align="left"))
+            continue
+
+        padded = _pad_row(row, width, align=_infer_data_row_alignment(row, width))
+        first_explicit = next((col_idx for col_idx, cell in enumerate(padded) if cell), width)
+        expanded: List[str] = []
+        for col_idx, cell in enumerate(padded):
+            value = str(cell or "").strip()
+            if value:
+                data_context[col_idx] = value
+                expanded.append(value)
+            elif col_idx < first_explicit and data_context[col_idx]:
+                expanded.append(f"<INHERITED:{data_context[col_idx]}>")
+            else:
+                expanded.append("")
+        normalized.append(expanded)
+
+    return normalized, max(1, header_row_count)
+
+
+def _infer_data_row_alignment(row: List[str], width: int) -> str:
+    if len(row) >= width:
+        return "left"
+    if not row:
+        return "left"
+    if any(not str(cell or "").strip() for cell in row[: min(3, len(row))]):
+        return "left"
+    if any(not str(cell or "").strip() for cell in row[:-1]):
+        return "left"
+    return "right"
 
 
 def _fallback_table_score(table: Dict[str, Any]) -> int:
@@ -1175,7 +1468,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         "process_state_id": "string or null",
         "model_id": "string or null",
         "condition_id": "string or null",
-        "branch_id": "string or null",
+        "branch_ids": ["string; use this array for one or more constitutive branches; for a single explicit branch keep one item, and for shared parameters keep every relevant branch ID"],
         "scope": "global / constituent / family / system / branch / local_region / other / string or null",
         "notes": "string or null"
       },
@@ -1199,8 +1492,8 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
   ],
   "evidence_objects": [
     {
-      "evidence_id": "string or null",
-      "evidence_type": "section_span / table_cell / table_row / figure_caption / equation / mixed / other / string or null",
+      "evidence_id": "string or null; for table-backed parameter claims, prefer a claim-specific evidence ID rather than one whole-table summary ID reused across many unrelated claims",
+      "evidence_type": "section_span / table_cell / table_row / figure_caption / equation / mixed / other / string or null; use table_cell or a claim-specific table_row for parameter-level table grounding",
       "extraction_method": "manual / text_llm / table_text_llm / table_image_ocr_llm / figure_caption_llm / equation_parse / other / string or null",
       "source_file": "string or null",
       "source_id": "string or null",
@@ -1210,11 +1503,11 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         "table_id": "string or null",
         "figure_id": "string or null",
         "equation_label": "string or null",
-        "row_name": "string or null",
-        "column_name": "string or null",
-        "cell_ref": "string or null",
-        "value": "string or null",
-        "excerpt": "string or null"
+        "row_name": "string or null; for table-backed parameter claims this should identify the active row or grouped-row segment supporting that specific claim",
+        "column_name": "string or null; for table-backed parameter claims this should identify the active value column/header for that specific claim",
+        "cell_ref": "string or null; best-effort spreadsheet-style or table-local cell reference when recoverable, especially for parameter tables",
+        "value": "string or null; for table-backed parameter claims do not leave null when the explicit value is visible in the table",
+        "excerpt": "string or null; smallest self-contained snippet that directly shows the claim-level table grounding, not just the whole table caption"
       },
       "snippet": "string or null",
       "confidence": "number or null",
@@ -1241,6 +1534,7 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
   Example: `["as_received", "forged", "solution_treated"]`.
 - Do not create a top-level `phases[]` block. Use `constituents[]` for phases, precipitates, pores, and other constituent-level entities.
 - Keep `parameter_claims[]` claim-centric: separate `parameter`, `assertion`, `applies_to`, `provenance`, and `evidence_ids`.
+- Do not rely on postprocessing to split, remap, or sharpen evidence. The extractor output itself must already contain final claim-level evidence bindings.
 - Fill `document` and `study` directly when the excerpt explicitly contains that information; otherwise leave fields null or empty.
 - Prefer final-ready bindings now rather than leaving them for later normalization or postprocessing.
 - Assign stable, reusable IDs whenever the excerpt supports them: `material_id`, `process_state_id`, `constituent_id`, `condition_id`, `model_id`, `branch_id`, `feature_id`, `claim_id`, `evidence_id`.
@@ -1280,6 +1574,9 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
   In practice this should be the union of all `models[].constitutive_branches[].governing_equation_ids`, plus any additional model-wide equations that are explicit but not branch-specific.
 - Populate `models[].constitutive_branches[]` whenever the excerpt clearly separates multiple equation branches or evolution laws.
   Typical examples are plastic branch, creep branch, combined plasticity-plus-creep branch, CRSS evolution, and backstress evolution.
+- Use `parameter_claims[].applies_to.branch_ids` for branch linkage in every case.
+  If the claim belongs to one explicit constitutive branch, keep one branch ID in the array.
+  If the same parameter claim is explicitly shared across multiple constitutive branches, keep every relevant branch ID in the same array instead of choosing only one.
 - Treat `models[].constitutive_branches[].governing_equation_ids` as a full multi-equation array, not a single best-match field.
   If one branch is defined by a flow equation plus one or more evolution or auxiliary equations, keep all explicit governing labels for that branch.
 - Use `parameter_claims[].governing_equation_ids` for the equations that directly govern, use, or evolve a specific parameter claim.
@@ -1291,6 +1588,7 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
   If the paper explains that one equation is the flow rule, another is the creep branch, another is the hardening or CRSS evolution law, and another is the backstress law, reflect those roles directly in `constitutive_branches[]`, `models[].equation_ids`, and `parameter_claims[].governing_equation_ids`.
   Do not stop after attaching the first visible equation if later numbered equations in the same constitutive block are also explicitly part of the same formulation.
   Multiple branches may share the same equation, and one branch or one parameter may also bind to multiple equations; preserve those many-to-many relationships directly in the output arrays.
+  When a single parameter claim is shared across more than one branch, express that explicitly through `parameter_claims[].applies_to.branch_ids`.
 - Treat phase constitution and crystal aggregation as separate dimensions.
   Use `materials[].phase_mode` for `single_phase` versus `multi_phase`.
   Use `materials[].crystal_aggregate` for `single_crystal`, `polycrystal`, `bicrystal`, or `oligocrystal`.
@@ -1306,13 +1604,16 @@ __SCHEMA_JSON__
 - Prefer table values over narrative values when both are present.
 - Use `provenance` only for provenance and origin tracing.
 - Use `evidence_objects[]` plus `evidence_ids` for evidence storage.
+- For table-backed parameter claims, prefer claim-specific evidence packaging over whole-table summaries.
 - Do not rely on later cleanup to infer obvious scope. If a table row or sentence makes the binding explicit, encode it directly now.
 - When a selected equation directly defines the model, flow rule, hardening law, yield function, or evolution law, attach it to the relevant branch first; `models[].equation_ids` should then act as the union summary across branches.
 - If the excerpt presents a constitutive subsection with several numbered equations belonging to the same CP formulation, attach all governing equation IDs that are explicitly part of that formulation rather than only the first equation.
 - If those equations play different constitutive roles, also distribute them into `models[].constitutive_branches[]` with the right `branch_type`.
 - Never collapse a multi-equation branch or parameter into a single equation label merely for simplicity.
   If the text explicitly supports multiple labels, the corresponding `governing_equation_ids` array should keep all of them.
-- If a selected equation directly supports a model description, also create an `evidence_objects[]` entry with `evidence_type=equation`, `source_file=equations/index.json`, and `source_id=equation_id`.
+- Do not create equation-only `evidence_objects[]` entries just because an equation is relevant.
+  Store equation support through `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids` instead of duplicating it in `evidence_ids`.
+- Do not put equation evidence IDs in `materials[].evidence_ids`, `models[].evidence_ids`, `constitutive_branches[].evidence_ids`, `parameter_claims[].evidence_ids`, or other record-level evidence links unless the equation itself is being quoted as narrative evidence beyond the equation label.
 - If equations appear only inline inside section text, still bind parameters and branches to the explicit numbered labels from the text rather than dropping the relationship.
 - If a parameter subset is calibrated from one target and another subset from a different target, keep their `provenance.calibration` blocks distinct even if they share one `condition_id`.
 - If a calibration target is tied to a named grain family, diffraction family, subset, orientation family, or local region, use the most specific compatible `observation_scope` and preserve the label in `target_description`.
@@ -1341,12 +1642,12 @@ __SCHEMA_JSON__
 - If the paper uses one shared constitutive description, even for a heterogeneous microstructure, do not artificially split parameter claims by constituent unless the excerpt explicitly gives constituent-specific values.
 - If grain-boundary effects, interface regions, or local zones are modeled separately, represent them as `microstructure_features[]` or `constituents[]` only when the excerpt explicitly distinguishes them.
 - For equation-rich constitutive sections, extract reusable `constitutive_branches[]` so different parameter subsets can bind to the right branch or evolution law rather than all sharing one generic model-level association.
-- When explicit, fill `applies_to.material_id`, `applies_to.constituent_id`, `applies_to.process_state_id`, `applies_to.model_id`, `applies_to.condition_id`, and `applies_to.branch_id`.
+- When explicit, fill `applies_to.material_id`, `applies_to.constituent_id`, `applies_to.process_state_id`, `applies_to.model_id`, `applies_to.condition_id`, and `applies_to.branch_ids`.
 - If a claim is global or shared, keep `scope` broad and leave narrower target IDs null rather than inventing unsupported constituent or branch specificity.
 - If a claim is tied to a fitting target rather than only a physical condition, fill `provenance.calibration` rather than inventing a synthetic scope ID.
 - Keep the parameter identity in `parameter`, the numeric statement in `assertion`, and the applicability in `applies_to`.
 - Put range/bounds or qualifiers inside `assertion`, not at top level.
-- If the claim or microstructure fact comes from a table or image-backed table, create an `evidence_objects[]` entry with row/column/value/excerpt when possible and link it through `evidence_ids`.
+- If the claim or microstructure fact comes from a table or image-backed table, create an `evidence_objects[]` entry with row/column/value/excerpt and link it through `evidence_ids`.
 - Always try to fill `evidence_objects[].source_file`, `source_id`, `section_heading`, and `extraction_method` when identifiable.
 - Tables may be row-oriented, column-oriented, transposed, matrix-like, multi-level-header, grouped-row, or image-backed. Interpret all of these as valid parameter sources.
 - Table serialization may include explicit `<EMPTY>` cell markers to preserve original column alignment.
@@ -1357,6 +1658,19 @@ __SCHEMA_JSON__
 - Preserve table structure instead of flattening it. Keep row/column identity, grouped headers, section headers, and shared values explicit in `evidence_objects[].locator`.
 - `evidence_objects[].locator.row_name/column_name/value` should be human-readable labels. Do not emit row_index or column_index.
 - `evidence_objects[].locator.excerpt` should be the smallest self-contained supporting snippet: usually one table row or one grouped-row segment with the parameter label and value together.
+- For table-backed parameter claims, use claim-specific evidence packaging, not whole-table summaries.
+  The extractor output must make each claim auditable without any later evidence-splitting pass.
+- A parameter claim must not use a whole-table summary evidence object as its only table evidence when the table exposes a narrower row/cell grounding.
+- For table-backed parameter claims, include the concrete row segment and the explicit value for that claim in `locator.value` and/or `snippet` whenever the table provides it.
+- Do not leave `locator.value=null` when the same table excerpt gives an explicit parameter value that can be copied verbatim.
+- Avoid evidence objects whose excerpt only says a table has certain columns or ranges of rows if a narrower row/cell snippet is available.
+- If one table row supports multiple claims, reuse one evidence object only when its `locator.value` or `snippet` explicitly enumerates every mapped claim-value pair and a reviewer can verify each mapping directly from that one object.
+  Otherwise create smaller evidence objects so each claim has direct visible support.
+- For grouped rows such as `c11, c12, c44 -> 183.9 GPa, 123.4 GPa, 91.5 GPa`, the preferred output is one evidence object per claim with the local row/column/value context for that claim.
+- Fill `locator.cell_ref` whenever a deterministic table-local reference can be recovered; if not recoverable, keep it null rather than inventing one.
+- When a table has a dedicated value column such as `Value`, keep `locator.column_name` anchored to that header rather than copying a neighboring numeric cell.
+- For condition-rich tables with repeated temperatures, grain sizes, phases, families, or slip modes, make the active row context explicit in `locator.row_name`, `locator.column_name`, `locator.value`, or `snippet`.
+  A reviewer should be able to see the exact condition-value mapping without re-reading the whole table.
 - Reuse the same `evidence_id` from `evidence_objects[]` across all records supported by the same snippet instead of inventing near-duplicate evidence objects.
 - `parameter.canonical_name` should already use the project-standard canonical name when it is clear from symbol/description/context. Avoid verbose phrase-like names if a stable canonical label is available.
 - Use `parameter.parameter_family` for the stable middle layer between coarse domain and specific canonical name.
@@ -1366,6 +1680,8 @@ __SCHEMA_JSON__
 - If the excerpt only gives a definition, equation form, literature provenance, or says a parameter was calibrated/adopted without stating its value, omit that parameter from `parameter_claims`.
 - For grouped rows such as `c11, c12, c44 -> 183.9 GPa, 123.4 GPa, 91.5 GPa`, emit separate parameter claims for each value instead of one null-valued grouped shell.
 - For comparison tables spanning many materials or slip modes, only extract entries that can be bound to the focal studied material/phase/slip family from context; otherwise omit them rather than producing a generic null-valued parameter.
+- In comparative parameter matrices, treat explicitly reported auxiliary elastic descriptors such as `Zener ratio`, `c/a`, or similarly named anisotropy ratios as first-class parameter claims when they are given a concrete value for a specific material or phase.
+  Do not leave such quantities only inside evidence text if the table gives a one-to-one material-value mapping.
 - If a grouped row gives a numeric value but omits a unit for one segment, still emit that parameter with the explicit value and set unit to null; do not fabricate a unit.
 - Missing unit alone is not a reason to omit a parameter when the value itself is explicit and the parameter identity is clear.
 - For rows like `h, hD -> 3555 MPa, 245`, emit both parameters. Keep `h=3555 MPa`; keep `hD=245` with unit null if no unit is explicitly shown for `hD`.
@@ -1382,6 +1698,9 @@ __SCHEMA_JSON__
 - For chemical-composition matrices, each column/material should become a separate entry in `materials[]`; do not flatten the entire table into one material string.
 - For grain-size / phase-fraction / texture tables, populate `microstructure_features[]` even if the table contains no CP parameters.
 - For phase constitution tables, create `constituents[]` entries rather than a separate `phases[]` block. Add `microstructure_features[]` only for explicit measured descriptors tied to those constituents.
+- If `materials[].phase_mode=multi_phase`, actively check whether the excerpt also gives explicit named constituents such as matrix, precipitate, parent/product phases, pores, or interface regions.
+  When those named constituents are explicit, create `constituents[]` entries instead of leaving the material as multi-phase with an empty constituent list.
+  When the excerpt supports only a broad `multi_phase` statement but gives no explicit constituent identities or fractions, keep `constituents[]` empty and record that limitation in notes rather than inventing unnamed phases.
 - Treat the following as first-class `microstructure_features[]` when explicitly stated: grain size, grain-size distribution, bimodal versus uniform grain structure, recrystallized/equiaxed morphology, texture type or intensity, texture-component volume fraction, EBSD/TKD/KAM-derived lattice-distortion patterns, grain-boundary character, twinning fraction or twin-dominated texture change, grain-boundary sliding, shear bands, sub-grains/sub-boundaries, dislocation density regime, and named dislocation-network descriptions.
 - Do not stop at one generic grain-size feature if the paper gives multiple explicit microstructure states or descriptors. Emit multiple `microstructure_features[]` items when different grain sizes, temperatures, deformation stages, or microstructure modes are explicitly distinguished.
 - When the paper compares several grain sizes or microstructure states, prefer separate `process_states[]` or separately bound `microstructure_features[]` rather than collapsing them into one broad mixed state.
@@ -1432,6 +1751,9 @@ Expected behavior: populate `conditions[]` for room temperature and cryogenic te
 Example L: A comparative table lists many materials as rows or columns, with elastic constants and slip strengths for each material.
 Expected behavior: preserve one material entry per material and keep parameter claims tied to the correct material_id or microstructure_id instead of mixing all values into one generic target.
 
+Example L2: A comparative table lists one material per row and includes Zener ratio, elastic constants, and slip strengths in the same row.
+Expected behavior: emit a dedicated `zener_ratio` claim for each material whenever the table gives an explicit one-to-one value, instead of keeping Zener only inside evidence text.
+
 Example M: A selected-grain table lists grain IDs, phase labels, and grain sizes for a nanoindentation study.
 Expected behavior: populate `microstructure_features[]` entries representing the selected local regions/grains instead of collapsing the information into a free-text note.
 
@@ -1443,6 +1765,12 @@ Expected behavior: emit one parameter claim per explicit family or system value 
 
 Example P: The paper models a heterogeneous material with one shared parameter set for the whole aggregate.
 Expected behavior: keep the shared parameterization explicit through `parameterization_scope=shared` or broad applicability, but do not split parameter claims by constituent unless explicit constituent-specific values are given.
+
+Example P2: The excerpt says an alloy is multi-phase and also explicitly names matrix and precipitate phases or parent and product phases.
+Expected behavior: keep `materials[].phase_mode=multi_phase` and also create explicit `constituents[]` entries for the named constituents; do not leave `constituents[]` empty in that case.
+
+Example P3: The excerpt says a material is multi-phase but gives no explicit constituent names, fractions, or roles.
+Expected behavior: keep `materials[].phase_mode=multi_phase`, leave `constituents[]` empty, and note that the constituent-level identities were not explicitly recoverable from the excerpt.
 
 Example Q: A paper gives one parameter table, a texture table listing ED-oriented volume fraction by temperature and grain size, and results text describing bimodal versus uniform grains, KAM heterogeneity, grain-boundary sliding, and dislocation-density changes.
 Expected behavior: keep the parameter claims from the parameter table, and also emit multiple `microstructure_features[]` entries for texture fraction, bimodal or uniform morphology, heterogeneous KAM or lattice distortion, grain-boundary sliding, and low-versus-high dislocation density where each fact is explicitly supported.
@@ -1464,6 +1792,9 @@ Expected behavior: read the constitutive narrative and attach all of the explici
 
 Example W: A branch is governed by a coupled flow equation and separate hardening or backstress evolution equations, and one parameter appears in more than one of those equations.
 Expected behavior: keep every explicit related equation label in the branch and parameter `governing_equation_ids` arrays; do not force one equation per branch or one equation per parameter.
+
+Example X: A parameter such as `γ̇0,1` or `m1` appears in both a plastic-flow branch and a combined plastic-creep branch.
+Expected behavior: keep all relevant `governing_equation_ids` and set `parameter_claims[].applies_to.branch_ids` to every explicit matching branch rather than choosing only one branch.
 
 Paper excerpt:
 ----------------

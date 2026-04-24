@@ -509,34 +509,50 @@
   <g id="results_panel">
     <rect x="852" y="380" width="301" height="236" rx="10" ry="10" class="panel"/>
     <text x="870" y="403" class="panel-kicker">REPRESENTATIVE RESULTS / USE CASES</text>
-    <text x="870" y="424" class="panel-title">Machine-readable outputs from one extracted paper</text>
+    <text x="870" y="424" class="panel-title">Corpus-level results from 288 real full-text papers</text>
 
-    <rect x="870" y="440" width="126" height="72" rx="8" ry="8" class="card"/>
-    <text x="882" y="456" class="metric-label">MODEL CARD</text>
-    <text x="882" y="472" class="body-strong">Hardening law</text>
-    <text x="882" y="486" class="mono-small">models[0].constitutive_description</text>
-    <text x="882" y="497" class="mono-small">hardening.slip_hardening_law = "Voce"</text>
+    <rect x="870" y="438" width="49" height="56" rx="7" ry="7" class="card"/>
+    <text x="894.5" y="456" text-anchor="middle" class="metric-value" style="font-size:12px;">288</text>
+    <text x="894.5" y="469" text-anchor="middle" class="tiny">Papers</text>
+    <text x="894.5" y="477" text-anchor="middle" class="tiny">processed</text>
 
-    <rect x="1009" y="440" width="126" height="72" rx="8" ry="8" class="card"/>
-    <text x="1021" y="456" class="metric-label">CLAIM CARD</text>
-    <text x="1021" y="472" class="body-strong">Slip-system parameter</text>
-    <text x="1021" y="486" class="mono-small">initial_slip_strength = 525 MPa</text>
-    <text x="1021" y="497" class="mono-small">scope = family, {111} slip family</text>
+    <rect x="924" y="438" width="49" height="56" rx="7" ry="7" class="card"/>
+    <text x="948.5" y="456" text-anchor="middle" class="metric-value" style="font-size:12px;">6,093</text>
+    <text x="948.5" y="469" text-anchor="middle" class="tiny">Extracted</text>
+    <text x="948.5" y="477" text-anchor="middle" class="tiny">claims</text>
 
-    <rect x="870" y="523" width="126" height="72" rx="8" ry="8" class="card"/>
-    <text x="882" y="539" class="metric-label">BINDING CARD</text>
-    <text x="882" y="555" class="body-strong">Material / phase-aware context</text>
-    <text x="882" y="569" class="mono-small">material_id = mat_rene_88dt</text>
-    <text x="882" y="580" class="mono-small">process_state_id = ps_fully_annealed</text>
+    <rect x="978" y="438" width="49" height="56" rx="7" ry="7" class="card"/>
+    <text x="1002.5" y="456" text-anchor="middle" class="metric-value" style="font-size:12px;">6,093</text>
+    <text x="1002.5" y="469" text-anchor="middle" class="tiny">Evidence-</text>
+    <text x="1002.5" y="477" text-anchor="middle" class="tiny">linked</text>
 
-    <rect x="1009" y="523" width="126" height="72" rx="8" ry="8" class="card"/>
-    <text x="1021" y="539" class="metric-label">EVIDENCE CARD</text>
-    <text x="1021" y="555" class="body-strong">Grounded provenance</text>
-    <text x="1021" y="569" class="mono-small">origin_type = calibrated</text>
-    <text x="1021" y="580" class="mono-small">evidence_ids = [ev_tab2_fcc, ev_model_setup]</text>
+    <rect x="1032" y="438" width="49" height="56" rx="7" ry="7" class="card"/>
+    <text x="1056.5" y="456" text-anchor="middle" class="metric-value" style="font-size:12px;">4,335</text>
+    <text x="1056.5" y="469" text-anchor="middle" class="tiny">Accepted</text>
+    <text x="1056.5" y="477" text-anchor="middle" class="tiny">high-conf</text>
 
-    <rect x="870" y="604" width="265" height="12" rx="6" ry="6" class="chip-blue"/>
-    <text x="881" y="612" class="tiny">Opened case-study output: 10 materials | 2 process states | 1 condition | 1 model | 17 evidence_objects | 52 parameter_claims</text>
+    <rect x="1086" y="438" width="49" height="56" rx="7" ry="7" class="card"/>
+    <text x="1110.5" y="456" text-anchor="middle" class="metric-value" style="font-size:12px;">2,864</text>
+    <text x="1110.5" y="469" text-anchor="middle" class="tiny">DB-ready</text>
+    <text x="1110.5" y="477" text-anchor="middle" class="tiny">entries</text>
+
+    <text x="870" y="510" class="metric-label">QUALITY-CONTROL FUNNEL</text>
+    <rect x="883" y="518" width="239" height="12" rx="6" ry="6" fill="#dce9f3"/>
+    <text x="1002" y="526" text-anchor="middle" class="tiny" fill="#102033">Raw records 6,062</text>
+
+    <rect x="883" y="536" width="240" height="12" rx="6" ry="6" fill="#bfd3e4"/>
+    <text x="1003" y="544" text-anchor="middle" class="tiny" fill="#102033">Normalized claims 6,093</text>
+
+    <rect x="883" y="554" width="240" height="12" rx="6" ry="6" fill="#9bb6c8"/>
+    <text x="1003" y="562" text-anchor="middle" class="tiny" fill="#102033">Evidence-linked 6,093</text>
+
+    <rect x="906" y="572" width="194" height="12" rx="6" ry="6" fill="#6b8a8f"/>
+    <text x="1003" y="580" text-anchor="middle" class="tiny" fill="#ffffff">Committee-accepted 4,335</text>
+
+    <rect x="939" y="590" width="128" height="12" rx="6" ry="6" fill="#123b63"/>
+    <text x="1003" y="598" text-anchor="middle" class="tiny" fill="#ffffff">Database-ready 2,864</text>
+
+    <text x="870" y="612" class="tiny">Raw extraction maximizes recall. Claim normalization can split one raw row into multiple scoped claims.</text>
   </g>
 
   <!-- Takeaways -->

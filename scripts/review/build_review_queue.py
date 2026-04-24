@@ -12,6 +12,19 @@ from postprocess.param_iter import iter_parameter_items_with_index
 from postprocess.record_links import resolve_provenance_record
 
 
+def _normalize_verdict(value: str) -> str:
+    raw = str(value or "").strip().lower()
+    mapping = {
+        "accepted": "accepted",
+        "pass": "accepted",
+        "flagged": "flagged",
+        "warning": "flagged",
+        "rejected": "rejected",
+        "fail": "rejected",
+    }
+    return mapping.get(raw, raw)
+
+
 def _load_json(path: Path):
     if not path.exists():
         return {}
@@ -33,14 +46,14 @@ def _idx_from_location_text(loc: str) -> int | None:
 
 def _priority_key(row: dict) -> tuple:
     reasons = set(str(row.get("reasons") or "").split("|"))
-    llm_verdict = str(row.get("llm_verdict") or "").strip().lower()
+    llm_verdict = _normalize_verdict(row.get("llm_verdict") or "")
     confidence = str(row.get("confidence") or "").strip().lower()
     severity = 3
-    if llm_verdict == "fail":
+    if llm_verdict == "rejected":
         severity = 0
     elif "high_severity_rule_issue" in reasons or "semantic_extraction_risk" in reasons:
         severity = 1
-    elif llm_verdict == "warning" or confidence == "low":
+    elif llm_verdict == "flagged" or confidence == "low":
         severity = 2
     return (
         severity,
@@ -123,12 +136,12 @@ def _write_review_html(path: Path, rows: list[dict]) -> None:
     headers = "".join(f"<th>{escape(col)}</th>" for col in REVIEW_COLUMNS)
     body_parts = []
     for row in rows:
-        verdict = str(row.get("llm_verdict") or "").strip().lower()
+        verdict = _normalize_verdict(row.get("llm_verdict") or "")
         confidence = str(row.get("confidence") or "").strip().lower()
         css = []
-        if verdict == "fail":
+        if verdict == "rejected":
             css.append("fail")
-        elif verdict == "warning":
+        elif verdict == "flagged":
             css.append("warning")
         if confidence == "low":
             css.append("low")

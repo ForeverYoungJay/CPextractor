@@ -169,13 +169,6 @@ def build_parameter_claims(
         for evidence_id in evidence_ids:
             grounded_evidence = evidence_by_id.get(str(evidence_id or "").strip())
             if isinstance(grounded_evidence, dict):
-                claim_ids = grounded_evidence.get("claim_ids")
-                if not isinstance(claim_ids, list):
-                    claim_ids = []
-                if claim_id not in claim_ids:
-                    claim_ids.append(claim_id)
-                grounded_evidence["claim_ids"] = claim_ids
-                grounded_evidence.setdefault("claim_id", claim_id)
                 if not first_evidence:
                     first_evidence = grounded_evidence
         binding_id = item.get("binding_id")

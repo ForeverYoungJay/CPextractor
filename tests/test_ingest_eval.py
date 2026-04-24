@@ -26,7 +26,7 @@ class IngestEvaluationTests(unittest.TestCase):
             ingest_evaluation(
                 conn,
                 doi="10.1234/example",
-                evaluation={"verdict": "pass", "parameter_audits": []},
+                evaluation={"verdict": "accepted", "parameter_audits": []},
                 confidence={"document_confidence": "high"},
                 model_evaluate="gpt-test",
                 metrics={},

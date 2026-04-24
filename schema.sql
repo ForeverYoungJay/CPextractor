@@ -229,12 +229,9 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
   doi TEXT REFERENCES papers(doi) ON DELETE CASCADE,
   model_evaluate TEXT,
   verdict TEXT,
-  overall_score DOUBLE PRECISION,
   document_confidence TEXT,
   document_confidence_score DOUBLE PRECISION,
   quality_tier TEXT,
-  rule_score DOUBLE PRECISION,
-  llm_score DOUBLE PRECISION,
   review_recommended BOOLEAN,
   llm_evaluate_input_tokens INT,
   llm_evaluate_output_tokens INT,
@@ -263,12 +260,9 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
 
 ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS model_evaluate TEXT;
 ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS verdict TEXT;
-ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS overall_score DOUBLE PRECISION;
 ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS document_confidence TEXT;
 ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS document_confidence_score DOUBLE PRECISION;
 ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS quality_tier TEXT;
-ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS rule_score DOUBLE PRECISION;
-ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS llm_score DOUBLE PRECISION;
 ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS review_recommended BOOLEAN;
 ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS llm_evaluate_input_tokens INT;
 ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS llm_evaluate_output_tokens INT;
@@ -303,7 +297,6 @@ CREATE TABLE IF NOT EXISTS parameter_audits (
   canonical_name TEXT,
   symbol TEXT,
   verdict TEXT,
-  score DOUBLE PRECISION,
   supportiveness TEXT,
   exactness TEXT,
   normalization_correctness TEXT,
@@ -336,12 +329,9 @@ SELECT
   e.time_total_seconds AS pipeline_time_total_seconds,
   er.model_evaluate,
   er.verdict,
-  er.overall_score,
   er.document_confidence,
   er.document_confidence_score,
   er.quality_tier,
-  er.rule_score,
-  er.llm_score,
   er.review_recommended,
   er.llm_evaluate_input_tokens AS evaluation_llm_evaluate_input_tokens,
   er.llm_evaluate_output_tokens AS evaluation_llm_evaluate_output_tokens,

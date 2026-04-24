@@ -29,8 +29,8 @@ def _slice_name(row, paper_claim_counts, median_claim_count):
         names.append("table_backed")
         if table_kind_for_row(row) == "image_backed":
             names.append("image_backed_table")
-    if (prediction.get("llm_verdict") or "") in {"warning", "fail"}:
-        names.append("warning_or_fail")
+    if (prediction.get("llm_verdict") or "") in {"flagged", "rejected", "warning", "fail"}:
+        names.append("flagged_or_rejected")
     if prediction.get("review_required") is True:
         names.append("review_required")
     if not str(row.get("unit") or "").strip():

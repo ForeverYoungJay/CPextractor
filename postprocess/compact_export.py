@@ -43,7 +43,7 @@ def build_compact_summary(
             "process_state_id": applies_to.get("process_state_id"),
             "model_id": applies_to.get("model_id"),
             "condition_id": applies_to.get("condition_id"),
-            "branch_id": applies_to.get("branch_id"),
+            "branch_ids": _safe_list(applies_to.get("branch_ids")),
             "scope": applies_to.get("scope"),
             "value": claim.get("value", assertion.get("reported_value")),
             "unit": claim.get("unit", assertion.get("reported_unit")),

@@ -4,7 +4,7 @@ from postprocess.claim_builder import build_parameter_claims
 
 
 class ClaimBuilderTests(unittest.TestCase):
-    def test_assigns_claim_id_to_matching_evidence_objects_by_evidence_id(self):
+    def test_does_not_backfill_claim_ids_into_evidence_objects(self):
         extracted_json = {
             "parameters": {
                 "registry": [
@@ -26,8 +26,10 @@ class ClaimBuilderTests(unittest.TestCase):
 
         updated, _ = build_parameter_claims(extracted_json)
         evidence_objects = updated["evidence_objects"]
-        self.assertIsNone(evidence_objects[0].get("claim_id"))
-        self.assertEqual(evidence_objects[1].get("claim_id"), "claim_0001")
+        self.assertNotIn("claim_id", evidence_objects[0])
+        self.assertNotIn("claim_id", evidence_objects[1])
+        self.assertNotIn("claim_ids", evidence_objects[0])
+        self.assertNotIn("claim_ids", evidence_objects[1])
 
     def test_preserves_nested_v4_claim_fields(self):
         extracted_json = {
@@ -72,10 +74,10 @@ class ClaimBuilderTests(unittest.TestCase):
         claim = updated["parameter_claims"][0]
         self.assertEqual(claim["parameter"]["canonical_name"], "m")
         self.assertEqual(claim["assertion"]["reported_value"], 20)
-        self.assertIsNone(claim["assertion"]["reported_unit"])
+        self.assertNotIn("reported_unit", claim["assertion"])
         self.assertEqual(claim["governing_equation_ids"], ["eq_0003"])
         self.assertEqual(claim["evidence_ids"], ["ev_eq_model_cp_eq_0003"])
-        self.assertEqual(claim["evidence"]["evidence_text"], "m appears in the flow rule")
+        self.assertNotIn("evidence", claim)
         self.assertEqual(report["claims_built"], 1)
 
 

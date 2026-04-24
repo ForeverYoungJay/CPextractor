@@ -294,6 +294,8 @@ def _normalize_evidence_objects(extracted_json: Dict[str, Any]) -> Tuple[List[Di
         if not str(row.get("evidence_id") or "").strip():
             row["evidence_id"] = f"ev_{idx:04d}"
             ids_filled += 1
+        row.pop("claim_id", None)
+        row.pop("claim_ids", None)
         out.append(row)
     return out, ids_filled
 

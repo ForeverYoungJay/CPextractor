@@ -286,6 +286,8 @@ def load_gate_rows(pred_root: str | Path) -> List[Dict[str, Any]]:
             "decision": "gated" if gate.get("blocked") else "ingest",
             "document_confidence_score": gate.get("document_confidence_score"),
             "review_required_parameter_count": gate.get("review_required_parameter_count"),
+            "rejected_parameter_count": gate.get("rejected_parameter_count"),
+            "flagged_parameter_count": gate.get("flagged_parameter_count"),
             "fail_parameter_count": gate.get("fail_parameter_count"),
             "review_escalation_required": gate.get("review_escalation_required"),
             "review_escalation_blocks": gate.get("review_escalation_blocks"),

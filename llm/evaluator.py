@@ -45,8 +45,7 @@ Evaluate evidence support for extracted crystal-plasticity parameters.
   "parameter_audits": [
     {
       "location": "string",
-      "verdict": "pass / warning / fail",
-      "score": "number 0-100",
+      "verdict": "accepted / flagged / rejected",
       "supportiveness": "supported / unsupported / contradictory / insufficient_evidence",
       "confidence": "high / medium / low",
       "error_types": ["unsupported_claim / wrong_value / contradictory_evidence / other"],
@@ -60,7 +59,7 @@ Evaluate evidence support for extracted crystal-plasticity parameters.
 3 Processing suggestions
 - Judge only whether the claim is supported by the supplied evidence package.
 - Do not evaluate unit conversion, SI normalization, canonical_name mapping, or binding/scope coherence here.
-- Prefer `warning` instead of `fail` if evidence is incomplete rather than contradictory.
+- Prefer `flagged` instead of `rejected` if evidence is incomplete rather than contradictory.
 - A grouped table row such as `c11, c12, c44 -> 183.9 GPa, 123.4 GPa, 91.5 GPa` can be valid direct evidence for a grouped record if the extraction intentionally keeps those constants together.
 - For image-backed or table-based claims, do not require a separately grounded table cell if the extractor already indicates a coherent table/row/column/value reading. Treat extractor table reading as primary evidence unless there is a stronger contradiction.
 - Do not call a claim unsupported solely because the evidence package lacks a strict cell coordinate, if the table row/value semantics are otherwise coherent.
@@ -69,15 +68,15 @@ Evaluate evidence support for extracted crystal-plasticity parameters.
 4 Few-shot examples
 Example A:
 - Evidence explicitly states tau0 = 85 MPa and the record stores tau0 = 85 MPa.
-- Good behavior: supported, pass.
+- Good behavior: supported, accepted.
 
 Example B:
 - Evidence text does not actually contain the claimed value.
-- Good behavior: warning or fail with unsupported_claim or insufficient evidence.
+- Good behavior: flagged or rejected with unsupported_claim or insufficient evidence.
 
 Example C:
 - Evidence table cell directly contradicts the extracted value.
-- Good behavior: contradictory, fail.
+- Good behavior: contradictory, rejected.
 
 Reviewed feedback summary:
 __FEEDBACK_SUMMARY__
@@ -105,8 +104,7 @@ Evaluate normalization correctness for extracted crystal-plasticity parameters.
   "parameter_audits": [
     {
       "location": "string",
-      "verdict": "pass / warning / fail",
-      "score": "number 0-100",
+      "verdict": "accepted / flagged / rejected",
       "normalization_correctness": "correct / uncertain / likely_incorrect",
       "confidence": "high / medium / low",
       "error_types": ["wrong_unit_conversion / wrong_parameter_mapping / other"],
@@ -126,8 +124,8 @@ Evaluate normalization correctness for extracted crystal-plasticity parameters.
 - Treat MPa -> Pa as multiply by 1e6, GPa -> Pa as multiply by 1e9, and kPa -> Pa as multiply by 1e3.
 - Do not infer that a second value in a multi-parameter row inherits the first value's unit unless the evidence explicitly says so.
 - If evidence is packaged as a table-row snippet plus row context, treat that as valid direct evidence for the corresponding parameter segment.
-- Do not fail or escalate a parameter solely because unit is missing or value_SI/unit_SI are absent, if the parameter identity and explicit value are otherwise correct.
-- Missing SI normalization alone is a low-risk formatting issue, not a substantive extraction failure.
+- Do not reject or escalate a parameter solely because unit is missing or value_SI/unit_SI are absent, if the parameter identity and explicit value are otherwise correct.
+- Missing SI normalization alone is a low-risk formatting issue, not a substantive extraction problem.
 - Do not perform physical plausibility checks or magnitude-based judgments.
 - Do not label a value as a data-entry error, typo, or physically implausible if the reported value, reported unit, and SI conversion are internally consistent.
 - Unusual or extreme values are not errors in this stage.
@@ -169,7 +167,6 @@ Evaluate whether extracted parameter records are self-consistent within the pape
 - Consider material, constitutive model, mechanisms, scope, and parameter set coherence.
 - Output JSON exactly:
 {
-  "document_consistency_score": "number 0-100",
   "global_issues": [
     {
       "severity": "high / medium / low",
@@ -181,8 +178,7 @@ Evaluate whether extracted parameter records are self-consistent within the pape
   "parameter_flags": [
     {
       "location": "string",
-      "verdict": "pass / warning / fail",
-      "score": "number 0-100",
+      "verdict": "accepted / flagged / rejected",
       "completeness": "complete / partially_complete / incomplete / not_applicable",
       "confidence": "high / medium / low",
       "error_types": ["condition_binding_error / cross_material_mixup / model_variant_confusion / other"],
@@ -196,7 +192,7 @@ Evaluate whether extracted parameter records are self-consistent within the pape
 3 Processing suggestions
 - Focus only on cross-material leakage, model variant confusion, and binding coherence.
 - Do not invent missing parameters unless omission is clearly significant from the provided records.
-- Do not use `condition_binding_error` merely to express weak or indirect evidence support. If the scope/binding itself is coherent but evidence is weak, prefer `pass`.
+- Do not use `condition_binding_error` merely to express weak or indirect evidence support. If the scope/binding itself is coherent but evidence is weak, prefer `accepted`.
 - Table-based claims with coherent family/phase binding but weak explicit cell grounding should not be treated as binding inconsistencies.
 - Do not evaluate unit conversion, SI normalization, or evidence sufficiency here.
 - Do not flag a parameter merely because one slip-family value is larger than another.
@@ -211,7 +207,7 @@ Evaluate whether extracted parameter records are self-consistent within the pape
 4 Few-shot examples
 Example A:
 - FCC material with FCC slip family naming and coherent CRSS/hardening set.
-- Good behavior: high consistency score.
+- Good behavior: no parameter-level consistency issue.
 
 Example B:
 - Two materials appear mixed into one parameter block or phase/family binding conflicts with the mechanism.
@@ -248,19 +244,11 @@ META_AGENT_USER_PROMPT_TEMPLATE = """
 Produce the final document-level audit result for a crystal-plasticity extraction.
 
 2 Task requirements
-- Use the committee outputs, rule report, evidence grounding report, and source extraction summary.
+- Use only the document context summary and committee summary.
 - Output JSON exactly:
 {
-  "verdict": "pass / warning / fail",
-  "overall_score": "number 0-100",
+  "verdict": "accepted / flagged / rejected",
   "summary": "short string",
-  "dimension_scores": {
-    "schema_consistency": "number 0-100",
-    "evidence_grounding": "number 0-100",
-    "provenance_quality": "number 0-100",
-    "parameter_plausibility": "number 0-100",
-    "completeness": "number 0-100"
-  },
   "critical_issues": [
     {
       "severity": "high / medium / low",
@@ -278,11 +266,10 @@ Produce the final document-level audit result for a crystal-plasticity extractio
 3 Processing suggestions
 - Be conservative and evidence-based.
 - Treat committee disagreement as a review risk.
-- Base document-level issues on committee outputs and rule reports; do not invent new parameter-level failure theories that are not grounded in those inputs.
-- A fail should be reserved for high-risk or repeated critical issues.
+- Base document-level issues only on the provided committee outputs and document context summary; do not invent new parameter-level rejection theories that are not grounded in those inputs.
+- A rejected verdict should be reserved for high-risk or repeated critical issues.
 - Mixed provenance such as "adopted from prior work, then calibrated in this study" is acceptable and should not be escalated as provenance_conflict by itself.
-- Do not escalate low-risk table-based disagreements into critical issues when the disagreement is mainly `warning/pass` around weak grounding rather than a concrete wrong value or provenance conflict.
-- For image-backed table extractions, weak direct cell grounding alone should not dominate the document verdict if normalization and consistency remain strong.
+- Do not escalate low-risk table-based disagreements into critical issues when the disagreement is mainly `flagged/accepted` around weak grounding rather than a concrete wrong value or provenance conflict.
 - Unit-only or SI-format-only disagreements should not become document-level critical issues or mandatory review escalations.
 - Treat v5.0.2 many-to-many equation binding as normal structure, not as a schema or consistency problem.
 - Treat the presence of comparison or auxiliary models as normal when the roles and bindings are explicit.
@@ -291,23 +278,17 @@ Produce the final document-level audit result for a crystal-plasticity extractio
 4 Few-shot examples
 Example A:
 - Committee mostly agrees, evidence grounding is strong, rule issues are minor.
-- Good behavior: pass or warning.
+- Good behavior: accepted or flagged.
 
 Example B:
 - Multiple unsupported values, provenance conflicts, and severe disagreement.
-- Good behavior: fail.
+- Good behavior: rejected.
 
 Reviewed feedback summary:
 __FEEDBACK_SUMMARY__
 
 Document context summary:
 __DOC_CONTEXT_SUMMARY__
-
-Rule report:
-__QUALITY_REPORT__
-
-Evidence grounding report:
-__EVIDENCE_REPORT__
 
 Committee summary:
 __COMMITTEE_SUMMARY__
@@ -731,9 +712,22 @@ def _build_parameter_records(
         trimmed_evidence_text = _trim_text(raw_evidence_text, per_evidence_chars) if raw_evidence_text else ""
         applies_to = item.get("applies_to") if isinstance(item.get("applies_to"), dict) else {}
         model_id = str(applies_to.get("model_id") or "").strip()
-        branch_id = str(applies_to.get("branch_id") or "").strip()
+        branch_ids = [
+            str(branch or "").strip()
+            for branch in _safe_list(applies_to.get("branch_ids"))
+            if str(branch or "").strip()
+        ]
+        if not branch_ids:
+            legacy_branch_id = str(applies_to.get("branch_id") or "").strip()
+            if legacy_branch_id:
+                branch_ids = [legacy_branch_id]
         model_context = _safe_dict(model_lookup.get(model_id))
-        branch_context = _safe_dict(branch_lookup.get((model_id, branch_id)))
+        branch_contexts = [
+            _safe_dict(branch_lookup.get((model_id, bid)))
+            for bid in branch_ids
+            if branch_lookup.get((model_id, bid))
+        ]
+        branch_context = branch_contexts[0] if len(branch_contexts) == 1 else {}
         inferred_support = _infer_support_snippets(
             item=item,
             selected_sections=selected_sections,
@@ -799,6 +793,16 @@ def _build_parameter_records(
                 "name": branch_context.get("name"),
                 "governing_equation_ids": _safe_list(branch_context.get("governing_equation_ids")),
             } if branch_context else {},
+            "branch_contexts": [
+                {
+                    "branch_id": ctx.get("branch_id"),
+                    "branch_type": ctx.get("branch_type"),
+                    "name": ctx.get("name"),
+                    "governing_equation_ids": _safe_list(ctx.get("governing_equation_ids")),
+                }
+                for ctx in branch_contexts
+                if ctx
+            ],
             "evidence_linkage": {
                 "claim_evidence_ids": claim_evidence_ids,
                 "projected_evidence_ids": source_evidence_ids,
@@ -868,17 +872,17 @@ def _select_parameter_records_for_audit(
         best_pos = 0
         best_rank: Tuple[float, float, float] | None = None
         for pos, (idx, record) in enumerate(remaining):
-            novelty_score = 0.0
-            balance_score = 0.0
+            novelty_rank_value = 0.0
+            balance_rank_value = 0.0
             for axis, weight in axes_with_weights:
                 value = _audit_axis_value(record, axis)
                 if not value:
                     continue
                 seen = axis_counts[axis].get(value, 0)
                 if seen == 0:
-                    novelty_score += weight
-                balance_score += weight / (1.0 + float(seen))
-            rank = (novelty_score, balance_score, -float(idx))
+                    novelty_rank_value += weight
+                balance_rank_value += weight / (1.0 + float(seen))
+            rank = (novelty_rank_value, balance_rank_value, -float(idx))
             if best_rank is None or rank > best_rank:
                 best_rank = rank
                 best_pos = pos
@@ -912,16 +916,69 @@ def _select_parameter_records_for_audit(
     }
 
 
-def _score_bucket(score: Any) -> str:
-    try:
-        score_f = float(score)
-    except Exception:
+def _normalize_verdict(value: Any, default: str = "flagged") -> str:
+    raw = str(value or "").strip().lower()
+    mapping = {
+        "accepted": "accepted",
+        "pass": "accepted",
+        "passed": "accepted",
+        "ok": "accepted",
+        "flagged": "flagged",
+        "warning": "flagged",
+        "warn": "flagged",
+        "needs_review": "flagged",
+        "review": "flagged",
+        "rejected": "rejected",
+        "fail": "rejected",
+        "failed": "rejected",
+        "error": "rejected",
+    }
+    return mapping.get(raw, default)
+
+
+def _normalize_confidence(value: Any, default: str = "medium") -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"high", "medium", "low"}:
+        return raw
+    return default
+
+
+def _merge_confidence_levels(values: List[Any], verdict: str) -> str:
+    normalized = [_normalize_confidence(v, default="") for v in values]
+    normalized = [v for v in normalized if v]
+    if not normalized:
+        return "medium" if verdict == "accepted" else "low"
+    if verdict == "rejected":
+        return "high" if "high" in normalized else "medium"
+    if verdict == "flagged":
+        if "high" in normalized and "low" not in normalized:
+            return "medium"
         return "low"
-    if score_f >= 85:
+    if "low" in normalized:
+        return "low"
+    if "high" in normalized:
         return "high"
-    if score_f >= 60:
-        return "medium"
-    return "low"
+    return "medium"
+
+
+def _raise_confidence(current: str, minimum: str) -> str:
+    order = {"low": 0, "medium": 1, "high": 2}
+    current_norm = _normalize_confidence(current)
+    minimum_norm = _normalize_confidence(minimum)
+    return current_norm if order[current_norm] >= order[minimum_norm] else minimum_norm
+
+
+def _remove_rating_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        out: Dict[str, Any] = {}
+        for k, v in value.items():
+            if k == "score" or k.endswith("_score") or k == "dimension_scores":
+                continue
+            out[k] = _remove_rating_fields(v)
+        return out
+    if isinstance(value, list):
+        return [_remove_rating_fields(v) for v in value]
+    return value
 
 
 def _record_reported_value(record: Dict[str, Any]) -> Any:
@@ -998,7 +1055,7 @@ def _is_high_risk_table_claim(merged_row: Dict[str, Any], record: Dict[str, Any]
     error_types = {str(v or "").strip().lower() for v in (merged_row.get("error_types") or []) if str(v or "").strip()}
     if error_types & {"wrong_value", "provenance_conflict", "missing_key_field", "cross_material_mixup", "model_variant_confusion"}:
         return True
-    if str(merged_row.get("verdict") or "").strip().lower() == "fail":
+    if _normalize_verdict(merged_row.get("verdict")) == "rejected":
         return True
     if _record_reported_value(record) in (None, "") and _record_normalized_value(record) in (None, ""):
         return True
@@ -1020,7 +1077,7 @@ def _is_low_risk_evidence_disagreement(merged_row: Dict[str, Any], record: Dict[
         return False
     if uncertainty_types and uncertainty_types.issubset({"missing_evidence", "weak_grounding", "table_parse_uncertain", "condition_binding_ambiguous"}):
         votes = [str(v or "").strip().lower() for v in ((merged_row.get("committee") or {}).get("votes") or []) if str(v or "").strip()]
-        return not ("fail" in votes and len(set(votes)) == 1)
+        return not ("rejected" in votes and len(set(votes)) == 1)
     return False
 
 
@@ -1032,7 +1089,7 @@ def _is_low_risk_evidence_disagreement_row_only(merged_row: Dict[str, Any]) -> b
     if not uncertainty_types or not uncertainty_types.issubset({"missing_evidence", "weak_grounding", "table_parse_uncertain", "condition_binding_ambiguous"}):
         return False
     votes = [str(v or "").strip().lower() for v in ((merged_row.get("committee") or {}).get("votes") or []) if str(v or "").strip()]
-    return not ("fail" in votes and len(set(votes)) == 1)
+    return not ("rejected" in votes and len(set(votes)) == 1)
 
 
 def _is_low_risk_normalization_only_disagreement(
@@ -1047,7 +1104,7 @@ def _is_low_risk_normalization_only_disagreement(
     ev_verdict = str(ev.get("verdict") or "").strip().lower()
     cs_verdict = str(cs.get("verdict") or "").strip().lower()
     nm_verdict = str(nm.get("verdict") or "").strip().lower()
-    if ev_verdict != "pass" or nm_verdict not in {"warning", "fail"} or cs_verdict not in {"", "pass"}:
+    if ev_verdict != "accepted" or nm_verdict not in {"flagged", "rejected"} or cs_verdict not in {"", "accepted"}:
         return False
 
     error_types = {str(v or "").strip().lower() for v in (merged_row.get("error_types") or []) if str(v or "").strip()}
@@ -1088,11 +1145,11 @@ def _review_required_from_raw_consensus(
         "cross_material_mixup",
         "model_variant_confusion",
     }
-    if verdict == "fail" and not uncertainty_set.issubset({"missing_evidence", "weak_grounding", "table_parse_uncertain"}):
+    if verdict == "rejected" and not uncertainty_set.issubset({"missing_evidence", "weak_grounding", "table_parse_uncertain"}):
         return True
     if error_set & high_risk_errors:
         return True
-    if disagreement and "fail" in vote_set:
+    if disagreement and "rejected" in vote_set:
         return True
     return False
 
@@ -1156,14 +1213,13 @@ def _run_parameter_agent(
         for row in batch_rows:
             if not isinstance(row, dict):
                 continue
-            row.setdefault("verdict", "warning")
-            row.setdefault("score", 0)
-            row.setdefault("confidence", _score_bucket(row.get("score")))
+            row["verdict"] = _normalize_verdict(row.get("verdict"), default="flagged")
+            row["confidence"] = _normalize_confidence(row.get("confidence"), default="medium")
             row.setdefault("error_types", [])
             row.setdefault("uncertainty_types", [])
             row.setdefault("reason", "")
             row.setdefault("recommendation", "")
-            audits.append(row)
+            audits.append(_remove_rating_fields(row))
     return audits, {
         "input_tokens": total_input,
         "output_tokens": total_output,
@@ -1200,9 +1256,17 @@ def _run_consistency_agent(
     payload = json.loads(resp.choices[0].message.content)
     if not isinstance(payload, dict):
         payload = {}
-    payload.setdefault("document_consistency_score", 0)
     payload.setdefault("global_issues", [])
     payload.setdefault("parameter_flags", [])
+    normalized_flags: List[Dict[str, Any]] = []
+    for row in payload.get("parameter_flags", []) or []:
+        if not isinstance(row, dict):
+            continue
+        row["verdict"] = _normalize_verdict(row.get("verdict"), default="flagged")
+        row["confidence"] = _normalize_confidence(row.get("confidence"), default="medium")
+        normalized_flags.append(_remove_rating_fields(row))
+    payload["parameter_flags"] = normalized_flags
+    payload = _remove_rating_fields(payload)
     return payload, {
         "input_tokens": getattr(usage, "prompt_tokens", 0),
         "output_tokens": getattr(usage, "completion_tokens", 0),
@@ -1233,16 +1297,18 @@ def _merge_committee(
         ev = evidence_map.get(location, {})
         nm = norm_map.get(location, {})
         cs = consistency_map.get(location, {})
-        votes = [str(ev.get("verdict") or ""), str(nm.get("verdict") or ""), str(cs.get("verdict") or "")]
+        votes = [
+            _normalize_verdict(ev.get("verdict"), default=""),
+            _normalize_verdict(nm.get("verdict"), default=""),
+            _normalize_verdict(cs.get("verdict"), default=""),
+        ]
         non_empty_votes = [v for v in votes if v]
         disagreement = len(set(non_empty_votes)) > 1 if non_empty_votes else False
-        score_parts = [x for x in [ev.get("score"), nm.get("score"), cs.get("score")] if isinstance(x, (int, float))]
-        score = round(sum(score_parts) / len(score_parts), 2) if score_parts else 0.0
-        verdict = "pass"
-        if "fail" in non_empty_votes:
-            verdict = "fail"
-        elif "warning" in non_empty_votes:
-            verdict = "warning"
+        verdict = "accepted"
+        if "rejected" in non_empty_votes:
+            verdict = "rejected"
+        elif "flagged" in non_empty_votes:
+            verdict = "flagged"
 
         error_types: List[str] = []
         for src in (ev, nm, cs):
@@ -1268,13 +1334,15 @@ def _merge_committee(
             "canonical_name": rec.get("canonical_name"),
             "symbol": rec.get("symbol_reported") or rec.get("symbol"),
             "verdict": verdict,
-            "score": score,
             "supportiveness": ev.get("supportiveness", "insufficient_evidence"),
             "exactness": ev.get("exactness", "uncertain"),
             "normalization_correctness": nm.get("normalization_correctness", "uncertain"),
             "completeness": cs.get("completeness", "not_applicable"),
             "provenance_quality": ev.get("provenance_quality", "missing"),
-            "confidence": _score_bucket(score),
+            "confidence": _merge_confidence_levels(
+                [ev.get("confidence"), nm.get("confidence"), cs.get("confidence")],
+                verdict,
+            ),
             "error_types": error_types,
             "uncertainty_types": uncertainty_types,
             "reason": " | ".join([p for p in reason_parts if p]),
@@ -1299,7 +1367,6 @@ def _merge_committee(
             "canonical_name": merged_row.get("canonical_name"),
             "symbol": merged_row.get("symbol"),
             "verdict": merged_row.get("verdict"),
-            "score": merged_row.get("score"),
             "error_types": list(merged_row.get("error_types") or []),
             "uncertainty_types": list(merged_row.get("uncertainty_types") or []),
             "reason": merged_row.get("reason"),
@@ -1310,7 +1377,6 @@ def _merge_committee(
         merged_row["judge_consensus_raw"] = raw_consensus
         merged_row["policy_adjustments"] = []
         effective_verdict = merged_row["verdict"]
-        effective_score = float(merged_row["score"] or 0)
         effective_confidence = merged_row["confidence"]
         effective_review_required = bool(merged_row["review_required"])
         effective_normalization = merged_row["normalization_correctness"]
@@ -1320,11 +1386,10 @@ def _merge_committee(
             merged_row["policy_adjustments"].append("suppress_false_unit_conversion")
             if effective_normalization in {"likely_incorrect", "uncertain"}:
                 effective_normalization = "correct"
-            if effective_verdict == "fail":
-                effective_verdict = "warning"
+            if effective_verdict == "rejected":
+                effective_verdict = "flagged"
                 effective_review_required = disagreement
-            effective_score = max(float(effective_score or 0), 85.0)
-            effective_confidence = _score_bucket(effective_score)
+            effective_confidence = _raise_confidence(effective_confidence, "medium")
             extra = " SI conversion is numerically consistent and should not be treated as a unit-conversion failure."
             effective_reason = (effective_reason.strip() + extra).strip()
         if _is_table_based_record(record):
@@ -1336,11 +1401,10 @@ def _merge_committee(
             only_grounding_uncertainty = bool(uncertainty_types) and set(uncertainty_types).issubset({"missing_evidence", "weak_grounding", "table_parse_uncertain"})
             if only_grounding_uncertainty and not non_grounding_errors and not _is_high_risk_table_claim(merged_row, record):
                 merged_row["policy_adjustments"].append("relax_table_grounding_penalty")
-                if effective_verdict == "fail":
-                    effective_verdict = "warning"
+                if effective_verdict == "rejected":
+                    effective_verdict = "flagged"
                 effective_review_required = False
-                effective_score = max(float(effective_score or 0), 72.0)
-                effective_confidence = _score_bucket(effective_score)
+                effective_confidence = _raise_confidence(effective_confidence, "medium")
                 if "Table-based claim accepted with relaxed evidence penalty; extractor image/table reading is treated as primary evidence unless a stronger contradiction exists." not in effective_reason:
                     extra = " Table-based claim accepted with relaxed evidence penalty; extractor image/table reading is treated as primary evidence unless a stronger contradiction exists."
                     effective_reason = (effective_reason.strip() + extra).strip()
@@ -1355,18 +1419,16 @@ def _merge_committee(
         if _is_low_risk_evidence_disagreement(merged_row, record):
             merged_row["policy_adjustments"].append("downgrade_low_risk_evidence_disagreement")
             effective_review_required = False
-            effective_score = max(float(effective_score or 0), 78.0)
-            effective_confidence = _score_bucket(effective_score)
+            effective_confidence = _raise_confidence(effective_confidence, "medium")
             if "Low-risk table-based disagreement was treated as evidence incompleteness rather than a critical audit failure." not in effective_reason:
                 extra = " Low-risk table-based disagreement was treated as evidence incompleteness rather than a critical audit failure."
                 effective_reason = (effective_reason.strip() + extra).strip()
         if _is_low_risk_normalization_only_disagreement(merged_row, record, ev, nm, cs):
             merged_row["policy_adjustments"].append("downgrade_low_risk_normalization_disagreement")
             effective_review_required = False
-            if effective_verdict == "fail":
-                effective_verdict = "warning"
-            effective_score = max(float(effective_score or 0), 88.0)
-            effective_confidence = _score_bucket(effective_score)
+            if effective_verdict == "rejected":
+                effective_verdict = "flagged"
+            effective_confidence = _raise_confidence(effective_confidence, "medium")
             if "Low-risk unit/SI normalization disagreement was not treated as a mandatory review issue." not in effective_reason:
                 extra = " Low-risk unit/SI normalization disagreement was not treated as a mandatory review issue."
                 effective_reason = (effective_reason.strip() + extra).strip()
@@ -1376,19 +1438,17 @@ def _merge_committee(
                 for e in (merged_row.get("error_types") or [])
                 if str(e or "").strip()
             } - {"unsupported_claim", "other"}
-            if not non_support_errors and effective_verdict in {"warning", "fail"}:
+            if not non_support_errors and effective_verdict in {"flagged", "rejected"}:
                 merged_row["policy_adjustments"].append("trust_inferred_support_snippets")
-                if effective_verdict == "fail":
-                    effective_verdict = "warning"
+                if effective_verdict == "rejected":
+                    effective_verdict = "flagged"
                 effective_review_required = False
-                effective_score = max(float(effective_score or 0), 80.0)
-                effective_confidence = _score_bucket(effective_score)
+                effective_confidence = _raise_confidence(effective_confidence, "medium")
                 if "Extractor-first support snippets were found in the selected source files, so missing postprocessed evidence packaging was not treated as an unsupported claim." not in effective_reason:
                     extra = " Extractor-first support snippets were found in the selected source files, so missing postprocessed evidence packaging was not treated as an unsupported claim."
                     effective_reason = (effective_reason.strip() + extra).strip()
         merged_row["policy_adjusted_consensus"] = {
             "verdict": effective_verdict,
-            "score": round(effective_score, 2),
             "confidence": effective_confidence,
             "review_required": effective_review_required,
             "normalization_correctness": effective_normalization,
@@ -1396,7 +1456,6 @@ def _merge_committee(
             "recommendation": merged_row.get("recommendation"),
         }
         merged_row["verdict"] = effective_verdict
-        merged_row["score"] = round(effective_score, 2)
         merged_row["confidence"] = effective_confidence
         merged_row["review_required"] = effective_review_required
         merged_row["normalization_correctness"] = effective_normalization
@@ -1417,7 +1476,6 @@ def _merge_committee(
         "parameter_disagreements": disagreements,
         "disagreement_count": len(disagreements),
         "human_escalation_count": escalations,
-        "document_consistency_score": consistency_payload.get("document_consistency_score"),
         "global_issues": consistency_payload.get("global_issues", []),
         "raw_parameter_consensus": raw_rows,
     }
@@ -1429,8 +1487,6 @@ def _run_meta_agent(
     model_evaluate: str,
     context_meta: Dict[str, Any],
     doc_summary: Dict[str, Any],
-    quality_report: Dict[str, Any],
-    evidence_report: Dict[str, Any],
     committee_report: Dict[str, Any],
     feedback_summary: str,
     max_retries: int,
@@ -1442,11 +1498,6 @@ def _run_meta_agent(
             "selected_context": context_meta,
             "document_summary": doc_summary,
         }, ensure_ascii=False, indent=2),
-    )
-    prompt = prompt.replace("__QUALITY_REPORT__", json.dumps(quality_report, ensure_ascii=False, indent=2))
-    prompt = prompt.replace(
-        "__EVIDENCE_REPORT__",
-        json.dumps({k: v for k, v in evidence_report.items() if k != "rows"}, ensure_ascii=False, indent=2),
     )
     prompt = prompt.replace("__COMMITTEE_SUMMARY__", json.dumps(committee_report, ensure_ascii=False, indent=2))
     started = time.perf_counter()
@@ -1464,13 +1515,13 @@ def _run_meta_agent(
     payload = json.loads(resp.choices[0].message.content)
     if not isinstance(payload, dict):
         payload = {}
-    payload.setdefault("verdict", "warning")
-    payload.setdefault("overall_score", 0)
+    payload.setdefault("verdict", "flagged")
     payload.setdefault("summary", "")
-    payload.setdefault("dimension_scores", {})
     payload.setdefault("critical_issues", [])
     payload.setdefault("strengths", [])
     payload.setdefault("recommended_actions", [])
+    payload["verdict"] = _normalize_verdict(payload.get("verdict"), default="flagged")
+    payload = _remove_rating_fields(payload)
     return payload, {
         "input_tokens": getattr(usage, "prompt_tokens", 0),
         "output_tokens": getattr(usage, "completion_tokens", 0),
@@ -1573,7 +1624,7 @@ def _augment_critical_issues_from_audits(
 
         verdict = str(row.get("verdict") or "").strip().lower()
         review_required = bool(row.get("review_required"))
-        if verdict not in {"warning", "fail"} and not review_required:
+        if verdict not in {"flagged", "rejected"} and not review_required:
             continue
 
         committee = row.get("committee") if isinstance(row.get("committee"), dict) else {}
@@ -1585,8 +1636,8 @@ def _augment_critical_issues_from_audits(
         )
         for key, label in judge_labels:
             judge_row = committee.get(key) if isinstance(committee.get(key), dict) else {}
-            judge_verdict = str(judge_row.get("verdict") or "").strip().lower()
-            if judge_verdict in {"warning", "fail"}:
+            judge_verdict = _normalize_verdict(judge_row.get("verdict"), default="")
+            if judge_verdict in {"flagged", "rejected"}:
                 reason = _short_reason(_sanitize_issue_reason(judge_row.get("reason") or row.get("reason") or "", row))
                 if reason:
                     judge_reasons.append(f"{label}: {reason}")
@@ -1594,7 +1645,7 @@ def _augment_critical_issues_from_audits(
         if not judge_reasons and row.get("reason"):
             judge_reasons.append(_short_reason(_sanitize_issue_reason(row.get("reason") or "", row)))
 
-        severity = "medium" if review_required or verdict == "fail" else "low"
+        severity = "medium" if review_required or verdict == "rejected" else "low"
         category = "parameter_review_required" if review_required else "parameter_warning"
         issue_text = (
             f"{row.get('canonical_name') or row.get('symbol') or location} was flagged by the committee."
@@ -1638,8 +1689,8 @@ def run_llm_evaluation(
 
     client = OpenAI(api_key=api_key)
     _, context_meta = _load_selected_context(paper_dir=paper_dir, max_context_chars=max_context_chars)
-    quality_report = quality_report or {}
-    evidence_report = evidence_report or {}
+    _ = quality_report or {}
+    _ = evidence_report or {}
     feedback = _load_feedback_artifacts(feedback_artifact_path)
     feedback_summary = feedback["summary"]
     all_parameter_records = _build_parameter_records(
@@ -1699,8 +1750,6 @@ def run_llm_evaluation(
         model_evaluate=model_evaluate,
         context_meta=context_meta,
         doc_summary=doc_summary,
-        quality_report=quality_report,
-        evidence_report=evidence_report,
         committee_report=committee_report,
         feedback_summary=feedback_summary,
         max_retries=max_retries,
@@ -1751,6 +1800,7 @@ def run_llm_evaluation(
         },
         "feedback_summary_used": feedback_summary,
     }
+    payload = _remove_rating_fields(payload)
 
     evaluator_input_payload = {
         "schema_version": extracted_json.get("schema_version"),
@@ -1766,6 +1816,7 @@ def run_llm_evaluation(
         "parameter_records": parameter_records,
         "all_parameter_records": all_parameter_records,
     }
+    evaluator_input_payload = _remove_rating_fields(evaluator_input_payload)
     evaluator_input_path = os.path.join(paper_dir, "llm_evaluation_input.json")
     with open(evaluator_input_path, "w", encoding="utf-8") as f:
         json.dump(evaluator_input_payload, f, ensure_ascii=False, indent=2)

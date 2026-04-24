@@ -62,11 +62,11 @@ pipeline:
   local_fulltext_input_root: ""
   dois: []
   gate_on_evaluation: true
-  db_ingest_block_verdicts: ["fail"]
+  db_ingest_block_verdicts: ["rejected"]
   db_ingest_min_document_confidence_score: 65.0
-  db_ingest_block_review_escalation_on_pass: false
-  db_ingest_review_escalation_pass_min_confidence_score: 85.0
-  db_ingest_review_escalation_pass_max_review_required_parameters: 2
+  db_ingest_block_review_escalation_on_accepted: false
+  db_ingest_review_escalation_accepted_min_confidence_score: 85.0
+  db_ingest_review_escalation_accepted_max_review_required_parameters: 2
   image_backed_tables:
     enabled: true
     model: "gpt-4.1-mini"
