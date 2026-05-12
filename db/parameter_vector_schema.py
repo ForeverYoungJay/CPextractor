@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple
 _COLUMN_CANDIDATES: Dict[str, Sequence[str]] = {
     "doi": ("doi",),
     "claim_id": ("claim_id",),
+    "claim_class": ("claim_class",),
     "material_id": ("material_id",),
     "material_name": ("material_name",),
     "process_state_id": ("process_state_id", "sample_id"),
@@ -38,6 +39,7 @@ _COLUMN_CANDIDATES: Dict[str, Sequence[str]] = {
 _TEXT_CANONICAL_FIELDS: Tuple[str, ...] = (
     "doi",
     "claim_id",
+    "claim_class",
     "material_id",
     "material_name",
     "process_state_id",

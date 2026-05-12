@@ -4,7 +4,7 @@ from postprocess.final_hierarchy import build_final_hierarchy
 
 
 class FinalHierarchyTests(unittest.TestCase):
-    def test_builds_v3_hierarchy_and_enriches_claim_scope(self):
+    def test_builds_v5_1_hierarchy_and_enriches_claim_scope(self):
         extracted_json = {
             "schema_version": "2.1.1",
             "source_document": {
@@ -84,16 +84,21 @@ class FinalHierarchyTests(unittest.TestCase):
 
         updated, report = build_final_hierarchy(extracted_json)
 
-        self.assertEqual(updated["schema_version"], "3.0.0")
+        self.assertEqual(updated["schema_version"], "5.1.0")
         self.assertEqual(updated["document"]["doi"], "10.1000/example")
+        self.assertNotIn("study", updated)
         self.assertEqual(len(updated["materials"]), 1)
-        self.assertEqual(updated["materials"][0]["phases"][0]["phase_id"], "phase_001")
-        self.assertEqual(updated["samples"][0]["material_id"], "mat_001")
+        self.assertEqual(updated["constituents"][0]["constituent_id"], "phase_001")
+        self.assertEqual(updated["constituents"][0]["material_id"], "mat_001")
+        self.assertIn("process_states", updated)
         self.assertEqual(updated["conditions"][0]["condition_id"], "cond_001")
         self.assertEqual(updated["models"][0]["model_id"], "model_001")
-        self.assertEqual(updated["parameter_claims"][0]["model_id"], "model_001")
+        self.assertEqual(updated["parameter_claims"][0]["applies_to"]["model_id"], "model_001")
         self.assertEqual(updated["parameter_claims"][0]["applies_to"]["material_id"], "mat_001")
-        self.assertEqual(updated["parameter_claims"][0]["provenance"]["origin_type"], "calibrated")
+        self.assertIn("provenance", updated["parameter_claims"][0])
+        self.assertEqual([], updated["parameter_claims"][0]["provenance"]["reference_ids"])
+        self.assertEqual([], updated["parameter_claims"][0]["provenance"]["adopted_from_reference_ids"])
+        self.assertEqual([], updated["parameter_claims"][0]["provenance"]["calibration_based_on_reference_ids"])
         self.assertEqual(report["parameter_claims"], 1)
 
 

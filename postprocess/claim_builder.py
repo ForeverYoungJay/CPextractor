@@ -17,6 +17,58 @@ def _first_non_null(*values: Any) -> Any:
     return None
 
 
+_EXPERIMENTAL_CONDITION_CANONICALS = {
+    "temperature",
+    "strain_rate",
+    "load_ratio",
+    "frequency",
+    "pressure",
+    "duration",
+    "hold_time",
+    "total_strain",
+    "engineering_strain",
+    "true_strain",
+}
+
+_NUMERICAL_MODEL_CANONICALS = {
+    "time_step",
+    "tolerance",
+    "solver_tolerance",
+    "max_iterations",
+    "regularization_length",
+    "length_scale",
+    "mesh_size",
+    "grid_size",
+}
+
+
+def _infer_claim_class(item: Dict[str, Any], original_claim: Dict[str, Any]) -> str | None:
+    explicit = _first_non_null(original_claim.get("claim_class"), item.get("claim_class"))
+    if explicit:
+        return str(explicit)
+
+    parameter = _safe_dict(original_claim.get("parameter")) or _safe_dict(item.get("parameter"))
+    applies_to = _safe_dict(original_claim.get("applies_to")) or _safe_dict(item.get("applies_to"))
+    family = str(parameter.get("parameter_family") or "").strip().lower()
+    domain = str(_first_non_null(parameter.get("domain"), original_claim.get("domain"), item.get("domain")) or "").strip().lower()
+    canonical = str(_first_non_null(parameter.get("canonical_name"), original_claim.get("canonical_name"), item.get("canonical_name")) or "").strip().lower()
+
+    if family in {"numerical", "geometry"} or domain == "numerical" or canonical in _NUMERICAL_MODEL_CANONICALS:
+        return "numerical_model_parameter"
+
+    if canonical in _EXPERIMENTAL_CONDITION_CANONICALS:
+        return "experimental_condition_parameter"
+    if domain in {"elastic", "plastic", "creep", "hardening", "twinning", "damage", "thermal"}:
+        return "material_constitutive_parameter"
+    if family in {"elastic_constants", "slip_kinetics", "hardening", "backstress", "latent_hardening", "twinning", "damage", "thermal"}:
+        return "material_constitutive_parameter"
+    if applies_to.get("branch_ids") or applies_to.get("model_id"):
+        return "material_constitutive_parameter"
+    if applies_to.get("condition_id"):
+        return "experimental_condition_parameter"
+    return None
+
+
 def _compact_table_evidence(evidence: Dict[str, Any], grounded: Dict[str, Any]) -> Dict[str, Any] | None:
     table_evidence = _safe_dict(evidence.get("table_evidence"))
     row_name = _first_non_null(table_evidence.get("row_name"), grounded.get("row_name"))
@@ -87,7 +139,6 @@ def _canonical_assertion_payload(item: Dict[str, Any], original_claim: Dict[str,
         "value_type": _first_non_null(assertion.get("value_type"), "scalar" if _first_non_null(item.get("value"), original_claim.get("value")) not in (None, "") else None),
         "reported_value": _first_non_null(assertion.get("reported_value"), original_claim.get("value"), item.get("value")),
         "reported_unit": _first_non_null(assertion.get("reported_unit"), original_claim.get("unit"), item.get("unit")),
-        "qualifier": assertion.get("qualifier"),
         "valid_range": _first_non_null(assertion.get("valid_range"), original_claim.get("valid_range"), item.get("valid_range")),
     }
     return {k: v for k, v in payload.items() if v not in (None, "", [])}
@@ -186,6 +237,7 @@ def build_parameter_claims(
 
         claim_payload = {
             "claim_id": claim_id,
+            "claim_class": _infer_claim_class(item, original_claim),
             "parameter": _canonical_parameter_payload(item, original_claim),
             "assertion": _canonical_assertion_payload(item, original_claim),
             "applies_to": applies_to,
@@ -208,6 +260,6 @@ def build_parameter_claims(
     extracted_json.pop("parameters", None)
     return extracted_json, {
         "claims_built": len(claims),
-        "claim_unit": "one v5.0.2 parameter claim per normalized item",
+        "claim_unit": "one v5.1.0 parameter claim per normalized item",
         "registry_mode": "removed_legacy_registry",
     }

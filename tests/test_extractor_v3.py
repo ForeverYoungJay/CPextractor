@@ -202,11 +202,18 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertEqual(["12"], merged["parameter_claims"][0]["provenance"]["reference_ids"])
 
     def test_main_schema_exposes_direct_binding_fields(self):
-        self.assertEqual("5.0.2", EXTRACT_SCHEMA_SKELETON["schema_version"])
+        self.assertEqual("5.1.0", EXTRACT_SCHEMA_SKELETON["schema_version"])
         self.assertIn("document", EXTRACT_SCHEMA_SKELETON)
         self.assertNotIn("study", EXTRACT_SCHEMA_SKELETON)
         self.assertIsInstance(EXTRACT_SCHEMA_SKELETON["process_states"][0]["state_type"], list)
+        self.assertIn("deformation_systems", EXTRACT_SCHEMA_SKELETON)
+        self.assertIn("simulation_geometries", EXTRACT_SCHEMA_SKELETON)
+        self.assertIn("orientation_inputs", EXTRACT_SCHEMA_SKELETON)
+        self.assertIn("numerical_methods", EXTRACT_SCHEMA_SKELETON)
+        self.assertIn("simulation_outputs", EXTRACT_SCHEMA_SKELETON)
+        self.assertIn("model_evaluations", EXTRACT_SCHEMA_SKELETON)
         self.assertIn("governing_equation_ids", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0])
+        self.assertNotIn("qualifier", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["assertion"])
         self.assertIn("branch_ids", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["applies_to"])
         self.assertIn("calibration", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["provenance"])
         self.assertIn("target_type", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["provenance"]["calibration"])
@@ -214,12 +221,22 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertIn("constitutive_branches", EXTRACT_SCHEMA_SKELETON["models"][0])
         self.assertIn("branch_type", EXTRACT_SCHEMA_SKELETON["models"][0]["constitutive_branches"][0])
         self.assertIn("evidence_ids", EXTRACT_SCHEMA_SKELETON["models"][0])
+        self.assertNotIn("geometry_representation", EXTRACT_SCHEMA_SKELETON["models"][0]["solver_framework"])
+        self.assertEqual(
+            ["string"],
+            EXTRACT_SCHEMA_SKELETON["models"][0]["constitutive_description"]["slip_description"]["deformation_system_ids"],
+        )
+        self.assertEqual(
+            ["string"],
+            EXTRACT_SCHEMA_SKELETON["models"][0]["constitutive_description"]["twinning"]["deformation_system_ids"],
+        )
         self.assertIn("all explicit equation labels", EXTRACT_SCHEMA_SKELETON["models"][0]["constitutive_branches"][0]["governing_equation_ids"][0])
         self.assertIn("all explicit equation labels", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["governing_equation_ids"][0])
 
     def test_prompt_requires_many_to_many_equation_binding(self):
         self.assertIn("Treat `models[].constitutive_branches[].governing_equation_ids` as a full multi-equation array", EXTRACT_USER_PROMPT_TEMPLATE)
         self.assertIn("parameter_claims[].applies_to.branch_ids", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Do not embed full equation objects or equation text inside `models[]`, `constitutive_branches[]`, or `parameter_claims[]`", EXTRACT_USER_PROMPT_TEMPLATE)
 
     def test_prompt_requires_claim_specific_table_evidence_packaging(self):
         self.assertIn("prefer claim-specific evidence packaging over whole-table summaries", EXTRACT_USER_PROMPT_TEMPLATE)
@@ -232,6 +249,10 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertIn("Do not create equation-only `evidence_objects[]` entries", EXTRACT_USER_PROMPT_TEMPLATE)
         self.assertIn("Store equation support through `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
         self.assertIn("Do not put equation evidence IDs in `materials[].evidence_ids`, `models[].evidence_ids`, `constitutive_branches[].evidence_ids`, `parameter_claims[].evidence_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
+
+    def test_prompt_keeps_simulation_outputs_and_evaluations_explicit_only(self):
+        self.assertIn("leave these arrays empty rather than inferring them from provenance", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("These sections should remain empty unless the modeled output or evaluation role is explicit", EXTRACT_USER_PROMPT_TEMPLATE)
 
     def test_prompt_supports_multi_branch_parameter_binding(self):
         self.assertIn("Use `parameter_claims[].applies_to.branch_ids` for branch linkage in every case", EXTRACT_USER_PROMPT_TEMPLATE)

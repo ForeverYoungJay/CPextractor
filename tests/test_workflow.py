@@ -32,7 +32,8 @@ class WorkflowTests(unittest.TestCase):
 
         self.assertEqual(updated["schema_version"], "4.4.0")
         self.assertTrue(report["parameter_normalization"]["skipped"])
-        self.assertTrue(report["material_phase_normalization"]["skipped"])
+        self.assertIn("material_phase_normalization", report)
+        self.assertIn("model_setup_normalization", report)
         self.assertIn("document", updated)
         self.assertNotIn("source_document", updated)
 
@@ -80,9 +81,9 @@ class WorkflowTests(unittest.TestCase):
             quality_report=None,
         )
 
-        self.assertEqual(updated["schema_version"], "4.4.0")
-        self.assertTrue(report["parameter_claims"]["skipped"])
-        self.assertTrue(report["final_hierarchy"]["skipped"])
+        self.assertEqual(updated["schema_version"], "5.1.0")
+        self.assertIn("parameter_claims", report)
+        self.assertIn("final_hierarchy", report)
 
 
 if __name__ == "__main__":

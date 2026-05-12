@@ -57,6 +57,7 @@ def _claim_to_parameter_item(claim: Dict[str, Any]) -> Dict[str, Any]:
         evidence = {"evidence_ids": evidence_ids}
     return {
         "claim_id": claim.get("claim_id"),
+        "claim_class": claim.get("claim_class"),
         "domain": claim.get("domain", parameter.get("domain")),
         "canonical_name": claim.get("canonical_name", parameter.get("canonical_name")),
         "canonical_name_raw": claim.get("canonical_name_raw"),

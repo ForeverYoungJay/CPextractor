@@ -69,12 +69,12 @@ class ModelEquationBindingTests(unittest.TestCase):
             self.assertGreaterEqual(report["bound_equations"], 4)
             model = updated["models"][0]
             self.assertEqual(["eq_0003", "eq_0007"], model["equation_ids"])
-            self.assertEqual(2, len(model["equations"]))
+            self.assertNotIn("equations", model)
             self.assertEqual(["eq_0007"], model["constitutive_branches"][0]["governing_equation_ids"])
-            self.assertEqual(1, len(model["constitutive_branches"][0]["governing_equations"]))
+            self.assertNotIn("governing_equations", model["constitutive_branches"][0])
             claim = updated["parameter_claims"][0]
             self.assertEqual(["eq_0007"], claim["governing_equation_ids"])
-            self.assertEqual(1, len(claim["governing_equations"]))
+            self.assertNotIn("governing_equations", claim)
             self.assertNotIn("equation_evidence_ids", model)
             self.assertNotIn("equation_evidence_ids", model["constitutive_branches"][0])
             self.assertNotIn("equation_evidence_ids", claim)
@@ -233,7 +233,7 @@ class ModelEquationBindingTests(unittest.TestCase):
             claims = {row["claim_id"]: row for row in updated["parameter_claims"]}
             self.assertEqual(["(5)"], claims["claim_h0"]["governing_equation_ids"])
             self.assertEqual(["(7)"], claims["claim_h"]["governing_equation_ids"])
-            self.assertGreaterEqual(len(claims["claim_h"]["governing_equations"]), 1)
+            self.assertNotIn("governing_equations", claims["claim_h"])
 
     def test_bind_model_equations_uses_equation_index_when_equation_id_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -294,7 +294,7 @@ class ModelEquationBindingTests(unittest.TestCase):
             self.assertEqual(["eq_0005"], model["constitutive_branches"][0]["governing_equation_ids"])
             claim = updated["parameter_claims"][0]
             self.assertEqual(["eq_0005"], claim["governing_equation_ids"])
-            self.assertEqual("eq_0005", claim["governing_equations"][0]["equation_id"])
+            self.assertNotIn("governing_equations", claim)
 
 
 if __name__ == "__main__":

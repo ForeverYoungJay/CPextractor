@@ -565,7 +565,6 @@ def bind_model_equations(
         )
 
         row["equation_ids"] = normalized_ids
-        row["equations"] = resolved_equations
 
         branches = [b for b in _safe_list(row.get("constitutive_branches")) if isinstance(b, dict)]
         out_branches: List[Dict[str, Any]] = []
@@ -581,7 +580,6 @@ def bind_model_equations(
                 owner_id=branch_id,
             )
             branch_row["governing_equation_ids"] = branch_eq_ids
-            branch_row["governing_equations"] = branch_eqs
             resolved_count += branch_count
             out_branches.append(branch_row)
         if out_branches:
@@ -614,7 +612,6 @@ def bind_model_equations(
                     "text_file": eq.get("text_file"),
                 })
             row["equation_ids"] = normalized_ids
-            row["equations"] = resolved_equations
 
         if resolved_equations:
             bound_models += 1
@@ -638,7 +635,6 @@ def bind_model_equations(
             owner_id=claim_id,
         )
         claim_row["governing_equation_ids"] = claim_eq_ids
-        claim_row["governing_equations"] = claim_eqs
         bound_equations += claim_count
         model_id = str(_safe_dict(claim_row.get("applies_to")).get("model_id") or "").strip()
         if model_id and claim_eq_ids:
@@ -670,7 +666,6 @@ def bind_model_equations(
                         "text_file": eq.get("text_file"),
                     })
                 row["equation_ids"] = merged_ids
-                row["equations"] = resolved_equations
             refreshed_models.append(row)
         extracted["models"] = refreshed_models
 

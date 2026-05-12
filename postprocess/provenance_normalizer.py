@@ -84,12 +84,9 @@ def _normalize_source(src: Dict[str, Any], report: Dict[str, int]) -> None:
         calib_ids = [x for x in calib_ids if x not in overlap]
         report["role_id_overlap_collapsed"] += len(overlap)
 
-    role_ids = _unique_strings(adopted_ids + calib_ids)
-    residual_ids = [x for x in legacy_ids if x not in role_ids]
-
     src["adopted_from_reference_ids"] = adopted_ids
     src["calibration_based_on_reference_ids"] = calib_ids
-    src["reference_ids"] = residual_ids
+    src["reference_ids"] = legacy_ids
     if this_study_calibrated:
         src["calibration_in_this_study"] = True
 

@@ -55,11 +55,11 @@ SNAPSHOTS = [
         "note": "Refined extractor schema before current workspace changes.",
     },
     {
-        "version": "5.0.2",
+        "version": "5.1.0",
         "source_kind": "workspace",
         "ref": "working-tree",
-        "date": "2026-04-21",
-        "note": "Current workspace v5.0.2 extractor schema.",
+        "date": "2026-05-12",
+        "note": "Current workspace v5.1.0 extractor schema.",
     },
 ]
 

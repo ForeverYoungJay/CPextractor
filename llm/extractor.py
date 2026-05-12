@@ -1137,7 +1137,7 @@ Return JSON only.
 
 EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
 {
-  "schema_version": "5.0.2",
+  "schema_version": "5.1.0",
   "document": {
     "doi": "string or null",
     "title": "string or null",
@@ -1246,6 +1246,22 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
       "notes": "string or null"
     }
   ],
+  "deformation_systems": [
+    {
+      "system_id": "string or null",
+      "model_id": "string or null",
+      "constituent_id": "string or null",
+      "system_type": "slip / twin / transformation / other / null",
+      "family_name": "basal / prismatic / pyramidal_a / pyramidal_ca / octahedral / cube / other / string or null",
+      "plane": "string or null",
+      "direction": "string or null",
+      "number_of_systems": "number or null",
+      "schmid_tensor_defined": "yes / no / null",
+      "non_schmid_effects": "yes / no / null",
+      "evidence_ids": ["string"],
+      "notes": "string or null"
+    }
+  ],
   "models": [
     {
       "model_id": "string or null",
@@ -1267,7 +1283,6 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         "discretization": "fem / fft / mean_field / ode_based / analytical / other / string or null",
         "homogenization": "taylor / self_consistent / full_field / mean_field / none / other / string or null",
         "grain_resolution": "homogeneous / grain_resolved / mean_field / mixed / null",
-        "geometry_representation": "voxelized / tessellated / analytical / none / null",
         "interface_treatment": "none / implicit / explicit_interface / grain_boundary_affected / cohesive_interface / diffuse_interface / other / null",
         "boundary_condition_style": "periodic / displacement_controlled / traction_controlled / mixed / other / string or null",
         "notes": "string or null"
@@ -1304,8 +1319,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         },
         "slip_description": {
           "slip_families_defined": "yes / no / null",
-          "slip_system_scheme": "fcc_12 / bcc_12 / bcc_24 / hcp_basal_prismatic_pyramidal / user_defined / unclear / other / string or null",
-          "non_schmid_effects": "yes / no / null",
+          "deformation_system_ids": ["string"],
           "notes": "string or null"
         },
         "twinning": {
@@ -1313,6 +1327,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
           "form": "ptr / twinning_detwinning / reorientation / volume_fraction_based / user_defined / other / string or null",
           "reorientation_treated": "yes / no / null",
           "detwinning_treated": "yes / no / null",
+          "deformation_system_ids": ["string"],
           "notes": "string or null"
         },
         "damage": {
@@ -1336,8 +1351,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
           "includes_damage": "yes / no / null",
           "other_internal_variables": ["string"],
           "notes": "string or null"
-        },
-        "notes": "string or null"
+        }
       },
       "constitutive_branches": [
         {
@@ -1352,6 +1366,50 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         }
       ],
       "equation_ids": ["string; required model-level union of all explicit governing equation labels used by this model; preserve every explicit relevant label instead of truncating to the first visible equation"],
+      "evidence_ids": ["string"],
+      "notes": "string or null"
+    }
+  ],
+  "simulation_geometries": [
+    {
+      "geometry_id": "string or null",
+      "model_id": "string or null",
+      "geometry_type": "rve / unit_cell / grain_aggregate / single_element / specimen_mesh / other / null",
+      "dimensions": "string or null",
+      "number_of_grains": "number or null",
+      "number_of_elements": "number or null",
+      "mesh_type": "tetrahedral / hexahedral / voxel / spectral_grid / other / null",
+      "element_type": "string or null",
+      "grid_size": "string or null",
+      "periodic_geometry": "yes / no / null",
+      "grain_shape_assumption": "equiaxed / columnar / elongated / measured / voronoi / other / null",
+      "evidence_ids": ["string"],
+      "notes": "string or null"
+    }
+  ],
+  "orientation_inputs": [
+    {
+      "orientation_id": "string or null",
+      "model_id": "string or null",
+      "geometry_id": "string or null",
+      "source": "ebsd / xrd_odf / random_texture / ideal_texture / synthetic / literature / other / null",
+      "representation": "euler_angles / quaternion / orientation_matrix / pole_figure / odf / ipf_map / other / null",
+      "texture_type": "random / measured / ideal / fiber / rolling / extrusion / other / null",
+      "number_of_orientations": "number or null",
+      "evidence_ids": ["string"],
+      "notes": "string or null"
+    }
+  ],
+  "numerical_methods": [
+    {
+      "numerical_method_id": "string or null",
+      "model_id": "string or null",
+      "time_integration": "explicit / implicit / semi_implicit / return_mapping / forward_euler / backward_euler / other / null",
+      "nonlinear_solver": "newton_raphson / fixed_point / explicit_update / other / null",
+      "tolerance": "string or null",
+      "time_step": "string or null",
+      "increment_control": "fixed / adaptive / load_increment / strain_increment / other / null",
+      "regularization": "viscoplastic / gradient / nonlocal / length_scale / none / other / null",
       "evidence_ids": ["string"],
       "notes": "string or null"
     }
@@ -1423,6 +1481,33 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
       "notes": "string or null"
     }
   ],
+  "simulation_outputs": [
+    {
+      "output_id": "string or null",
+      "model_id": "string or null",
+      "condition_id": "string or null",
+      "output_quantity": "stress_strain_curve / slip_activity / crss_evolution / texture_evolution / lattice_strain / strain_localization / damage_field / twin_fraction / phase_fraction / other / null",
+      "scale": "macroscopic / grain / element / slip_system / phase / local_region / other / null",
+      "reported_as": "curve / field / map / table / figure / scalar / other / null",
+      "evidence_ids": ["string"],
+      "notes": "string or null"
+    }
+  ],
+  "model_evaluations": [
+    {
+      "evaluation_id": "string or null",
+      "model_id": "string or null",
+      "condition_id": "string or null",
+      "output_id": "string or null",
+      "evaluation_role": "calibration_fit / validation / prediction / sensitivity / comparison / null",
+      "target_observable": "stress_strain / texture / lattice_strain / strain_map / slip_activity / fatigue_life / crack_growth / other / null",
+      "metric_name": "rmse / r2 / error_percent / qualitative / other / null",
+      "metric_value": "number or string or null",
+      "compared_against": "experiment / another_model / analytical_solution / literature / null",
+      "evidence_ids": ["string"],
+      "notes": "string or null"
+    }
+  ],
   "microstructure_features": [
     {
       "feature_id": "string or null",
@@ -1447,6 +1532,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
   "parameter_claims": [
     {
       "claim_id": "string or null",
+      "claim_class": "material_constitutive_parameter / experimental_condition_parameter / numerical_model_parameter / null",
       "parameter": {
         "canonical_name": "string or null",
         "parameter_family": "elastic_constants / slip_kinetics / hardening / backstress / latent_hardening / twinning / damage / thermal / numerical / geometry / other / string or null",
@@ -1459,7 +1545,6 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         "value_type": "scalar / range / categorical / text / expression / other / null",
         "reported_value": "number or string or null",
         "reported_unit": "string or null",
-        "qualifier": "string or null",
         "valid_range": "string or null"
       },
       "applies_to": {
@@ -1520,7 +1605,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
 
 EXTRACT_USER_PROMPT_TEMPLATE = """
 1 Task description
-Extract crystal-plasticity information from the provided paper excerpt into the v5.0 hierarchical CP schema.
+Extract crystal-plasticity information from the provided paper excerpt into the v5.1 hierarchical CP schema.
 
 2 Task requirements
 - Use only explicit evidence in the excerpt.
@@ -1533,9 +1618,21 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
 - Use `process_states[].state_type` as an ordered list when multiple state descriptors are explicitly true at the same time.
   Example: `["as_received", "forged", "solution_treated"]`.
 - Do not create a top-level `phases[]` block. Use `constituents[]` for phases, precipitates, pores, and other constituent-level entities.
+- Use `deformation_systems[]` for explicit slip, twin, and transformation systems or families used by the model.
+- Use `simulation_geometries[]` for explicit RVE, unit-cell, grain-aggregate, voxel, spectral-grid, mesh, or specimen geometry setup.
+- Use `orientation_inputs[]` for explicit simulation-input orientation or texture data such as EBSD-derived orientations, Euler angles, pole figures, ODFs, random textures, or ideal textures.
+- Use `numerical_methods[]` for explicit integration, nonlinear solver, increment-control, or regularization choices.
+- Use `simulation_outputs[]` only for explicit modeled observables linked to a model and condition.
+- Use `model_evaluations[]` only for explicit calibration, validation, prediction, sensitivity, or comparison roles linked to those outputs.
+  If the excerpt does not support them directly, leave these arrays empty rather than inferring them from provenance.
 - Keep `parameter_claims[]` claim-centric: separate `parameter`, `assertion`, `applies_to`, `provenance`, and `evidence_ids`.
+- Classify every `parameter_claims[]` item into one of three roles when explicit or strongly implied:
+  `material_constitutive_parameter`, `experimental_condition_parameter`, or `numerical_model_parameter`.
+- Use `material_constitutive_parameter` for elastic constants, slip/creep/hardening/backstress/twinning/damage/thermal constitutive quantities.
+- Use `experimental_condition_parameter` for setup quantities that are really test or loading conditions, such as imposed temperature, strain rate, hold time, load ratio, frequency, environment pressure, or similar condition-setting values when they are still represented as parameter claims.
+- Use `numerical_model_parameter` for solver or discretization settings such as tolerances, time step controls, iteration limits, regularization lengths, mesh-related numerical settings, or other explicit model-solution parameters.
 - Do not rely on postprocessing to split, remap, or sharpen evidence. The extractor output itself must already contain final claim-level evidence bindings.
-- Fill `document` and `study` directly when the excerpt explicitly contains that information; otherwise leave fields null or empty.
+- Fill `document` directly when the excerpt explicitly contains that information; otherwise leave fields null or empty.
 - Prefer final-ready bindings now rather than leaving them for later normalization or postprocessing.
 - Assign stable, reusable IDs whenever the excerpt supports them: `material_id`, `process_state_id`, `constituent_id`, `condition_id`, `model_id`, `branch_id`, `feature_id`, `claim_id`, `evidence_id`.
 - Use evidence links beyond parameters as well: populate `evidence_ids` for materials, process states, constituents, conditions, models, constitutive branches, and microstructure features when direct support is available.
@@ -1561,6 +1658,16 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
   Do not put measurement labels, observation subsets, Miller-index families, or slip-family labels there unless the paper explicitly treats them as constituents.
 - Grain families, diffraction families, selected grains, or local measurement regions are not themselves constituents or constitutive branches unless the paper explicitly says they are.
   Treat them as calibration or observation targets instead.
+- Distinguish physical microstructure descriptors from model inputs.
+  Grain size, morphology, defects, and measured texture descriptors belong in `microstructure_features[]`.
+  Orientation or texture data explicitly supplied to the simulation belongs in `orientation_inputs[]`, even if related descriptive texture facts also appear in `microstructure_features[]`.
+- Distinguish constitutive behavior from numerical solution strategy.
+  Flow rules, hardening, twinning, damage, and thermal coupling belong in `models[].constitutive_description` and `constitutive_branches[]`.
+  Explicit integration, nonlinear solver, increment control, and regularization choices belong in `numerical_methods[]`.
+- Distinguish simulation setup from simulation result.
+  Mesh, grid, RVE, grain count, and periodic geometry belong in `simulation_geometries[]`.
+  Predicted stress-strain curves, lattice strain, texture evolution, slip activity, twin fraction, and related observables belong in `simulation_outputs[]`.
+  Calibration, validation, prediction, sensitivity, and comparison roles belong in `model_evaluations[]`.
 - Split calibration descriptions claim-by-claim whenever the paper calibrates different parameter subsets against different observables, even under the same temperature and strain-rate.
   One physical condition can legitimately support multiple distinct calibration targets across parameter claims.
 - Use `parameter_claims[].provenance.calibration.target_type`, `target_description`, and `observation_scope` to preserve what data stream was used for fitting.
@@ -1568,10 +1675,13 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
 - Distinguish calibrated material parameters from condition-setting quantities and physical constants.
   Temperatures, gas constants, imposed total strain, dwell stress, test duration, and similar setup values may appear inside parameter tables because they are used by the equations, but they are not automatically calibrated material parameters.
   If the excerpt treats such a quantity as a loading/testing/model-setting value rather than a fitted parameter, place it in `conditions[]` or keep it as supporting context in `notes`; do not mark its claim provenance as `calibrated` unless the paper explicitly says that value itself was fitted or optimized.
+- If such a setup quantity is nevertheless extracted as a parameter claim because the paper treats it as part of a reported parameter table, classify it as `experimental_condition_parameter` or `numerical_model_parameter` rather than `material_constitutive_parameter`.
 - Use `parameter_claims[].provenance.origin_type=calibrated` only when the paper explicitly indicates that the specific quantity was fitted, optimized, identified, or recalibrated.
   Do not inherit `calibrated` just because the quantity appears in the same table or sentence as genuinely calibrated parameters.
 - Use `models[].equation_ids` only as the model-level summary list of all equations used by the model.
   In practice this should be the union of all `models[].constitutive_branches[].governing_equation_ids`, plus any additional model-wide equations that are explicit but not branch-specific.
+- Do not embed full equation objects or equation text inside `models[]`, `constitutive_branches[]`, or `parameter_claims[]`.
+  Keep only `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids` for structured equation linkage.
 - Populate `models[].constitutive_branches[]` whenever the excerpt clearly separates multiple equation branches or evolution laws.
   Typical examples are plastic branch, creep branch, combined plasticity-plus-creep branch, CRSS evolution, and backstress evolution.
 - Use `parameter_claims[].applies_to.branch_ids` for branch linkage in every case.
@@ -1597,6 +1707,12 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
   A paper can be physically polycrystalline yet still use one shared parameter set or a homogenized constitutive description.
   Record the physical microstructure in `materials[]`, `constituents[]`, `process_states[]`, and `microstructure_features[]`.
   Record modeling choices such as shared versus constituent-specific parameterization through `models[]`, `constitutive_branches[]`, `parameter_claims[].applies_to`, and `microstructure_features[].parameterization_scope` when explicit.
+- If the paper explicitly names basal, prismatic, pyramidal, octahedral, cube, twinning, or transformation systems or families used by the simulation, emit `deformation_systems[]` entries instead of keeping those details only in notes.
+- If the paper gives explicit system-level non-Schmid behavior, Schmid-tensor statements, plane/direction notation, or number of systems, store them in `deformation_systems[]`.
+- If the paper gives explicit geometry or mesh setup, emit one `simulation_geometries[]` entry per explicit setup tied to the relevant `model_id`.
+- If the paper states that the simulation used measured EBSD orientations, random orientations, ideal texture, Euler angles, ODFs, or pole figures as model input, emit `orientation_inputs[]`.
+- If the paper explicitly states validation or calibration against stress-strain, diffraction lattice strain, texture evolution, strain maps, slip activity, or similar observables, connect those through `simulation_outputs[]` and `model_evaluations[]`.
+  If the text only supports a claim-level calibration note and does not explicitly define a modeled output or evaluation object, keep the information only inside `parameter_claims[].provenance.calibration`.
 - Extract the following schema from the paper excerpt:
 __SCHEMA_JSON__
 
@@ -1630,6 +1746,8 @@ __SCHEMA_JSON__
 - When the excerpt explicitly links a process state to one or more testing conditions, fill `conditions[].linked_process_state_ids` and use the same process-state IDs consistently from the relevant claims and features.
 - Use `conditions[]` for temperature, strain rate, fatigue mode, indentation settings, environment, and calibration/validation role.
 - Use `conditions[]` for the physical test or loading setup; use `parameter_claims[].provenance.calibration` for which observable or dataset was used to fit the model.
+- If a calibration or validation target corresponds to a concrete modeled observable, also emit a compatible `simulation_outputs[]` entry and `model_evaluations[]` entry when the excerpt explicitly supports that structure.
+- Do not emit `simulation_outputs[]` or `model_evaluations[]` solely because a calibration target exists in provenance. These sections should remain empty unless the modeled output or evaluation role is explicit.
 - Use `constituents[]` instead of embedding constituent details inside `microstructure_features[]`.
 - Do not encode calibration target differences only in free-text notes when the `provenance.calibration` structure can represent them directly.
 - Represent the common physical combinations explicitly by combining separate fields rather than creating one fused enum:
@@ -1642,6 +1760,7 @@ __SCHEMA_JSON__
 - If the paper uses one shared constitutive description, even for a heterogeneous microstructure, do not artificially split parameter claims by constituent unless the excerpt explicitly gives constituent-specific values.
 - If grain-boundary effects, interface regions, or local zones are modeled separately, represent them as `microstructure_features[]` or `constituents[]` only when the excerpt explicitly distinguishes them.
 - For equation-rich constitutive sections, extract reusable `constitutive_branches[]` so different parameter subsets can bind to the right branch or evolution law rather than all sharing one generic model-level association.
+- If the paper explicitly reports geometry setup or numerical solution details, do not collapse them into one free-text `models[].notes` field. Prefer `simulation_geometries[]` and `numerical_methods[]`.
 - When explicit, fill `applies_to.material_id`, `applies_to.constituent_id`, `applies_to.process_state_id`, `applies_to.model_id`, `applies_to.condition_id`, and `applies_to.branch_ids`.
 - If a claim is global or shared, keep `scope` broad and leave narrower target IDs null rather than inventing unsupported constituent or branch specificity.
 - If a claim is tied to a fitting target rather than only a physical condition, fill `provenance.calibration` rather than inventing a synthetic scope ID.
@@ -1778,8 +1897,17 @@ Expected behavior: keep the parameter claims from the parameter table, and also 
 Example R: One constitutive section states the active constitutive channels and then gives several numbered equations for flow and one or more evolution laws.
 Expected behavior: attach all governing constitutive equations to `models[].equation_ids` and create separate `constitutive_branches[]` entries for each explicit branch or evolution law.
 
+Example R2: The model uses basal and prismatic slip, and the paper explicitly states the family names, plane/direction notation, and number of systems.
+Expected behavior: emit separate `deformation_systems[]` entries and link them from `models[].constitutive_description.slip_description.deformation_system_ids`.
+
+Example R3: The paper states that a CPFE simulation used an RVE with 300 grains, periodic boundary conditions, and a voxel grid.
+Expected behavior: emit a `simulation_geometries[]` entry linked to the model instead of keeping those details only in `solver_framework.notes`.
+
 Example S: A paper says one parameter subset is calibrated from a macroscopic mechanical response, while another subset is calibrated from a subset-specific relaxation, diffraction, or local response, both under the same temperature.
 Expected behavior: create one physical `condition` if appropriate, but keep distinct `provenance.calibration` descriptions across the affected parameter claims; the subset-based claims should use the most specific compatible `observation_scope` and preserve the subset label in `target_description`.
+
+Example S2: The paper says the simulation used measured EBSD orientations as input and compares predicted lattice strain against diffraction data.
+Expected behavior: emit `orientation_inputs[]` for the EBSD-derived input, `simulation_outputs[]` for lattice strain, and `model_evaluations[]` describing the calibration or validation role.
 
 Example T: A paper discusses a named orientation family, subset label, diffraction family, or local-region response during calibration.
 Expected behavior: treat that label as an observation or calibration target, not as a constituent or constitutive branch unless the text explicitly defines it that way.
@@ -2027,6 +2155,7 @@ def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, An
     compat_process_states = process_states or legacy_samples
     conditions = [c for c in _safe_list(payload.get("conditions")) if isinstance(c, dict)]
     models = [m for m in _safe_list(payload.get("models")) if isinstance(m, dict)]
+    deformation_systems = [d for d in _safe_list(payload.get("deformation_systems")) if isinstance(d, dict)]
     raw_mechanisms = payload.get("mechanisms")
     mechanisms = _safe_dict(raw_mechanisms)
     if not mechanisms and isinstance(raw_mechanisms, list):
@@ -2274,52 +2403,106 @@ def _inject_legacy_compat_views_from_v3(payload: Dict[str, Any]) -> Dict[str, An
     payload["parameter_bundles"] = _safe_list(payload.get("parameter_bundles"))
     payload["deformation_conditions"] = primary_condition or {}
     payload["condition_profiles"] = conditions
-    payload["deformation_mechanisms"] = {
-        "slip_families": [
-            {
-                "family_id": family.get("family_id"),
-                "family_name": family.get("name"),
-                "plane_direction": family.get("plane_direction"),
-                "num_systems": family.get("num_systems"),
-                "systems": _safe_list(family.get("systems")),
-                "active": family.get("active"),
-                "notes": family.get("notes"),
-            }
-            for family in _safe_list(mechanisms.get("slip_families"))
-            if isinstance(family, dict)
-        ],
-        "twinning_families": [
-            {
-                "family_id": family.get("family_id"),
-                "family_name": family.get("name"),
-                "plane_direction": family.get("plane_direction"),
-                "num_systems": family.get("num_systems"),
-                "systems": _safe_list(family.get("systems")),
-                "active": family.get("active"),
-                "reorientation_rule": family.get("reorientation_rule"),
-                "notes": family.get("notes"),
-            }
-            for family in _safe_list(mechanisms.get("twinning_families"))
-            if isinstance(family, dict)
-        ],
-        "cleavage_families": [
-            {
-                "family_id": family.get("family_id"),
-                "family_name": family.get("name"),
-                "plane_direction": family.get("plane_direction"),
-                "num_systems": family.get("num_systems"),
-                "systems": _safe_list(family.get("systems")),
-                "active": family.get("active"),
-                "notes": family.get("notes"),
-            }
-            for family in _safe_list(mechanisms.get("cleavage_families"))
-            if isinstance(family, dict)
-        ],
-        "damage_mechanisms": _safe_list(mechanisms.get("damage_mechanisms")),
-        "transformation_mechanisms": _safe_list(mechanisms.get("transformation_mechanisms")),
-        "other_mechanisms": _safe_list(mechanisms.get("other_mechanisms")),
-        "notes": mechanisms.get("notes"),
-    }
+    if deformation_systems and not mechanisms:
+        payload["deformation_mechanisms"] = {
+            "slip_families": [
+                {
+                    "family_id": system.get("system_id"),
+                    "family_name": system.get("family_name"),
+                    "plane_direction": " // ".join(
+                        part for part in (
+                            str(system.get("plane") or "").strip(),
+                            str(system.get("direction") or "").strip(),
+                        )
+                        if part
+                    ) or None,
+                    "num_systems": system.get("number_of_systems"),
+                    "systems": [],
+                    "active": None,
+                    "notes": system.get("notes"),
+                }
+                for system in deformation_systems
+                if str(system.get("system_type") or "").strip().lower() == "slip"
+            ],
+            "twinning_families": [
+                {
+                    "family_id": system.get("system_id"),
+                    "family_name": system.get("family_name"),
+                    "plane_direction": " // ".join(
+                        part for part in (
+                            str(system.get("plane") or "").strip(),
+                            str(system.get("direction") or "").strip(),
+                        )
+                        if part
+                    ) or None,
+                    "num_systems": system.get("number_of_systems"),
+                    "systems": [],
+                    "active": None,
+                    "reorientation_rule": None,
+                    "notes": system.get("notes"),
+                }
+                for system in deformation_systems
+                if str(system.get("system_type") or "").strip().lower() == "twin"
+            ],
+            "cleavage_families": [],
+            "damage_mechanisms": [],
+            "transformation_mechanisms": [
+                system for system in deformation_systems
+                if str(system.get("system_type") or "").strip().lower() == "transformation"
+            ],
+            "other_mechanisms": [
+                system for system in deformation_systems
+                if str(system.get("system_type") or "").strip().lower() not in {"slip", "twin", "transformation"}
+            ],
+            "notes": None,
+        }
+    else:
+        payload["deformation_mechanisms"] = {
+            "slip_families": [
+                {
+                    "family_id": family.get("family_id"),
+                    "family_name": family.get("name"),
+                    "plane_direction": family.get("plane_direction"),
+                    "num_systems": family.get("num_systems"),
+                    "systems": _safe_list(family.get("systems")),
+                    "active": family.get("active"),
+                    "notes": family.get("notes"),
+                }
+                for family in _safe_list(mechanisms.get("slip_families"))
+                if isinstance(family, dict)
+            ],
+            "twinning_families": [
+                {
+                    "family_id": family.get("family_id"),
+                    "family_name": family.get("name"),
+                    "plane_direction": family.get("plane_direction"),
+                    "num_systems": family.get("num_systems"),
+                    "systems": _safe_list(family.get("systems")),
+                    "active": family.get("active"),
+                    "reorientation_rule": family.get("reorientation_rule"),
+                    "notes": family.get("notes"),
+                }
+                for family in _safe_list(mechanisms.get("twinning_families"))
+                if isinstance(family, dict)
+            ],
+            "cleavage_families": [
+                {
+                    "family_id": family.get("family_id"),
+                    "family_name": family.get("name"),
+                    "plane_direction": family.get("plane_direction"),
+                    "num_systems": family.get("num_systems"),
+                    "systems": _safe_list(family.get("systems")),
+                    "active": family.get("active"),
+                    "notes": family.get("notes"),
+                }
+                for family in _safe_list(mechanisms.get("cleavage_families"))
+                if isinstance(family, dict)
+            ],
+            "damage_mechanisms": _safe_list(mechanisms.get("damage_mechanisms")),
+            "transformation_mechanisms": _safe_list(mechanisms.get("transformation_mechanisms")),
+            "other_mechanisms": _safe_list(mechanisms.get("other_mechanisms")),
+            "notes": mechanisms.get("notes"),
+        }
     return payload
 
 

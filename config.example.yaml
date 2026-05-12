@@ -35,7 +35,7 @@ llm:
   evaluation_feedback_json: "output/review/prompt_feedback.json"
   enable_source_enrichment: true
   prompt_version: "v2.0.0"
-  schema_version: "5.0.2"
+  schema_version: "5.1.0"
   extractor_version: "extractor_v2"
   model_select: "gpt-4.1-mini"
   model_extract: "gpt-4.1-mini"

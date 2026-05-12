@@ -22,7 +22,6 @@ def build_compact_summary(
     llm_evaluation = llm_evaluation or {}
 
     document = _safe_dict(extracted_json.get("document"))
-    study = _safe_dict(extracted_json.get("study"))
     materials = [m for m in _safe_list(extracted_json.get("materials")) if isinstance(m, dict)]
     constituents = [c for c in _safe_list(extracted_json.get("constituents")) if isinstance(c, dict)]
     claims: List[Dict[str, Any]] = []
@@ -76,10 +75,6 @@ def build_compact_summary(
             "title": document.get("title"),
             "year": document.get("year"),
             "journal": document.get("journal"),
-        },
-        "study": {
-            "study_type": study.get("study_type"),
-            "primary_focus": study.get("primary_focus"),
         },
         "materials": {
             "count": len(materials),

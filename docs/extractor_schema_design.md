@@ -144,6 +144,14 @@ Each claim should carry:
 - provenance
 - evidence
 
+For the current `5.1.0` line:
+
+- `assertion` keeps `value_type`, `reported_value`, `reported_unit`, and `valid_range`.
+- `assertion.qualifier` is no longer part of the active schema.
+- `provenance.reference_ids` is the full claim-level reference union.
+- `provenance.adopted_from_reference_ids` and `provenance.calibration_based_on_reference_ids` are role-specific subsets of `reference_ids`.
+- The two role-specific arrays may overlap with each other and may repeat IDs already present in `reference_ids`.
+
 The important binding pattern is:
 
 - `context.material_id`

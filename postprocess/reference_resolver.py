@@ -74,12 +74,10 @@ def resolve_references(extracted_json: dict, reference_map: Dict[str, dict]) -> 
             overlap = set(adopted_ids).intersection(set(calibration_ids))
             if overlap:
                 calibration_ids = [x for x in calibration_ids if x not in overlap]
-            role_ids = _unique_keep_order(adopted_ids + calibration_ids)
-            residual_ids = [x for x in legacy_ids if x not in role_ids]
-            ids = _unique_keep_order(adopted_ids + calibration_ids + residual_ids)
+            ids = _unique_keep_order(adopted_ids + calibration_ids + legacy_ids)
             src["adopted_from_reference_ids"] = adopted_ids
             src["calibration_based_on_reference_ids"] = calibration_ids
-            src["reference_ids"] = residual_ids
+            src["reference_ids"] = legacy_ids
 
             unresolved = []
 
@@ -116,7 +114,7 @@ def resolve_references(extracted_json: dict, reference_map: Dict[str, dict]) -> 
                         })
                 return out
 
-            src["references"] = _expand(residual_ids)
+            src["references"] = _expand(legacy_ids)
             src["adopted_from_references"] = _expand(adopted_ids)
             src["calibration_based_on_references"] = _expand(calibration_ids)
             report["source_references_expanded"] += (

@@ -75,10 +75,45 @@ class ClaimBuilderTests(unittest.TestCase):
         self.assertEqual(claim["parameter"]["canonical_name"], "m")
         self.assertEqual(claim["assertion"]["reported_value"], 20)
         self.assertNotIn("reported_unit", claim["assertion"])
+        self.assertNotIn("qualifier", claim["assertion"])
         self.assertEqual(claim["governing_equation_ids"], ["eq_0003"])
         self.assertEqual(claim["evidence_ids"], ["ev_eq_model_cp_eq_0003"])
         self.assertNotIn("evidence", claim)
+        self.assertEqual("material_constitutive_parameter", claim["claim_class"])
         self.assertEqual(report["claims_built"], 1)
+
+    def test_infers_claim_class_for_condition_and_numerical_parameters(self):
+        extracted_json = {
+            "parameter_claims": [
+                {
+                    "claim_id": "claim_temp",
+                    "parameter": {
+                        "canonical_name": "temperature",
+                        "domain": "other",
+                    },
+                    "assertion": {"reported_value": 298, "reported_unit": "K"},
+                    "applies_to": {"condition_id": "cond_rt"},
+                    "provenance": {"reference_ids": [], "adopted_from_reference_ids": [], "calibration_based_on_reference_ids": []},
+                },
+                {
+                    "claim_id": "claim_tol",
+                    "parameter": {
+                        "canonical_name": "tolerance",
+                        "parameter_family": "numerical",
+                        "domain": "numerical",
+                    },
+                    "assertion": {"reported_value": "1e-6", "reported_unit": None},
+                    "applies_to": {"model_id": "model_cp"},
+                    "provenance": {"reference_ids": [], "adopted_from_reference_ids": [], "calibration_based_on_reference_ids": []},
+                },
+            ],
+            "evidence_objects": [],
+        }
+
+        updated, _ = build_parameter_claims(extracted_json)
+
+        self.assertEqual("experimental_condition_parameter", updated["parameter_claims"][0]["claim_class"])
+        self.assertEqual("numerical_model_parameter", updated["parameter_claims"][1]["claim_class"])
 
 
 if __name__ == "__main__":

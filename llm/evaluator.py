@@ -196,10 +196,10 @@ Evaluate whether extracted parameter records are self-consistent within the pape
 - Table-based claims with coherent family/phase binding but weak explicit cell grounding should not be treated as binding inconsistencies.
 - Do not evaluate unit conversion, SI normalization, or evidence sufficiency here.
 - Do not flag a parameter merely because one slip-family value is larger than another.
-- The v5.0.2 schema allows many-to-many equation binding.
+- The v5.1.0 schema allows many-to-many equation binding.
   One branch may legitimately bind to multiple governing equations, one parameter may legitimately bind to multiple equations, and multiple branches may also share one equation.
   Do not treat multi-equation arrays or shared equation labels as a consistency error by themselves.
-- The v5.0.2 schema also allows multiple models in one paper, including `primary_simulation`, `comparison`, and `auxiliary` roles.
+- The v5.1.0 schema also allows multiple models in one paper, including `primary_simulation`, `comparison`, and `auxiliary` roles.
   Do not use `model_variant_confusion` merely because a paper contains more than one model or because a comparison model reuses the same constitutive law.
 - Use `condition_binding_error` only for true scope incoherence such as wrong material, wrong constituent, wrong branch, impossible condition assignment, or explicit contradiction in applicability.
 - If a claim is attached to a branch and that branch carries several constitutive equations, it is coherent for the claim to reference one or several of those equations depending on the text.
@@ -215,7 +215,7 @@ Example B:
 
 Example C:
 - A constitutive branch has equations (4), (5), and (6), and one parameter claim references both (5) and (6).
-- Good behavior: treat this as normal v5.0.2 many-to-many binding, not as model_variant_confusion or condition_binding_error.
+- Good behavior: treat this as normal v5.1.0 many-to-many binding, not as model_variant_confusion or condition_binding_error.
 
 Example D:
 - The paper contains one primary CPFE model and one comparison single-crystal or J2 model, each with its own model_role.
@@ -271,7 +271,7 @@ Produce the final document-level audit result for a crystal-plasticity extractio
 - Mixed provenance such as "adopted from prior work, then calibrated in this study" is acceptable and should not be escalated as provenance_conflict by itself.
 - Do not escalate low-risk table-based disagreements into critical issues when the disagreement is mainly `flagged/accepted` around weak grounding rather than a concrete wrong value or provenance conflict.
 - Unit-only or SI-format-only disagreements should not become document-level critical issues or mandatory review escalations.
-- Treat v5.0.2 many-to-many equation binding as normal structure, not as a schema or consistency problem.
+- Treat v5.1.0 many-to-many equation binding as normal structure, not as a schema or consistency problem.
 - Treat the presence of comparison or auxiliary models as normal when the roles and bindings are explicit.
 - Do not escalate a paper merely because one branch or one parameter is linked to multiple equations, or because multiple branches share one equation.
 
@@ -614,8 +614,18 @@ def _build_document_summary(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
     primary_constitutive_description = _safe_dict(primary_model.get("constitutive_description"))
     primary_slip_description = _safe_dict(primary_constitutive_description.get("slip_description"))
     primary_twinning = _safe_dict(primary_constitutive_description.get("twinning"))
-    slip_count = 1 if str(primary_slip_description.get("slip_families_defined") or "").strip().lower() == "yes" else 0
-    twin_count = 1 if str(primary_twinning.get("enabled") or "").strip().lower() == "yes" else 0
+    deformation_systems = [d for d in _safe_list(extracted_json.get("deformation_systems")) if isinstance(d, dict)]
+    simulation_geometries = [g for g in _safe_list(extracted_json.get("simulation_geometries")) if isinstance(g, dict)]
+    orientation_inputs = [o for o in _safe_list(extracted_json.get("orientation_inputs")) if isinstance(o, dict)]
+    numerical_methods = [n for n in _safe_list(extracted_json.get("numerical_methods")) if isinstance(n, dict)]
+    simulation_outputs = [o for o in _safe_list(extracted_json.get("simulation_outputs")) if isinstance(o, dict)]
+    model_evaluations = [e for e in _safe_list(extracted_json.get("model_evaluations")) if isinstance(e, dict)]
+    slip_count = sum(1 for d in deformation_systems if str(d.get("system_type") or "").strip().lower() == "slip")
+    if not slip_count and str(primary_slip_description.get("slip_families_defined") or "").strip().lower() == "yes":
+        slip_count = 1
+    twin_count = sum(1 for d in deformation_systems if str(d.get("system_type") or "").strip().lower() == "twin")
+    if not twin_count and str(primary_twinning.get("enabled") or "").strip().lower() == "yes":
+        twin_count = 1
     cleavage_count = 0
     lattice_type = (
         _safe_dict(primary_constituent.get("crystal_structure")).get("lattice_type")
@@ -635,6 +645,26 @@ def _build_document_summary(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
             "equation_ids": _safe_list(model.get("equation_ids")),
             "branch_ids": [b.get("branch_id") for b in branches if b.get("branch_id")],
             "branch_types": [b.get("branch_type") for b in branches if b.get("branch_type")],
+            "deformation_system_ids": [
+                d.get("system_id")
+                for d in deformation_systems
+                if str(d.get("model_id") or "").strip() == str(model.get("model_id") or "").strip() and d.get("system_id")
+            ],
+            "geometry_ids": [
+                g.get("geometry_id")
+                for g in simulation_geometries
+                if str(g.get("model_id") or "").strip() == str(model.get("model_id") or "").strip() and g.get("geometry_id")
+            ],
+            "orientation_ids": [
+                o.get("orientation_id")
+                for o in orientation_inputs
+                if str(o.get("model_id") or "").strip() == str(model.get("model_id") or "").strip() and o.get("orientation_id")
+            ],
+            "numerical_method_ids": [
+                n.get("numerical_method_id")
+                for n in numerical_methods
+                if str(n.get("model_id") or "").strip() == str(model.get("model_id") or "").strip() and n.get("numerical_method_id")
+            ],
         })
     return {
         "schema_version": extracted_json.get("schema_version"),
@@ -646,6 +676,12 @@ def _build_document_summary(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
         "phase_mode": primary_material.get("phase_mode"),
         "model_count": len(model_summaries),
         "models": model_summaries,
+        "deformation_system_count": len(deformation_systems),
+        "simulation_geometry_count": len(simulation_geometries),
+        "orientation_input_count": len(orientation_inputs),
+        "numerical_method_count": len(numerical_methods),
+        "simulation_output_count": len(simulation_outputs),
+        "model_evaluation_count": len(model_evaluations),
         "slip_family_count": slip_count,
         "twin_family_count": twin_count,
         "cleavage_family_count": cleavage_count,
@@ -670,6 +706,32 @@ def _build_parameter_records(
         if str(m.get("model_id") or "").strip()
     }
     branch_lookup: Dict[tuple[str, str], Dict[str, Any]] = {}
+    deformation_system_lookup: Dict[str, Dict[str, Any]] = {
+        str(d.get("system_id") or "").strip(): d
+        for d in _safe_list(extracted_json.get("deformation_systems"))
+        if isinstance(d, dict) and str(d.get("system_id") or "").strip()
+    }
+    geometry_lookup_by_model: Dict[str, List[Dict[str, Any]]] = {}
+    for geometry in _safe_list(extracted_json.get("simulation_geometries")):
+        if not isinstance(geometry, dict):
+            continue
+        model_id = str(geometry.get("model_id") or "").strip()
+        if model_id:
+            geometry_lookup_by_model.setdefault(model_id, []).append(geometry)
+    orientation_lookup_by_model: Dict[str, List[Dict[str, Any]]] = {}
+    for orientation in _safe_list(extracted_json.get("orientation_inputs")):
+        if not isinstance(orientation, dict):
+            continue
+        model_id = str(orientation.get("model_id") or "").strip()
+        if model_id:
+            orientation_lookup_by_model.setdefault(model_id, []).append(orientation)
+    numerical_lookup_by_model: Dict[str, List[Dict[str, Any]]] = {}
+    for numeric in _safe_list(extracted_json.get("numerical_methods")):
+        if not isinstance(numeric, dict):
+            continue
+        model_id = str(numeric.get("model_id") or "").strip()
+        if model_id:
+            numerical_lookup_by_model.setdefault(model_id, []).append(numeric)
     for model in models:
         model_id = str(model.get("model_id") or "").strip()
         for branch in _safe_list(model.get("constitutive_branches")):
@@ -721,6 +783,11 @@ def _build_parameter_records(
             legacy_branch_id = str(applies_to.get("branch_id") or "").strip()
             if legacy_branch_id:
                 branch_ids = [legacy_branch_id]
+        system_ids = [
+            str(system_id or "").strip()
+            for system_id in _safe_list(applies_to.get("system_ids"))
+            if str(system_id or "").strip()
+        ]
         model_context = _safe_dict(model_lookup.get(model_id))
         branch_contexts = [
             _safe_dict(branch_lookup.get((model_id, bid)))
@@ -728,6 +795,17 @@ def _build_parameter_records(
             if branch_lookup.get((model_id, bid))
         ]
         branch_context = branch_contexts[0] if len(branch_contexts) == 1 else {}
+        system_contexts = [
+            {
+                "system_id": _safe_dict(deformation_system_lookup.get(system_id)).get("system_id"),
+                "system_type": _safe_dict(deformation_system_lookup.get(system_id)).get("system_type"),
+                "family_name": _safe_dict(deformation_system_lookup.get(system_id)).get("family_name"),
+                "plane": _safe_dict(deformation_system_lookup.get(system_id)).get("plane"),
+                "direction": _safe_dict(deformation_system_lookup.get(system_id)).get("direction"),
+            }
+            for system_id in system_ids
+            if deformation_system_lookup.get(system_id)
+        ]
         inferred_support = _infer_support_snippets(
             item=item,
             selected_sections=selected_sections,
@@ -802,6 +880,34 @@ def _build_parameter_records(
                 }
                 for ctx in branch_contexts
                 if ctx
+            ],
+            "system_contexts": system_contexts,
+            "geometry_contexts": [
+                {
+                    "geometry_id": geometry.get("geometry_id"),
+                    "geometry_type": geometry.get("geometry_type"),
+                    "mesh_type": geometry.get("mesh_type"),
+                    "periodic_geometry": geometry.get("periodic_geometry"),
+                }
+                for geometry in geometry_lookup_by_model.get(model_id, [])
+            ],
+            "orientation_contexts": [
+                {
+                    "orientation_id": orientation.get("orientation_id"),
+                    "source": orientation.get("source"),
+                    "representation": orientation.get("representation"),
+                    "texture_type": orientation.get("texture_type"),
+                }
+                for orientation in orientation_lookup_by_model.get(model_id, [])
+            ],
+            "numerical_method_contexts": [
+                {
+                    "numerical_method_id": numeric.get("numerical_method_id"),
+                    "time_integration": numeric.get("time_integration"),
+                    "nonlinear_solver": numeric.get("nonlinear_solver"),
+                    "regularization": numeric.get("regularization"),
+                }
+                for numeric in numerical_lookup_by_model.get(model_id, [])
             ],
             "evidence_linkage": {
                 "claim_evidence_ids": claim_evidence_ids,

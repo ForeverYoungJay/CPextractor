@@ -34,7 +34,7 @@ from postprocess.quality_checks import run_quality_checks
 class EvaluatorV5Tests(unittest.TestCase):
     def test_quality_checks_accepts_branch_and_constituent_scope(self):
         extracted = {
-            "schema_version": "5.0.2",
+            "schema_version": "5.1.0",
             "parameter_claims": [
                 {
                     "claim_id": "cl_tau",
@@ -82,8 +82,18 @@ class EvaluatorV5Tests(unittest.TestCase):
 
     def test_build_parameter_records_include_many_to_many_equation_context(self):
         extracted = {
-            "schema_version": "5.0.2",
+            "schema_version": "5.1.0",
             "materials": [{"material_id": "mat_1", "name": "316H", "phase_mode": "single_phase"}],
+            "deformation_systems": [
+                {
+                    "system_id": "sys_basal",
+                    "model_id": "model_cp",
+                    "system_type": "slip",
+                    "family_name": "basal",
+                    "plane": "{0001}",
+                    "direction": "<11-20>",
+                }
+            ],
             "models": [
                 {
                     "model_id": "model_cp",
@@ -109,6 +119,30 @@ class EvaluatorV5Tests(unittest.TestCase):
                     "constitutive_branches": [],
                 },
             ],
+            "simulation_geometries": [
+                {
+                    "geometry_id": "geom_cp",
+                    "model_id": "model_cp",
+                    "geometry_type": "grain_aggregate",
+                    "mesh_type": "voxel",
+                    "periodic_geometry": "yes",
+                }
+            ],
+            "orientation_inputs": [
+                {
+                    "orientation_id": "ori_cp",
+                    "model_id": "model_cp",
+                    "source": "ebsd",
+                    "representation": "euler_angles",
+                }
+            ],
+            "numerical_methods": [
+                {
+                    "numerical_method_id": "num_cp",
+                    "model_id": "model_cp",
+                    "time_integration": "implicit",
+                }
+            ],
             "parameter_claims": [
                 {
                     "claim_id": "cl_gamma",
@@ -126,6 +160,7 @@ class EvaluatorV5Tests(unittest.TestCase):
                         "material_id": "mat_1",
                         "model_id": "model_cp",
                         "branch_ids": ["branch_flow"],
+                        "system_ids": ["sys_basal"],
                     },
                     "governing_equation_ids": ["(3)", "(4)"],
                     "provenance": {"origin_type": "calibrated"},
@@ -178,9 +213,13 @@ class EvaluatorV5Tests(unittest.TestCase):
             )
 
             summary = _build_document_summary(extracted)
-            self.assertEqual("5.0.2", summary["schema_version"])
+            self.assertEqual("5.1.0", summary["schema_version"])
             self.assertEqual(2, summary["model_count"])
             self.assertEqual("comparison", summary["models"][1]["model_role"])
+            self.assertEqual(1, summary["deformation_system_count"])
+            self.assertEqual(1, summary["simulation_geometry_count"])
+            self.assertEqual(1, summary["orientation_input_count"])
+            self.assertEqual(1, summary["numerical_method_count"])
 
             records = _build_parameter_records(str(paper_dir), extracted, per_evidence_chars=500, limit=10)
             self.assertEqual(1, len(records))
@@ -189,6 +228,10 @@ class EvaluatorV5Tests(unittest.TestCase):
             self.assertEqual(["(3)", "(4)"], row["branch_context"]["governing_equation_ids"])
             self.assertEqual(["(3)", "(4)", "(5)"], row["model_context"]["equation_ids"])
             self.assertEqual("extractor_raw_document_backfill_v5", row["evaluator_mode"])
+            self.assertEqual("sys_basal", row["system_contexts"][0]["system_id"])
+            self.assertEqual("geom_cp", row["geometry_contexts"][0]["geometry_id"])
+            self.assertEqual("ori_cp", row["orientation_contexts"][0]["orientation_id"])
+            self.assertEqual("num_cp", row["numerical_method_contexts"][0]["numerical_method_id"])
             self.assertEqual(["ev_1"], row["evidence_linkage"]["claim_evidence_ids"])
             self.assertTrue(row["inferred_support"])
             self.assertEqual("table", row["inferred_support"][0]["source_type"])

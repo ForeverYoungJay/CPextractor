@@ -5,6 +5,7 @@ from typing import Any, Dict, Tuple
 from postprocess.reference_resolver import resolve_references
 from postprocess.claim_id_assigner import assign_stable_claim_ids
 from postprocess.slip_system_resolver import resolve_slip_systems
+from postprocess.model_setup_normalizer import normalize_model_setup
 from postprocess.parameter_normalizer import normalize_parameters
 from postprocess.parameter_table_resolver import resolve_parameter_tables
 from postprocess.unit_normalizer import normalize_extracted_units
@@ -72,6 +73,7 @@ def run_structure_normalization(
     if reference_map:
         extracted, reports["reference_resolution"] = resolve_references(extracted, reference_map)
     extracted, reports["slip_system_resolution"] = resolve_slip_systems(extracted, paper_dir)
+    extracted, reports["model_setup_normalization"] = normalize_model_setup(extracted)
     if extractor_first:
         reports["parameter_normalization"] = _skip_report("extractor_first_payload")
     else:

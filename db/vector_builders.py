@@ -93,6 +93,28 @@ def _model_lookup(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+def _deformation_system_lookup(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for system in _safe_list(extracted_json.get("deformation_systems")):
+        if not isinstance(system, dict):
+            continue
+        system_id = str(system.get("system_id") or "").strip()
+        if system_id:
+            out[system_id] = system
+    return out
+
+
+def _items_by_model(extracted_json: Dict[str, Any], key: str) -> Dict[str, List[Dict[str, Any]]]:
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for item in _safe_list(extracted_json.get(key)):
+        if not isinstance(item, dict):
+            continue
+        model_id = str(item.get("model_id") or "").strip()
+        if model_id:
+            out.setdefault(model_id, []).append(item)
+    return out
+
+
 def _constituent_lookup(extracted_json: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
     for constituent in _safe_list(extracted_json.get("constituents")):
@@ -193,6 +215,44 @@ def _condition_summary(condition: Dict[str, Any]) -> str:
     return "; ".join(part for part in parts if part)
 
 
+def _geometry_summary(geometry: Dict[str, Any]) -> str:
+    geometry = _safe_dict(geometry)
+    parts = [
+        _first_non_empty(geometry.get("geometry_type")),
+        _first_non_empty(geometry.get("mesh_type")),
+        _first_non_empty(geometry.get("grid_size")),
+    ]
+    if geometry.get("number_of_grains") not in (None, ""):
+        parts.append(f"grains {geometry.get('number_of_grains')}")
+    if geometry.get("periodic_geometry"):
+        parts.append(f"periodic {geometry.get('periodic_geometry')}")
+    return "; ".join(part for part in parts if part)
+
+
+def _orientation_summary(orientation: Dict[str, Any]) -> str:
+    orientation = _safe_dict(orientation)
+    return "; ".join(
+        part for part in (
+            _first_non_empty(orientation.get("source")),
+            _first_non_empty(orientation.get("representation")),
+            _first_non_empty(orientation.get("texture_type")),
+        )
+        if part
+    )
+
+
+def _numerical_summary(method: Dict[str, Any]) -> str:
+    method = _safe_dict(method)
+    return "; ".join(
+        part for part in (
+            _first_non_empty(method.get("time_integration")),
+            _first_non_empty(method.get("nonlinear_solver")),
+            _first_non_empty(method.get("regularization")),
+        )
+        if part
+    )
+
+
 def _evidence_snippet_for_claim(claim: Dict[str, Any], extracted_json: Dict[str, Any]) -> str:
     evidence = _safe_dict(claim.get("evidence"))
     table_evidence = _safe_dict(evidence.get("table_evidence"))
@@ -227,6 +287,10 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
     condition_by_id = _condition_lookup(extracted_json)
     constituent_by_id = _constituent_lookup(extracted_json)
     model_by_id = _model_lookup(extracted_json)
+    deformation_system_by_id = _deformation_system_lookup(extracted_json)
+    geometries_by_model = _items_by_model(extracted_json, "simulation_geometries")
+    orientations_by_model = _items_by_model(extracted_json, "orientation_inputs")
+    numerics_by_model = _items_by_model(extracted_json, "numerical_methods")
     all_materials = _materials(extracted_json)
     rows: List[Dict[str, Any]] = []
 
@@ -236,6 +300,7 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
         claim_id = str(claim.get("claim_id") or "").strip()
         if not claim_id:
             continue
+        claim_class = _first_non_empty(claim.get("claim_class"))
 
         parameter = _safe_dict(claim.get("parameter"))
         assertion = _safe_dict(claim.get("assertion"))
@@ -258,6 +323,9 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
         model_id = _first_non_empty(binding.get("model_id"), claim.get("model_id"))
         branch_id = _first_non_empty(binding.get("branch_id"))
         system_ids = [str(s).strip() for s in _safe_list(binding.get("system_ids")) if str(s).strip()]
+        branch_ids = [str(s).strip() for s in _safe_list(binding.get("branch_ids")) if str(s).strip()]
+        if not branch_id and branch_ids:
+            branch_id = branch_ids[0]
 
         material = material_by_id.get(material_id) if material_id else {}
         if not material and len(all_materials) == 1:
@@ -267,6 +335,31 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
         condition = condition_by_id.get(condition_id) if condition_id else {}
         constituent = constituent_by_id.get(constituent_id) if constituent_id else {}
         model = model_by_id.get(model_id) if model_id else {}
+        system_summaries = [
+            "; ".join(
+                part for part in (
+                    _first_non_empty(_safe_dict(deformation_system_by_id.get(system_id)).get("system_type")),
+                    _first_non_empty(_safe_dict(deformation_system_by_id.get(system_id)).get("family_name")),
+                    _first_non_empty(_safe_dict(deformation_system_by_id.get(system_id)).get("plane")),
+                    _first_non_empty(_safe_dict(deformation_system_by_id.get(system_id)).get("direction")),
+                )
+                if part
+            )
+            for system_id in system_ids
+            if deformation_system_by_id.get(system_id)
+        ]
+        geometry_summary = "; ".join(
+            summary for summary in (_geometry_summary(row) for row in geometries_by_model.get(model_id, []))
+            if summary
+        )
+        orientation_summary = "; ".join(
+            summary for summary in (_orientation_summary(row) for row in orientations_by_model.get(model_id, []))
+            if summary
+        )
+        numerical_summary = "; ".join(
+            summary for summary in (_numerical_summary(row) for row in numerics_by_model.get(model_id, []))
+            if summary
+        )
 
         material_name = _first_non_empty(material.get("name"))
         process_state_name = _first_non_empty(process_state.get("name"), process_state.get("label"))
@@ -296,6 +389,7 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
             [
                 f"DOI: {doi}",
                 f"Title: {_first_non_empty(_document_title(extracted_json), 'unknown')}",
+                f"Claim class: {_first_non_empty(claim_class, 'unknown')}",
                 f"Material ID: {_first_non_empty(material_id, 'none')}",
                 f"Material: {_first_non_empty(material_name, _material_summary_from_entity(material, extracted_json) if material else 'unknown')}",
                 f"Composition: {_first_non_empty(_material_composition_summary(material), 'none')}",
@@ -310,7 +404,11 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
                 f"Model ID: {_first_non_empty(model_id, 'none')}",
                 f"Branch ID: {_first_non_empty(branch_id, 'none')}",
                 f"System IDs: {_first_non_empty(', '.join(system_ids), 'none')}",
+                f"Systems: {_first_non_empty(' | '.join(system_summaries), 'none')}",
                 f"Model: {_first_non_empty(_safe_dict(model).get('framework'), 'unknown')}",
+                f"Geometry: {_first_non_empty(geometry_summary, 'none')}",
+                f"Orientation input: {_first_non_empty(orientation_summary, 'none')}",
+                f"Numerical method: {_first_non_empty(numerical_summary, 'none')}",
                 f"Domain: {_first_non_empty(domain, 'unknown')}",
                 f"Parameter: {_first_non_empty(canonical_name, 'unknown')}",
                 f"Symbol: {_first_non_empty(symbol, 'none')}",
@@ -327,6 +425,7 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
             {
                 "doi": doi,
                 "claim_id": claim_id,
+                "claim_class": claim_class,
                 "material_id": material_id,
                 "material_name": material_name,
                 "process_state_id": process_state_id,
@@ -357,6 +456,7 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
                 "retrieval_text": retrieval_text,
                 "metadata": {
                     "origin_type": origin_type,
+                    "claim_class": claim_class,
                     "material_id": material_id,
                     "process_state_id": process_state_id,
                     "sample_id": process_state_id,
@@ -365,7 +465,12 @@ def build_parameter_vector_rows(doi: str, extracted_json: Dict[str, Any]) -> Lis
                     "phase_id": constituent_id,
                     "model_id": model_id,
                     "branch_id": branch_id,
+                    "branch_ids": branch_ids,
                     "system_ids": system_ids,
+                    "system_summaries": system_summaries,
+                    "geometry_summary": geometry_summary,
+                    "orientation_summary": orientation_summary,
+                    "numerical_summary": numerical_summary,
                 },
             }
         )

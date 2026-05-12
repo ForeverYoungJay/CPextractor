@@ -21,7 +21,8 @@ These two layers do not currently share the same version number, so they are lis
 | `3.0.0` | 2026-04-08 | git commit `9ac9896` | `git show 9ac9896:llm/extractor.py` contains `"schema_version": "3.0.0"` |
 | `3.1.0` | 2026-04-08 | git commit `ac7f652` | `git show ac7f652:llm/extractor.py` contains `"schema_version": "3.1.0"` |
 | `4.2.0` | 2026-04-09 | git commit `662057d` | `git show 662057d:llm/extractor.py` contains `"schema_version": "4.2.0"` |
-| `5.0.2` | 2026-04-21 workspace state | current uncommitted working tree | [`llm/extractor.py`](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/llm/extractor.py#L514) contains `"schema_version": "5.0.2"` |
+| `5.0.2` | 2026-04-21 workspace state | current uncommitted working tree | historical workspace version before the 5.1.0 schema expansion |
+| `5.1.0` | 2026-05-12 workspace state | current uncommitted working tree | [`llm/extractor.py`](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/llm/extractor.py#L1140) contains `"schema_version": "5.1.0"` |
 
 ## Extractor Schema Timeline
 
@@ -43,8 +44,11 @@ These two layers do not currently share the same version number, so they are lis
 6. `4.2.0`
    Refined the extractor again and removed legacy output views.
 
-7. `4.3.0`
-   Current workspace version in `llm/extractor.py`.
+7. `5.1.0`
+   Added top-level `deformation_systems`, `simulation_geometries`, `orientation_inputs`, `numerical_methods`, `simulation_outputs`, and `model_evaluations`.
+   Added `parameter_claims[].claim_class`.
+   Removed `assertion.qualifier`.
+   Clarified that `reference_ids` is the full claim-level reference union, while `adopted_from_reference_ids` and `calibration_based_on_reference_ids` are role-specific subsets that may overlap and may also repeat IDs already present in `reference_ids`.
 
 ## Final Hierarchy Schema
 
@@ -59,10 +63,10 @@ The finalized stored document is still treated as hierarchical `v3`, even though
 
 ## Current Version Split
 
-As of 2026-04-10:
+As of 2026-05-12:
 
-- extractor schema: `4.3.0`
-- configured pipeline schema version in config: `3.0.0`
-- final hierarchy schema written by postprocess: `3.0.0`
+- extractor schema: `5.1.0`
+- configured pipeline schema version in config: `5.1.0`
+- final hierarchy schema written by postprocess: `5.1.0`
 
-This means the repository currently spans both a newer extraction schema line and an older finalized storage schema line.
+The repository still preserves historical schema lines, but the active extractor and active final hierarchy now both operate on the `5.1.0` family in the current workspace.

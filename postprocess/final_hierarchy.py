@@ -35,15 +35,6 @@ def _normalize_document(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _normalize_study(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
-    study = _safe_dict(extracted_json.get("study"))
-    return {
-        "study_type": study.get("study_type"),
-        "primary_focus": study.get("primary_focus"),
-        "notes": _first_non_empty(study.get("notes"), extracted_json.get("global_notes")),
-    }
-
-
 def _normalize_materials(extracted_json: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
     materials = [m for m in _safe_list(extracted_json.get("materials")) if isinstance(m, dict)]
     if not materials:
@@ -224,6 +215,25 @@ def _normalize_microstructure_features(extracted_json: Dict[str, Any]) -> Tuple[
     return out, ids_filled
 
 
+def _normalize_passthrough_records(
+    extracted_json: Dict[str, Any],
+    key: str,
+    id_field: str,
+    prefix: str,
+) -> Tuple[List[Dict[str, Any]], int]:
+    records = [r for r in _safe_list(extracted_json.get(key)) if isinstance(r, dict)]
+    ids_filled = 0
+    out: List[Dict[str, Any]] = []
+    for idx, record in enumerate(records, start=1):
+        row = dict(record)
+        if not str(row.get(id_field) or "").strip():
+            row[id_field] = f"{prefix}_{idx:03d}"
+            ids_filled += 1
+        row.setdefault("evidence_ids", [])
+        out.append(row)
+    return out, ids_filled
+
+
 def _normalize_parameter_claims(extracted_json: Dict[str, Any], materials: List[Dict[str, Any]], models: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
     claims = [c for c in _safe_list(extracted_json.get("parameter_claims")) if isinstance(c, dict)]
     ids_filled = 0
@@ -236,6 +246,7 @@ def _normalize_parameter_claims(extracted_json: Dict[str, Any], materials: List[
         provenance = _safe_dict(claim.get("provenance"))
         row = {
             "claim_id": claim.get("claim_id"),
+            "claim_class": claim.get("claim_class"),
             "parameter": {
                 "canonical_name": parameter.get("canonical_name"),
                 "parameter_family": parameter.get("parameter_family"),
@@ -248,7 +259,6 @@ def _normalize_parameter_claims(extracted_json: Dict[str, Any], materials: List[
                 "value_type": assertion.get("value_type"),
                 "reported_value": assertion.get("reported_value"),
                 "reported_unit": assertion.get("reported_unit"),
-                "qualifier": assertion.get("qualifier"),
                 "valid_range": assertion.get("valid_range"),
             },
             "applies_to": dict(_safe_dict(claim.get("applies_to"))),
@@ -274,10 +284,12 @@ def _normalize_parameter_claims(extracted_json: Dict[str, Any], materials: List[
         row["applies_to"] = applies_to
         row["parameter"] = {k: v for k, v in _safe_dict(row.get("parameter")).items() if v not in (None, "", [])}
         row["assertion"] = {k: v for k, v in _safe_dict(row.get("assertion")).items() if v not in (None, "", [])}
-        prov = {
-            k: v for k, v in _safe_dict(row.get("provenance")).items()
-            if v not in (None, "", []) and v != {}
-        }
+        prov = {}
+        for key, value in _safe_dict(row.get("provenance")).items():
+            if key in {"reference_ids", "adopted_from_reference_ids", "calibration_based_on_reference_ids"}:
+                prov[key] = _safe_list(value)
+            elif value not in (None, "", []) and value != {}:
+                prov[key] = value
         row["provenance"] = prov
         row["governing_equation_ids"] = _safe_list(row.get("governing_equation_ids"))
         row["evidence_ids"] = _safe_list(row.get("evidence_ids"))
@@ -303,29 +315,51 @@ def _normalize_evidence_objects(extracted_json: Dict[str, Any]) -> Tuple[List[Di
 def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     extracted = dict(extracted_json)
     document = _normalize_document(extracted)
-    study = _normalize_study(extracted)
     materials, material_ids_filled = _normalize_materials(extracted)
     constituents, constituent_ids_filled = _normalize_constituents(extracted, materials)
     process_states, process_state_ids_filled = _normalize_process_states(extracted, materials)
     conditions, condition_ids_filled = _normalize_conditions(extracted)
     models, model_ids_filled, branch_ids_filled = _normalize_models(extracted)
+    deformation_systems, system_ids_filled = _normalize_passthrough_records(
+        extracted, "deformation_systems", "system_id", "sys"
+    )
+    simulation_geometries, geometry_ids_filled = _normalize_passthrough_records(
+        extracted, "simulation_geometries", "geometry_id", "geom"
+    )
+    orientation_inputs, orientation_ids_filled = _normalize_passthrough_records(
+        extracted, "orientation_inputs", "orientation_id", "ori"
+    )
+    numerical_methods, numerical_method_ids_filled = _normalize_passthrough_records(
+        extracted, "numerical_methods", "numerical_method_id", "num"
+    )
+    simulation_outputs, output_ids_filled = _normalize_passthrough_records(
+        extracted, "simulation_outputs", "output_id", "out"
+    )
+    model_evaluations, evaluation_ids_filled = _normalize_passthrough_records(
+        extracted, "model_evaluations", "evaluation_id", "eval"
+    )
     microstructure_features, feature_ids_filled = _normalize_microstructure_features(extracted)
     parameter_claims, claim_ids_filled = _normalize_parameter_claims(extracted, materials, models)
     evidence_objects, evidence_ids_filled = _normalize_evidence_objects(extracted)
 
-    extracted["schema_version"] = "5.0.2"
+    extracted["schema_version"] = "5.1.0"
     extracted["document"] = document
-    extracted["study"] = study
     extracted["materials"] = materials
     extracted["process_states"] = process_states
     extracted["constituents"] = constituents
+    extracted["deformation_systems"] = deformation_systems
     extracted["models"] = models
+    extracted["simulation_geometries"] = simulation_geometries
+    extracted["orientation_inputs"] = orientation_inputs
+    extracted["numerical_methods"] = numerical_methods
     extracted["conditions"] = conditions
+    extracted["simulation_outputs"] = simulation_outputs
+    extracted["model_evaluations"] = model_evaluations
     extracted["microstructure_features"] = microstructure_features
     extracted["parameter_claims"] = parameter_claims
     extracted["evidence_objects"] = evidence_objects
 
-    # Drop legacy views so downstream operates on the v5.0.2 hierarchy only.
+    # Drop legacy views so downstream operates on the v5.1.0 hierarchy only.
     for key in (
         "source_document",
         "material",
@@ -343,12 +377,18 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
         extracted.pop(key, None)
 
     return extracted, {
-        "schema_version": "5.0.2",
+        "schema_version": "5.1.0",
         "materials": len(materials),
         "constituents": len(constituents),
         "process_states": len(process_states),
+        "deformation_systems": len(deformation_systems),
         "conditions": len(conditions),
         "models": len(models),
+        "simulation_geometries": len(simulation_geometries),
+        "orientation_inputs": len(orientation_inputs),
+        "numerical_methods": len(numerical_methods),
+        "simulation_outputs": len(simulation_outputs),
+        "model_evaluations": len(model_evaluations),
         "microstructure_features": len(microstructure_features),
         "parameter_claims": len(parameter_claims),
         "evidence_objects": len(evidence_objects),
@@ -358,6 +398,12 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
         "condition_ids_filled": condition_ids_filled,
         "model_ids_filled": model_ids_filled,
         "branch_ids_filled": branch_ids_filled,
+        "system_ids_filled": system_ids_filled,
+        "geometry_ids_filled": geometry_ids_filled,
+        "orientation_ids_filled": orientation_ids_filled,
+        "numerical_method_ids_filled": numerical_method_ids_filled,
+        "output_ids_filled": output_ids_filled,
+        "evaluation_ids_filled": evaluation_ids_filled,
         "feature_ids_filled": feature_ids_filled,
         "claim_ids_filled": claim_ids_filled,
         "evidence_ids_filled": evidence_ids_filled,
