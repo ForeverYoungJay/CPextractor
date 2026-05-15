@@ -22,7 +22,8 @@ These two layers do not currently share the same version number, so they are lis
 | `3.1.0` | 2026-04-08 | git commit `ac7f652` | `git show ac7f652:llm/extractor.py` contains `"schema_version": "3.1.0"` |
 | `4.2.0` | 2026-04-09 | git commit `662057d` | `git show 662057d:llm/extractor.py` contains `"schema_version": "4.2.0"` |
 | `5.0.2` | 2026-04-21 workspace state | current uncommitted working tree | historical workspace version before the 5.1.0 schema expansion |
-| `5.1.0` | 2026-05-12 workspace state | current uncommitted working tree | [`llm/extractor.py`](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/llm/extractor.py#L1140) contains `"schema_version": "5.1.0"` |
+| `5.1.0` | 2026-05-12 workspace state | historical working-tree state before extractor-first tightening | previous schema line with document/output/evaluation blocks still inside extractor |
+| `5.1.1` | 2026-05-13 workspace state | current uncommitted working tree | [`llm/extractor.py`](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/llm/extractor.py#L1221) contains `"schema_version": "5.1.1"` |
 
 ## Extractor Schema Timeline
 
@@ -50,6 +51,13 @@ These two layers do not currently share the same version number, so they are lis
    Removed `assertion.qualifier`.
    Clarified that `reference_ids` is the full claim-level reference union, while `adopted_from_reference_ids` and `calibration_based_on_reference_ids` are role-specific subsets that may overlap and may also repeat IDs already present in `reference_ids`.
 
+8. `5.1.1`
+   Tightened the extractor into a more extractor-first schema.
+   Removed `document`, `simulation_outputs`, and `model_evaluations` from the extractor schema.
+   Added direct cross-link IDs across materials, process states, conditions, geometries, orientation inputs, numerical methods, families, branches, and systems.
+   Restored explicit family/system binding fields on `parameter_claims[].applies_to`.
+   Normalized mixed value fields into `*_value_text` plus structured numeric/range/comparator fields where high ambiguity previously caused drift.
+
 ## Final Hierarchy Schema
 
 The finalized stored document is still treated as hierarchical `v3`, even though the extractor schema has already advanced to the `4.x` line.
@@ -63,10 +71,10 @@ The finalized stored document is still treated as hierarchical `v3`, even though
 
 ## Current Version Split
 
-As of 2026-05-12:
+As of 2026-05-13:
 
-- extractor schema: `5.1.0`
-- configured pipeline schema version in config: `5.1.0`
+- extractor schema: `5.1.1`
+- configured pipeline schema version in config: `5.1.1`
 - final hierarchy schema written by postprocess: `5.1.0`
 
-The repository still preserves historical schema lines, but the active extractor and active final hierarchy now both operate on the `5.1.0` family in the current workspace.
+The repository still preserves historical schema lines, but the active extractor now operates on the `5.1.1` line while the downstream finalized hierarchy remains on the `5.1.0` family.

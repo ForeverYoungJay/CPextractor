@@ -52,6 +52,12 @@ def trim_text(text: str, max_chars: int) -> str:
     return text[:max_chars] + ("...[TRUNCATED]..." if len(text) > max_chars else "")
 
 
+def _trim_text_with_ellipsis(text: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    return trim_text(text, max_chars)
+
+
 def safe_filename(text: str) -> str:
     text = re.sub(r"[\\/*?:\"<>|]+", "_", str(text or ""))
     text = re.sub(r"\s+", "_", text.strip())
@@ -126,6 +132,20 @@ def _is_comparative_parameter_table_json(table_json: Dict[str, Any]) -> bool:
     return "material" in first_row and ("elastic constants" in first_row or "slip modes" in first_row)
 
 
+def _is_composition_matrix_table_json(table_json: Dict[str, Any]) -> bool:
+    caption = str(table_json.get("caption") or "").lower()
+    rows = table_json.get("rows")
+    if any(kw in caption for kw in ("chemical composition", "composition", "wt.%", "at.%")):
+        return True
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], list):
+        return False
+    first_row = [str(cell or "").strip().lower() for cell in rows[0]]
+    if not first_row:
+        return False
+    first_cell = first_row[0]
+    return first_cell in {"element", "elements", "component", "components"} and len(first_row) >= 3
+
+
 def _numeric_token(text: Any) -> str | None:
     token = str(text or "").strip().replace("−", "-").replace("–", "-")
     if re.fullmatch(r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?", token):
@@ -143,85 +163,89 @@ def _citation_token(text: Any) -> str | None:
 def _render_comparative_parameter_matrix(table_json: Dict[str, Any], max_rows: int | None = None) -> str:
     rows = table_json.get("rows")
     caption = str(table_json.get("caption") or "").strip()
-    if not isinstance(rows, list):
+    if not isinstance(rows, list) or not rows:
         return caption
 
     lines: List[str] = []
     if caption:
         lines.append(f"Caption: {caption}")
+    lines.append(
+        "Comparative matrix orientation: preserve multi-row headers, inherited row labels, "
+        "and all explicit column values for each material/structure row."
+    )
+    render_limit = len(rows) if max_rows is None else max_rows
+    lines.extend(
+        _render_table_rows_with_alignment(
+            rows,
+            max_rows=render_limit,
+            max_cells_per_row=40,
+        )
+    )
+    if max_rows is not None and len(rows) > max_rows:
+        lines.append(f"... ({len(rows) - max_rows} more rows)")
+    return "\n".join(lines).strip()
 
-    fcc_slip_label = None
-    hcp_slip_labels: List[str] = []
-    current_structure = None
-    rendered_data_rows = 0
 
-    for row in rows:
-        if max_rows is not None and rendered_data_rows >= max_rows:
-            break
+def _normalize_component_value(text: Any) -> str:
+    token = str(text or "").strip()
+    if not token:
+        return ""
+    token_norm = token.lower().rstrip(".")
+    if token_norm in {"bal", "balance"}:
+        return "bal."
+    return token
+
+
+def _render_composition_matrix(table_json: Dict[str, Any], max_materials: int | None = None) -> str:
+    rows = table_json.get("rows")
+    caption = str(table_json.get("caption") or "").strip()
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], list):
+        return caption
+
+    header = [str(cell or "").strip() for cell in rows[0]]
+    if len(header) < 2:
+        return caption
+
+    materials = [name for name in header[1:] if name]
+    if max_materials is not None:
+        materials = materials[:max_materials]
+    if not materials:
+        return caption
+
+    rendered_by_material: Dict[str, List[str]] = {material: [] for material in materials}
+    for row in rows[1:]:
         if not isinstance(row, list):
             continue
         cells = [str(cell or "").strip() for cell in row]
         if not any(cells):
             continue
-        joined = " ".join(cells)
-
-        if "Zener" in joined and "C 11" in joined:
-            fcc_slip_label = next((cell for cell in cells if "{ 1 1" in cell or "110" in cell), None)
+        component = str(cells[0] if cells else "").strip()
+        if not component:
             continue
-        if "Prismatic" in joined or "Basal" in joined or "Pyramidal" in joined:
-            current_structure = "HCP"
-            hcp_slip_labels = [cell for cell in cells if any(tok in cell for tok in ("Prismatic", "Basal", "Pyramidal"))]
-            lines.append(
-                "HCP slip-mode columns: " + ", ".join(hcp_slip_labels)
-                if hcp_slip_labels else "HCP slip-mode columns detected."
-            )
-            continue
+        for col_idx, material in enumerate(materials, start=1):
+            value = _normalize_component_value(cells[col_idx] if col_idx < len(cells) else "")
+            if not value:
+                continue
+            rendered_by_material[material].append(f"{component}={value}")
 
-        explicit_structure = next((cell for cell in cells[:2] if cell in {"FCC", "HCP", "BCC"}), None)
-        if explicit_structure:
-            current_structure = explicit_structure
-
-        material = next(
-            (
-                cell for cell in cells[:4]
-                if cell
-                and cell not in {"FCC", "HCP", "BCC"}
-                and _numeric_token(cell) is None
-                and _citation_token(cell) is None
-            ),
-            None,
-        )
-        if not material or current_structure not in {"FCC", "HCP"}:
-            continue
-
-        numeric_values = [token for token in (_numeric_token(cell) for cell in cells) if token is not None]
-        citations = [token for token in (_citation_token(cell) for cell in cells) if token is not None]
-
-        if current_structure == "FCC" and len(numeric_values) >= 5:
-            slip_label = fcc_slip_label or "active slip mode"
-            lines.append(
-                f"Comparative row: Structure=FCC, Material={material}, Zener={numeric_values[0]}, "
-                f"C11={numeric_values[1]} GPa, C12={numeric_values[2]} GPa, C44={numeric_values[3]} GPa, "
-                f"τ0,i for {slip_label}={numeric_values[4]} MPa"
-                + (f", Ref={citations[0]}" if citations else "")
-            )
-            rendered_data_rows += 1
-            continue
-
-        if current_structure == "HCP" and hcp_slip_labels and len(numeric_values) >= len(hcp_slip_labels):
-            slip_values = numeric_values[-len(hcp_slip_labels):]
-            prefix_parts = [f"Structure=HCP", f"Material={material}"]
-            if len(numeric_values) > len(hcp_slip_labels):
-                prefix_parts.append(f"c/a={numeric_values[0]}")
-            if len(numeric_values) > len(hcp_slip_labels) + 1:
-                prefix_parts.append(f"C11={numeric_values[1]} GPa")
-            slip_parts = [f"{label}={value} MPa" for label, value in zip(hcp_slip_labels, slip_values)]
-            line = "Comparative row: " + ", ".join(prefix_parts + slip_parts)
-            if citations:
-                line += f", Ref={citations[-1]}"
-            lines.append(line)
-            rendered_data_rows += 1
-
+    lines: List[str] = []
+    if caption:
+        lines.append(f"Caption: {caption}")
+    lines.append(
+        "Matrix orientation: rows are composition components/elements; columns are materials; "
+        "copy only non-empty cells for each material."
+    )
+    for material in materials:
+        entries = rendered_by_material.get(material) or []
+        if entries:
+            lines.append(f"Material: {material}")
+            lines.append("Entries: " + "; ".join(entries))
+        else:
+            lines.append(f"Material: {material}")
+            lines.append("Entries: <NO EXPLICIT COMPOSITION ENTRIES>")
+    remaining = [str(name or "").strip() for name in header[1 + len(materials):] if str(name or "").strip()]
+    if remaining:
+        lines.append("Additional materials omitted from summary: " + ", ".join(remaining))
     return "\n".join(lines).strip()
 
 
@@ -240,6 +264,8 @@ def _table_json_summary(table_json: Dict[str, Any], max_rows: int = 8, max_cells
         if local_path:
             parts.append("This table has a local image and can be passed directly to the extraction model.")
         return "\n".join(parts).strip()
+    if _is_composition_matrix_table_json(table_json):
+        return _render_composition_matrix(table_json, max_materials=max_rows)
     if _is_comparative_parameter_table_json(table_json):
         return _render_comparative_parameter_matrix(table_json, max_rows=max_rows)
     if not isinstance(rows, list):
@@ -259,6 +285,8 @@ def _table_json_full_text(table_json: Dict[str, Any], max_cells_per_row: int = 4
     rows = table_json.get("rows")
     if table_json.get("table_kind") == "image_backed":
         return _table_json_summary(table_json, max_rows=1000, max_cells_per_row=max_cells_per_row)
+    if _is_composition_matrix_table_json(table_json):
+        return _render_composition_matrix(table_json, max_materials=None)
     if _is_comparative_parameter_table_json(table_json):
         return _render_comparative_parameter_matrix(table_json, max_rows=None)
     if not isinstance(rows, list):
@@ -467,6 +495,11 @@ def _normalize_table_rows_for_render(rows: List[List[str]]) -> Tuple[List[List[s
             continue
 
         padded = _pad_row(row, width, align=_infer_data_row_alignment(row, width))
+        if _looks_like_headerish_row(padded):
+            normalized.append(padded)
+            data_context = [""] * width
+            continue
+
         first_explicit = next((col_idx for col_idx, cell in enumerate(padded) if cell), width)
         expanded: List[str] = []
         for col_idx, cell in enumerate(padded):
@@ -521,6 +554,24 @@ def _fallback_table_score(table: Dict[str, Any]) -> int:
         "material input",
     )
     score = sum(1 for kw in keywords if kw in haystack)
+    interaction_keywords = (
+        "interaction matrix",
+        "interaction parameter",
+        "interaction parameters",
+        "latent hardening",
+        "forest interaction",
+        "slip interaction",
+        "slip-system interaction",
+        "qab",
+        "q_ab",
+        "q α β",
+        "qαβ",
+        "coplanar",
+        "colinear",
+        "non-colinear",
+        "semi-colinear",
+    )
+    score += 3 * sum(1 for kw in interaction_keywords if kw in haystack)
     if str(table.get("table_kind") or "").strip().lower() == "image_backed":
         score += 1
     return score
@@ -615,6 +666,26 @@ def _table_semantic_type(table: Dict[str, Any]) -> str:
         str(table.get(k) or "")
         for k in ("display_label", "json_summary", "extract_text", "text", "name")
     ).lower()
+    if any(
+        kw in haystack for kw in (
+            "interaction matrix",
+            "interaction parameter",
+            "interaction parameters",
+            "latent hardening",
+            "forest interaction",
+            "slip interaction",
+            "slip-system interaction",
+            "coplanar",
+            "colinear",
+            "non-colinear",
+            "semi-colinear",
+            "qab",
+            "q_ab",
+            "q α β",
+            "qαβ",
+        )
+    ):
+        return "interaction_matrix"
     if any(kw in haystack for kw in ("chemical composition", "composition", "wt.%", "at.%")):
         return "composition_matrix"
     if any(kw in haystack for kw in ("phase fraction", "phase constitution", "volume fraction")):
@@ -639,7 +710,8 @@ def _table_semantic_hint(table: Dict[str, Any]) -> str:
         "phase_fraction_matrix": "Interpret this as a process-state or condition profile table. Prefer populating microstructure_features[] and linking them to process_states[] or conditions[].",
         "sample_profile_matrix": "Interpret this as a process-state profile table. Prefer populating process_states[] and microstructure_features[] with grain size, texture, orientation, or processing-state facts.",
         "comparative_parameter_matrix": "Interpret this as a comparative parameter matrix spanning multiple materials or constituents. Keep material and process-state identity explicit and avoid collapsing all columns into one material.",
-        "parameter_bundle_table": "Interpret this as a multi-condition parameter table. Expand rows or columns into separate parameter claims and link them through process_state_id and condition_id when conditions are explicit.",
+        "interaction_matrix": "Interpret this as a parameter interaction matrix. Extract explicit interaction coefficients completely, including latent hardening, forest interaction, or slip-system coupling terms across row/column families.",
+        "parameter_bundle_table": "Interpret this as a multi-condition parameter table. Expand rows or columns into separate parameter claims and link them through process_state_id and condition_id when conditions are explicit. Do not merge distinct condition rows only because nearby values repeat.",
         "parameter_table": "Interpret this as a parameter table. Extract all explicit parameter values completely into parameter_claims[].",
         "generic_table": "Interpret this conservatively and only extract explicit, well-supported facts.",
     }
@@ -651,11 +723,12 @@ _EXPLICIT_PARAMETER_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 _EXPLICIT_NUMBER_RE = re.compile(r"(?<![A-Za-z])[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?")
+_SECTION_EQUATION_MARKER_RE = re.compile(r"(?:^|\s)(?:Equation\s*(?:\(\d+\)|:)|\(\d+\)\s+[A-Za-z0-9α-ωΑ-Ωγτξhmdot˙])")
 
 
 def _table_has_explicit_parameter_values(table: Dict[str, Any]) -> bool:
     semantic_type = _table_semantic_type(table)
-    if semantic_type not in {"parameter_table", "comparative_parameter_matrix", "parameter_bundle_table"}:
+    if semantic_type not in {"parameter_table", "comparative_parameter_matrix", "parameter_bundle_table", "interaction_matrix"}:
         return False
     haystack = " ".join(
         str(table.get(k) or "")
@@ -664,9 +737,62 @@ def _table_has_explicit_parameter_values(table: Dict[str, Any]) -> bool:
     return bool(_EXPLICIT_PARAMETER_NAME_RE.search(haystack) and _EXPLICIT_NUMBER_RE.search(haystack))
 
 
+def _interaction_table_score(table: Dict[str, Any]) -> int:
+    haystack = " ".join(
+        str(table.get(k) or "")
+        for k in ("display_label", "json_summary", "extract_text", "text", "name")
+    ).lower()
+    keywords = (
+        "interaction matrix",
+        "interaction parameter",
+        "interaction parameters",
+        "latent hardening",
+        "forest interaction",
+        "slip interaction",
+        "slip-system interaction",
+        "coplanar",
+        "colinear",
+        "non-colinear",
+        "semi-colinear",
+        "qab",
+        "q_ab",
+        "q α β",
+        "qαβ",
+    )
+    return sum(1 for kw in keywords if kw in haystack)
+
+
+def _section_requests_interaction_tables(selected_sections: List[Dict[str, Any]]) -> bool:
+    keywords = (
+        "interaction matrix",
+        "interaction parameter",
+        "interaction parameters",
+        "latent hardening",
+        "forest interaction",
+        "slip interaction",
+        "slip-system interaction",
+    )
+    for section in selected_sections:
+        text = " ".join(
+            str(section.get(k) or "")
+            for k in ("name", "title", "selection_preview", "text")
+        ).lower()
+        if any(kw in text for kw in keywords):
+            return True
+    return False
+
+
 def _section_has_explicit_parameter_values(section: Dict[str, Any]) -> bool:
     text = str(section.get("text") or "")
     return bool(_EXPLICIT_PARAMETER_NAME_RE.search(text) and _EXPLICIT_NUMBER_RE.search(text))
+
+
+def _sections_have_embedded_equations(sections: List[Dict[str, Any]]) -> bool:
+    for section in sections:
+        text = str(section.get("text") or "")
+        if _SECTION_EQUATION_MARKER_RE.search(text):
+            return True
+    return False
 
 
 def _should_skip_extraction_no_explicit_parameters(
@@ -917,8 +1043,6 @@ def load_equation_files(folder: str) -> List[Dict[str, Any]]:
             ),
         })
     return out
-
-
 def _normalize_equation_catalog_id(record: Dict[str, Any]) -> str:
     equation_id = str(record.get("equation_id") or "").strip()
     if equation_id:
@@ -1033,6 +1157,7 @@ Select the MINIMUM section and table files needed to reliably extract crystal-pl
 
 3 Processing suggestions
 - Tables with parameters are highest priority.
+- Interaction-matrix tables are also highest priority when they encode latent hardening, forest interaction, slip-system coupling, or q_ab-type coefficients.
 - Governing equations are also first-class extraction inputs when available, especially for attaching parameters to explicit equation IDs.
 - Composition, phase-fraction, grain-size, texture, and material-input tables are second priority and should be included when they define the studied material system.
 - If a paper contains dedicated results sections for microstructure, texture evolution, EBSD/TKD, KAM, dislocation structure, twinning, or grain-boundary-mediated deformation, include at least one of those sections when they provide explicit descriptors used to interpret the parameterization.
@@ -1043,6 +1168,7 @@ Select the MINIMUM section and table files needed to reliably extract crystal-pl
 - For multi-material or comparative papers, do not select only the parameter table if a separate composition or material table is needed to identify which material each parameter bundle belongs to.
 - Prefer specific subsections such as `Fatigue test`, `Material`, `Microstructural characterization`, or `Loading conditions` over relying only on a broad parent methods section.
 - If a constitutive-law or calibration section is selected and relevant equations exist, usually select those equations too.
+- If a table caption or preview mentions interaction matrix, interaction parameters, latent hardening, forest interaction, coplanar/colinear/non-colinear interactions, or q_ab-style coefficients, select that table.
 
 4 Few-shot examples
 Example A:
@@ -1137,15 +1263,7 @@ Return JSON only.
 
 EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
 {
-  "schema_version": "5.1.0",
-  "document": {
-    "doi": "string or null",
-    "title": "string or null",
-    "authors": ["string"],
-    "year": "number or null",
-    "journal": "string or null",
-    "notes": "string or null"
-  },
+  "schema_version": "5.1.1",
   "materials": [
     {
       "material_id": "string or null",
@@ -1172,7 +1290,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
   "process_states": [
     {
       "process_state_id": "string or null",
-      "material_id": "string or null",
+      "material_ids": ["string"],
       "label": "string or null",
       "state_type": [
         "as_received / as_cast / as_built / annealed / solution_treated / aged / quenched / cold_worked / hot_worked / rolled / forged / extruded / irradiated / hydrogen_charged / fatigue_damaged / other / string or null"
@@ -1203,14 +1321,6 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
             "unit": "fraction / % / true_strain / engineering_strain / null",
             "description": "string or null"
           },
-          "notes": "string or null"
-        }
-      ],
-      "state_descriptors": [
-        {
-          "name": "string or null",
-          "value": "number or string or null",
-          "unit": "string or null",
           "notes": "string or null"
         }
       ],
@@ -1246,9 +1356,31 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
       "notes": "string or null"
     }
   ],
+  "microstructure_features": [
+    {
+      "feature_id": "string or null",
+      "feature_family": "grain_structure / texture / precipitates / defects / porosity / interfaces / morphology / local_region / other / string or null",
+      "feature_name": "string or null",
+      "parameterization_scope": "shared / constituent_specific / region_specific / interface_specific / other / string or null",
+      "value_type": "scalar / vector / range / categorical / text / other / string or null",
+      "value": "number or string or null",
+      "unit": "string or null",
+      "description": "string or null",
+      "method": "ebsd / xrd / sem / tem / om / narrative / table / figure / other / string or null",
+      "applies_to": {
+        "material_id": "string or null",
+        "constituent_id": "string or null",
+        "process_state_id": "string or null",
+        "condition_id": "string or null"
+      },
+      "evidence_ids": ["string"],
+      "notes": "string or null"
+    }
+  ],
   "deformation_systems": [
     {
       "system_id": "string or null",
+      "family_id": "string or null",
       "model_id": "string or null",
       "constituent_id": "string or null",
       "system_type": "slip / twin / transformation / other / null",
@@ -1341,16 +1473,6 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
           "temperature_dependent_parameters": "yes / no / null",
           "self_heating_considered": "yes / no / null",
           "notes": "string or null"
-        },
-        "internal_variable_summary": {
-          "includes_crss_or_slip_resistance": "yes / no / null",
-          "includes_dislocation_density": "yes / no / null",
-          "includes_backstress": "yes / no / null",
-          "includes_twin_volume_fraction": "yes / no / null",
-          "includes_phase_fraction": "yes / no / null",
-          "includes_damage": "yes / no / null",
-          "other_internal_variables": ["string"],
-          "notes": "string or null"
         }
       },
       "constitutive_branches": [
@@ -1383,19 +1505,6 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
       "grid_size": "string or null",
       "periodic_geometry": "yes / no / null",
       "grain_shape_assumption": "equiaxed / columnar / elongated / measured / voronoi / other / null",
-      "evidence_ids": ["string"],
-      "notes": "string or null"
-    }
-  ],
-  "orientation_inputs": [
-    {
-      "orientation_id": "string or null",
-      "model_id": "string or null",
-      "geometry_id": "string or null",
-      "source": "ebsd / xrd_odf / random_texture / ideal_texture / synthetic / literature / other / null",
-      "representation": "euler_angles / quaternion / orientation_matrix / pole_figure / odf / ipf_map / other / null",
-      "texture_type": "random / measured / ideal / fiber / rolling / extrusion / other / null",
-      "number_of_orientations": "number or null",
       "evidence_ids": ["string"],
       "notes": "string or null"
     }
@@ -1481,54 +1590,6 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
       "notes": "string or null"
     }
   ],
-  "simulation_outputs": [
-    {
-      "output_id": "string or null",
-      "model_id": "string or null",
-      "condition_id": "string or null",
-      "output_quantity": "stress_strain_curve / slip_activity / crss_evolution / texture_evolution / lattice_strain / strain_localization / damage_field / twin_fraction / phase_fraction / other / null",
-      "scale": "macroscopic / grain / element / slip_system / phase / local_region / other / null",
-      "reported_as": "curve / field / map / table / figure / scalar / other / null",
-      "evidence_ids": ["string"],
-      "notes": "string or null"
-    }
-  ],
-  "model_evaluations": [
-    {
-      "evaluation_id": "string or null",
-      "model_id": "string or null",
-      "condition_id": "string or null",
-      "output_id": "string or null",
-      "evaluation_role": "calibration_fit / validation / prediction / sensitivity / comparison / null",
-      "target_observable": "stress_strain / texture / lattice_strain / strain_map / slip_activity / fatigue_life / crack_growth / other / null",
-      "metric_name": "rmse / r2 / error_percent / qualitative / other / null",
-      "metric_value": "number or string or null",
-      "compared_against": "experiment / another_model / analytical_solution / literature / null",
-      "evidence_ids": ["string"],
-      "notes": "string or null"
-    }
-  ],
-  "microstructure_features": [
-    {
-      "feature_id": "string or null",
-      "feature_family": "grain_structure / texture / precipitates / defects / porosity / interfaces / morphology / local_region / other / string or null",
-      "feature_name": "string or null",
-      "parameterization_scope": "shared / constituent_specific / region_specific / interface_specific / other / string or null",
-      "value_type": "scalar / vector / range / categorical / text / other / string or null",
-      "value": "number or string or null",
-      "unit": "string or null",
-      "description": "string or null",
-      "method": "ebsd / xrd / sem / tem / om / narrative / table / figure / other / string or null",
-      "constituent_id": "string or null",
-      "applies_to": {
-        "material_id": "string or null",
-        "process_state_id": "string or null",
-        "condition_id": "string or null"
-      },
-      "evidence_ids": ["string"],
-      "notes": "string or null"
-    }
-  ],
   "parameter_claims": [
     {
       "claim_id": "string or null",
@@ -1554,6 +1615,10 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         "model_id": "string or null",
         "condition_id": "string or null",
         "branch_ids": ["string; use this array for one or more constitutive branches; for a single explicit branch keep one item, and for shared parameters keep every relevant branch ID"],
+        "mechanism": "slip / twinning / transformation / damage / thermal / mixed / other / string or null",
+        "family_id": "string or null",
+        "family_name": "string or null",
+        "system_ids": ["string"],
         "scope": "global / constituent / family / system / branch / local_region / other / string or null",
         "notes": "string or null"
       },
@@ -1605,7 +1670,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
 
 EXTRACT_USER_PROMPT_TEMPLATE = """
 1 Task description
-Extract crystal-plasticity information from the provided paper excerpt into the v5.1 hierarchical CP schema.
+Extract crystal-plasticity information from the provided paper excerpt into the v5.1.1 hierarchical CP schema.
 
 2 Task requirements
 - Use only explicit evidence in the excerpt.
@@ -1620,11 +1685,7 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
 - Do not create a top-level `phases[]` block. Use `constituents[]` for phases, precipitates, pores, and other constituent-level entities.
 - Use `deformation_systems[]` for explicit slip, twin, and transformation systems or families used by the model.
 - Use `simulation_geometries[]` for explicit RVE, unit-cell, grain-aggregate, voxel, spectral-grid, mesh, or specimen geometry setup.
-- Use `orientation_inputs[]` for explicit simulation-input orientation or texture data such as EBSD-derived orientations, Euler angles, pole figures, ODFs, random textures, or ideal textures.
 - Use `numerical_methods[]` for explicit integration, nonlinear solver, increment-control, or regularization choices.
-- Use `simulation_outputs[]` only for explicit modeled observables linked to a model and condition.
-- Use `model_evaluations[]` only for explicit calibration, validation, prediction, sensitivity, or comparison roles linked to those outputs.
-  If the excerpt does not support them directly, leave these arrays empty rather than inferring them from provenance.
 - Keep `parameter_claims[]` claim-centric: separate `parameter`, `assertion`, `applies_to`, `provenance`, and `evidence_ids`.
 - Classify every `parameter_claims[]` item into one of three roles when explicit or strongly implied:
   `material_constitutive_parameter`, `experimental_condition_parameter`, or `numerical_model_parameter`.
@@ -1632,9 +1693,21 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
 - Use `experimental_condition_parameter` for setup quantities that are really test or loading conditions, such as imposed temperature, strain rate, hold time, load ratio, frequency, environment pressure, or similar condition-setting values when they are still represented as parameter claims.
 - Use `numerical_model_parameter` for solver or discretization settings such as tolerances, time step controls, iteration limits, regularization lengths, mesh-related numerical settings, or other explicit model-solution parameters.
 - Do not rely on postprocessing to split, remap, or sharpen evidence. The extractor output itself must already contain final claim-level evidence bindings.
-- Fill `document` directly when the excerpt explicitly contains that information; otherwise leave fields null or empty.
+- Do not emit a `document` block. Document-level metadata is backfilled deterministically after extraction.
 - Prefer final-ready bindings now rather than leaving them for later normalization or postprocessing.
-- Assign stable, reusable IDs whenever the excerpt supports them: `material_id`, `process_state_id`, `constituent_id`, `condition_id`, `model_id`, `branch_id`, `feature_id`, `claim_id`, `evidence_id`.
+- Assign stable, reusable IDs whenever the excerpt supports them: `material_id`, `process_state_id`, `constituent_id`, `condition_id`, `model_id`, `branch_id`, `family_id`, `system_id`, `geometry_id`, `numerical_method_id`, `feature_id`, `claim_id`, `evidence_id`.
+- Make IDs deterministic and semantic, not conversational.
+  Derive each ID from the same stable entity meaning every time, using short lowercase ASCII snake_case slugs built from explicit names, roles, phases, temperatures, strain rates, model names, or table-local labels when available.
+- Reuse the same ID for the same entity everywhere in one extraction.
+  If the same material / process state / condition / phase / model / branch / system / geometry / method / feature / evidence object appears again, repeat the same ID instead of minting a near-duplicate variant.
+- Prefer semantic IDs over encounter-order numbering.
+  Avoid arbitrary names like `mat_1`, `cond_2`, `feat_7`, `claim_12`, or `ev_3` when the excerpt gives enough explicit meaning to build a stable semantic slug.
+- Only use numeric suffixes when two items are still genuinely indistinguishable after using explicit semantics.
+  In that case, append a minimal ordered suffix such as `_2`, `_3`, following paper-local order rather than random order.
+- Keep the same semantic base when a record is refined later in the same extraction.
+  Do not rename a record just because later evidence adds more notes or bindings.
+- Prefer short semantic ID patterns such as:
+  `material_id=mat_ti6al4v`, `process_state_id=ps_as_built_annealed_773k`, `constituent_id=const_alpha`, `condition_id=cond_723k_0p001s`, `model_id=model_cp_fem`, `branch_id=branch_slip_flow`, `family_id=family_prismatic`, `system_id=sys_prismatic_a`, `geometry_id=geom_rve`, `numerical_method_id=num_implicit_newton`, `feature_id=feat_twin_fraction_723k_0p001s`, `claim_id=claim_tau0_alpha`, `evidence_id=ev_table_006_tau0`.
 - Use evidence links beyond parameters as well: populate `evidence_ids` for materials, process states, constituents, conditions, models, constitutive branches, and microstructure features when direct support is available.
 - Prioritize five linked questions for every extraction when possible:
   1. what material or material state is being discussed
@@ -1660,14 +1733,12 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
   Treat them as calibration or observation targets instead.
 - Distinguish physical microstructure descriptors from model inputs.
   Grain size, morphology, defects, and measured texture descriptors belong in `microstructure_features[]`.
-  Orientation or texture data explicitly supplied to the simulation belongs in `orientation_inputs[]`, even if related descriptive texture facts also appear in `microstructure_features[]`.
 - Distinguish constitutive behavior from numerical solution strategy.
   Flow rules, hardening, twinning, damage, and thermal coupling belong in `models[].constitutive_description` and `constitutive_branches[]`.
   Explicit integration, nonlinear solver, increment control, and regularization choices belong in `numerical_methods[]`.
-- Distinguish simulation setup from simulation result.
+- Distinguish simulation setup from calibration provenance.
   Mesh, grid, RVE, grain count, and periodic geometry belong in `simulation_geometries[]`.
-  Predicted stress-strain curves, lattice strain, texture evolution, slip activity, twin fraction, and related observables belong in `simulation_outputs[]`.
-  Calibration, validation, prediction, sensitivity, and comparison roles belong in `model_evaluations[]`.
+  Calibration and validation targets should stay in `parameter_claims[].provenance.calibration`; do not invent separate output or evaluation objects.
 - Split calibration descriptions claim-by-claim whenever the paper calibrates different parameter subsets against different observables, even under the same temperature and strain-rate.
   One physical condition can legitimately support multiple distinct calibration targets across parameter claims.
 - Use `parameter_claims[].provenance.calibration.target_type`, `target_description`, and `observation_scope` to preserve what data stream was used for fitting.
@@ -1710,9 +1781,6 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
 - If the paper explicitly names basal, prismatic, pyramidal, octahedral, cube, twinning, or transformation systems or families used by the simulation, emit `deformation_systems[]` entries instead of keeping those details only in notes.
 - If the paper gives explicit system-level non-Schmid behavior, Schmid-tensor statements, plane/direction notation, or number of systems, store them in `deformation_systems[]`.
 - If the paper gives explicit geometry or mesh setup, emit one `simulation_geometries[]` entry per explicit setup tied to the relevant `model_id`.
-- If the paper states that the simulation used measured EBSD orientations, random orientations, ideal texture, Euler angles, ODFs, or pole figures as model input, emit `orientation_inputs[]`.
-- If the paper explicitly states validation or calibration against stress-strain, diffraction lattice strain, texture evolution, strain maps, slip activity, or similar observables, connect those through `simulation_outputs[]` and `model_evaluations[]`.
-  If the text only supports a claim-level calibration note and does not explicitly define a modeled output or evaluation object, keep the information only inside `parameter_claims[].provenance.calibration`.
 - Extract the following schema from the paper excerpt:
 __SCHEMA_JSON__
 
@@ -1746,8 +1814,6 @@ __SCHEMA_JSON__
 - When the excerpt explicitly links a process state to one or more testing conditions, fill `conditions[].linked_process_state_ids` and use the same process-state IDs consistently from the relevant claims and features.
 - Use `conditions[]` for temperature, strain rate, fatigue mode, indentation settings, environment, and calibration/validation role.
 - Use `conditions[]` for the physical test or loading setup; use `parameter_claims[].provenance.calibration` for which observable or dataset was used to fit the model.
-- If a calibration or validation target corresponds to a concrete modeled observable, also emit a compatible `simulation_outputs[]` entry and `model_evaluations[]` entry when the excerpt explicitly supports that structure.
-- Do not emit `simulation_outputs[]` or `model_evaluations[]` solely because a calibration target exists in provenance. These sections should remain empty unless the modeled output or evaluation role is explicit.
 - Use `constituents[]` instead of embedding constituent details inside `microstructure_features[]`.
 - Do not encode calibration target differences only in free-text notes when the `provenance.calibration` structure can represent them directly.
 - Represent the common physical combinations explicitly by combining separate fields rather than creating one fused enum:
@@ -1761,7 +1827,7 @@ __SCHEMA_JSON__
 - If grain-boundary effects, interface regions, or local zones are modeled separately, represent them as `microstructure_features[]` or `constituents[]` only when the excerpt explicitly distinguishes them.
 - For equation-rich constitutive sections, extract reusable `constitutive_branches[]` so different parameter subsets can bind to the right branch or evolution law rather than all sharing one generic model-level association.
 - If the paper explicitly reports geometry setup or numerical solution details, do not collapse them into one free-text `models[].notes` field. Prefer `simulation_geometries[]` and `numerical_methods[]`.
-- When explicit, fill `applies_to.material_id`, `applies_to.constituent_id`, `applies_to.process_state_id`, `applies_to.model_id`, `applies_to.condition_id`, and `applies_to.branch_ids`.
+- When explicit, fill `applies_to.material_id`, `applies_to.constituent_id`, `applies_to.process_state_id`, `applies_to.model_id`, `applies_to.condition_id`, `applies_to.branch_ids`, `applies_to.family_id`, and `applies_to.system_ids`.
 - If a claim is global or shared, keep `scope` broad and leave narrower target IDs null rather than inventing unsupported constituent or branch specificity.
 - If a claim is tied to a fitting target rather than only a physical condition, fill `provenance.calibration` rather than inventing a synthetic scope ID.
 - Keep the parameter identity in `parameter`, the numeric statement in `assertion`, and the applicability in `applies_to`.
@@ -1790,6 +1856,13 @@ __SCHEMA_JSON__
 - When a table has a dedicated value column such as `Value`, keep `locator.column_name` anchored to that header rather than copying a neighboring numeric cell.
 - For condition-rich tables with repeated temperatures, grain sizes, phases, families, or slip modes, make the active row context explicit in `locator.row_name`, `locator.column_name`, `locator.value`, or `snippet`.
   A reviewer should be able to see the exact condition-value mapping without re-reading the whole table.
+- For condition-indexed parameter tables, treat each explicit condition row or column as a separate mapping target first, then decide whether any claims can be shared.
+  Never merge two temperature / grain-size / strain-rate / process-state entries into one claim unless the table explicitly states one shared value applies to that exact full set of conditions.
+- Repeated numeric values across neighboring conditions are not enough to justify a merged claim.
+  If 673 K and 723 K both show `125` but 773 K shows `130`, emit one claim for the `125` rows and a separate claim for the `130` row; do not extend the `125` claim to 773 K.
+- When a claim is shared across multiple explicit conditions, make the supported condition set exact.
+  Do not broaden the scope in notes, `condition_id`, or evidence links beyond the rows or columns that show the same value.
+- If a condition-specific table row is available, prefer a condition-specific `condition_id` over leaving `applies_to.condition_id=null` and describing the condition only in free-text notes.
 - Reuse the same `evidence_id` from `evidence_objects[]` across all records supported by the same snippet instead of inventing near-duplicate evidence objects.
 - `parameter.canonical_name` should already use the project-standard canonical name when it is clear from symbol/description/context. Avoid verbose phrase-like names if a stable canonical label is available.
 - Use `parameter.parameter_family` for the stable middle layer between coarse domain and specific canonical name.
@@ -1829,6 +1902,8 @@ __SCHEMA_JSON__
 - Keep material-state hierarchy explicit: detailed per-material composition belongs in `materials[]`; constituent or phase-like organization belongs in `constituents[]`; per-process-state variation belongs in `process_states[]`; loading/test variation belongs in `conditions[]`.
 - For multiple deformation conditions in one paper, populate `conditions[]` and link `parameter_claims[]` through `applies_to.condition_id` when explicit.
 - For parameter tables organized by temperature, grain size, process state, or method, expand each condition row into distinct parameter claims and link them to the right `process_state_id` / `condition_id`.
+- Do not collapse multiple explicit temperature rows into one broad claim just because some values repeat.
+  Group rows only when the table itself supports the grouping exactly; otherwise keep one claim per condition row.
 - Distinguish calibration bounds from final calibrated parameters. If a table gives bounds or search ranges, do not convert the bound itself into a standalone calibrated parameter. Preserve it in `assertion.valid_range` when the mapping is explicit.
 - For image-backed parameter tables, apply the same completeness rule as text tables: recover all explicit numeric entries, including zeros, shared rows, and elastic blocks.
 - Do not omit a tail row of a selected parameter table merely because earlier rows already provided more prominent parameters.
@@ -1864,6 +1939,9 @@ Expected behavior: populate `materials[]` with one material entry per column and
 Example J: A parameter table is indexed by temperature and grain size for one alloy after different heat treatments.
 Expected behavior: create one `process_states[]` entry per heat-treatment state when explicit, store the grain-size fact in `microstructure_features[]`, and link the corresponding parameter claims with `process_state_id`.
 
+Example J2: A temperature table lists `kanni=125` at 673 K and 723 K, `kanni=130` at 773 K, and `kanni=110` at 873 K.
+Expected behavior: do not create one broad `kanni=125` claim covering 673-773 K. Emit exact condition-scoped claims so the supported condition set matches the table rows precisely.
+
 Example K: A table lists process states as rows and phase fractions as columns for room temperature and cryogenic temperature.
 Expected behavior: populate `conditions[]` for room temperature and cryogenic temperature, store phase-fraction observations in `microstructure_features[]`, and do not convert phase fractions into CP parameter claims.
 
@@ -1898,7 +1976,7 @@ Example R: One constitutive section states the active constitutive channels and 
 Expected behavior: attach all governing constitutive equations to `models[].equation_ids` and create separate `constitutive_branches[]` entries for each explicit branch or evolution law.
 
 Example R2: The model uses basal and prismatic slip, and the paper explicitly states the family names, plane/direction notation, and number of systems.
-Expected behavior: emit separate `deformation_systems[]` entries and link them from `models[].constitutive_description.slip_description.deformation_system_ids`.
+Expected behavior: emit separate `deformation_systems[]` entries, assign stable `family_id` and `system_id` values, and link them from `models[].constitutive_description.slip_description.deformation_system_ids` and any parameter claims with family or system scope.
 
 Example R3: The paper states that a CPFE simulation used an RVE with 300 grains, periodic boundary conditions, and a voxel grid.
 Expected behavior: emit a `simulation_geometries[]` entry linked to the model instead of keeping those details only in `solver_framework.notes`.
@@ -1906,8 +1984,8 @@ Expected behavior: emit a `simulation_geometries[]` entry linked to the model in
 Example S: A paper says one parameter subset is calibrated from a macroscopic mechanical response, while another subset is calibrated from a subset-specific relaxation, diffraction, or local response, both under the same temperature.
 Expected behavior: create one physical `condition` if appropriate, but keep distinct `provenance.calibration` descriptions across the affected parameter claims; the subset-based claims should use the most specific compatible `observation_scope` and preserve the subset label in `target_description`.
 
-Example S2: The paper says the simulation used measured EBSD orientations as input and compares predicted lattice strain against diffraction data.
-Expected behavior: emit `orientation_inputs[]` for the EBSD-derived input, `simulation_outputs[]` for lattice strain, and `model_evaluations[]` describing the calibration or validation role.
+Example S2: The paper calibrates selected parameters against diffraction lattice strain while also describing measured texture or EBSD context.
+Expected behavior: keep the diffraction target inside `parameter_claims[].provenance.calibration`, and store any explicit measured texture descriptors in `microstructure_features[]` rather than inventing a separate model-input block.
 
 Example T: A paper discusses a named orientation family, subset label, diffraction family, or local-region response during calibration.
 Expected behavior: treat that label as an observation or calibration target, not as a constituent or constitutive branch unless the text explicitly defines it that way.
@@ -2744,73 +2822,139 @@ def build_context(selected_sections, selected_tables, selected_equations, max_co
         "omitted_sections": [],
     }
 
-    equation_budget_total = int(max_context_chars * 0.2) if selected_equations else 0
-    remaining_after_equations = max_context_chars - equation_budget_total
-    table_budget_total = remaining_after_equations if not selected_sections else int(remaining_after_equations * 0.8)
-    section_budget_total = remaining_after_equations - table_budget_total
-    per_equation_budget = equation_budget_total // max(1, len(selected_equations)) if selected_equations else 0
-    per_table_budget = table_budget_total // max(1, len(selected_tables)) if selected_tables else 0
-    per_section_budget = section_budget_total // max(1, len(selected_sections)) if selected_sections else 0
+    def _full_table_text(table: Dict[str, Any]) -> str:
+        full_text = str(table.get("extract_text") or table.get("json_summary") or table.get("text") or "").strip()
+        semantic_hint = _table_semantic_hint(table)
+        return f"{semantic_hint}\n{full_text}" if full_text else semantic_hint
 
-    for idx, eq in enumerate(selected_equations):
-        remaining_budget = max_context_chars - total
-        if remaining_budget <= 0:
-            context_meta["omitted_equations"].extend(
-                [row["name"] for row in selected_equations[idx:] if isinstance(row, dict) and row.get("name")]
-            )
-            break
-        local_budget = max(400, min(remaining_budget, per_equation_budget or remaining_budget))
-        content = trim_text(str(eq.get("extract_text") or eq.get("text") or ""), local_budget)
-        if len(str(eq.get("extract_text") or eq.get("text") or "")) > local_budget:
-            context_meta["truncated_equations"].append(eq["name"])
-        chunk = f"\n\n=== EQUATION: {eq['name']} ===\n{content}"
-        parts.append(chunk)
-        total += len(chunk)
-        context_meta["included_equations"].append(eq["name"])
+    table_chunks: List[Tuple[Dict[str, Any], str, str]] = []
+    table_chars_total = 0
+    for table in selected_tables:
+        full_text = _full_table_text(table)
+        chunk = f"\n\n=== TABLE: {table['name']} ===\n{full_text}"
+        table_chunks.append((table, full_text, chunk))
+        table_chars_total += len(chunk)
 
-    for idx, t in enumerate(selected_tables):
-        remaining_budget = max_context_chars - total
-        if remaining_budget <= 0:
-            context_meta["omitted_tables"].extend(
-                [tbl["name"] for tbl in selected_tables[idx:] if isinstance(tbl, dict) and tbl.get("name")]
-            )
-            break
-        full_table_text = str(t.get("extract_text") or t.get("json_summary") or t.get("text") or "").strip()
-        semantic_hint = _table_semantic_hint(t)
-        full_table_text = f"{semantic_hint}\n{full_table_text}" if full_table_text else semantic_hint
-        local_budget = max(1200, min(remaining_budget, per_table_budget or remaining_budget))
-        content = trim_text(full_table_text, local_budget)
-        if len(full_table_text) > local_budget:
-            context_meta["truncated_tables"].append(t["name"])
-        chunk = f"\n\n=== TABLE: {t['name']} ===\n{content}"
-        parts.append(chunk)
-        total += len(chunk)
-        context_meta["included_tables"].append(t["name"])
-        if total > max_context_chars:
-            overflow = [tbl["name"] for tbl in selected_tables[idx + 1:] if isinstance(tbl, dict) and tbl.get("name")]
-            context_meta["omitted_tables"].extend(overflow)
-            context_meta["final_context_chars"] = len("\n".join(parts))
-            return "\n".join(parts), context_meta
+    # Preserve full selected table contents whenever they fit inside the total context budget.
+    if table_chars_total <= max_context_chars:
+        for table, _, chunk in table_chunks:
+            parts.append(chunk)
+            total += len(chunk)
+            context_meta["included_tables"].append(table["name"])
 
-    for idx, s in enumerate(selected_sections):
-        remaining_budget = max_context_chars - total
-        if remaining_budget <= 0:
-            context_meta["omitted_sections"].extend(
-                [sec["name"] for sec in selected_sections[idx:] if isinstance(sec, dict) and sec.get("name")]
-            )
-            break
-        local_budget = max(800, min(remaining_budget, per_section_budget or remaining_budget))
-        content = trim_text(s["text"], local_budget)
-        if len(str(s.get("text") or "")) > local_budget:
-            context_meta["truncated_sections"].append(s["name"])
-        chunk = f"\n\n=== SECTION: {s['name']} ===\n{content}"
-        parts.append(chunk)
-        total += len(chunk)
-        context_meta["included_sections"].append(s["name"])
-        if total > max_context_chars:
-            overflow = [sec["name"] for sec in selected_sections[idx + 1:] if isinstance(sec, dict) and sec.get("name")]
-            context_meta["omitted_sections"].extend(overflow)
-            break
+        remaining_budget_total = max(0, max_context_chars - total)
+        equation_budget_total = int(remaining_budget_total * 0.55) if selected_equations and selected_sections else remaining_budget_total
+        if selected_equations and not selected_sections:
+            equation_budget_total = remaining_budget_total
+        section_budget_total = max(0, remaining_budget_total - equation_budget_total)
+        per_equation_budget = equation_budget_total // max(1, len(selected_equations)) if selected_equations else 0
+        per_section_budget = section_budget_total // max(1, len(selected_sections)) if selected_sections else 0
+
+        for idx, eq in enumerate(selected_equations):
+            remaining_budget = max_context_chars - total
+            if remaining_budget <= 0:
+                context_meta["omitted_equations"].extend(
+                    [row["name"] for row in selected_equations[idx:] if isinstance(row, dict) and row.get("name")]
+                )
+                break
+            local_budget = max(400, min(remaining_budget, per_equation_budget or remaining_budget))
+            raw_text = str(eq.get("extract_text") or eq.get("text") or "")
+            content = _trim_text_with_ellipsis(raw_text, local_budget)
+            if len(raw_text) > local_budget:
+                context_meta["truncated_equations"].append(eq["name"])
+            chunk = f"\n\n=== EQUATION: {eq['name']} ===\n{content}"
+            parts.append(chunk)
+            total += len(chunk)
+            context_meta["included_equations"].append(eq["name"])
+
+        for idx, section in enumerate(selected_sections):
+            remaining_budget = max_context_chars - total
+            if remaining_budget <= 0:
+                context_meta["omitted_sections"].extend(
+                    [sec["name"] for sec in selected_sections[idx:] if isinstance(sec, dict) and sec.get("name")]
+                )
+                break
+            local_budget = max(800, min(remaining_budget, per_section_budget or remaining_budget))
+            raw_text = str(section.get("text") or "")
+            content = _trim_text_with_ellipsis(raw_text, local_budget)
+            if len(raw_text) > local_budget:
+                context_meta["truncated_sections"].append(section["name"])
+            chunk = f"\n\n=== SECTION: {section['name']} ===\n{content}"
+            parts.append(chunk)
+            total += len(chunk)
+            context_meta["included_sections"].append(section["name"])
+            if total > max_context_chars:
+                overflow = [sec["name"] for sec in selected_sections[idx + 1:] if isinstance(sec, dict) and sec.get("name")]
+                context_meta["omitted_sections"].extend(overflow)
+                break
+    else:
+        equation_budget_total = int(max_context_chars * 0.2) if selected_equations else 0
+        remaining_after_equations = max_context_chars - equation_budget_total
+        table_budget_total = remaining_after_equations if not selected_sections else int(remaining_after_equations * 0.8)
+        section_budget_total = remaining_after_equations - table_budget_total
+        per_equation_budget = equation_budget_total // max(1, len(selected_equations)) if selected_equations else 0
+        per_table_budget = table_budget_total // max(1, len(selected_tables)) if selected_tables else 0
+        per_section_budget = section_budget_total // max(1, len(selected_sections)) if selected_sections else 0
+
+        for idx, eq in enumerate(selected_equations):
+            remaining_budget = max_context_chars - total
+            if remaining_budget <= 0:
+                context_meta["omitted_equations"].extend(
+                    [row["name"] for row in selected_equations[idx:] if isinstance(row, dict) and row.get("name")]
+                )
+                break
+            local_budget = max(400, min(remaining_budget, per_equation_budget or remaining_budget))
+            raw_text = str(eq.get("extract_text") or eq.get("text") or "")
+            content = _trim_text_with_ellipsis(raw_text, local_budget)
+            if len(raw_text) > local_budget:
+                context_meta["truncated_equations"].append(eq["name"])
+            chunk = f"\n\n=== EQUATION: {eq['name']} ===\n{content}"
+            parts.append(chunk)
+            total += len(chunk)
+            context_meta["included_equations"].append(eq["name"])
+
+        for idx, table in enumerate(selected_tables):
+            remaining_budget = max_context_chars - total
+            if remaining_budget <= 0:
+                context_meta["omitted_tables"].extend(
+                    [tbl["name"] for tbl in selected_tables[idx:] if isinstance(tbl, dict) and tbl.get("name")]
+                )
+                break
+            full_table_text = _full_table_text(table)
+            local_budget = max(1200, min(remaining_budget, per_table_budget or remaining_budget))
+            content = _trim_text_with_ellipsis(full_table_text, local_budget)
+            if len(full_table_text) > local_budget:
+                context_meta["truncated_tables"].append(table["name"])
+            chunk = f"\n\n=== TABLE: {table['name']} ===\n{content}"
+            parts.append(chunk)
+            total += len(chunk)
+            context_meta["included_tables"].append(table["name"])
+            if total > max_context_chars:
+                overflow = [tbl["name"] for tbl in selected_tables[idx + 1:] if isinstance(tbl, dict) and tbl.get("name")]
+                context_meta["omitted_tables"].extend(overflow)
+                context_meta["final_context_chars"] = len("\n".join(parts))
+                return "\n".join(parts), context_meta
+
+        for idx, section in enumerate(selected_sections):
+            remaining_budget = max_context_chars - total
+            if remaining_budget <= 0:
+                context_meta["omitted_sections"].extend(
+                    [sec["name"] for sec in selected_sections[idx:] if isinstance(sec, dict) and sec.get("name")]
+                )
+                break
+            local_budget = max(800, min(remaining_budget, per_section_budget or remaining_budget))
+            raw_text = str(section.get("text") or "")
+            content = _trim_text_with_ellipsis(raw_text, local_budget)
+            if len(raw_text) > local_budget:
+                context_meta["truncated_sections"].append(section["name"])
+            chunk = f"\n\n=== SECTION: {section['name']} ===\n{content}"
+            parts.append(chunk)
+            total += len(chunk)
+            context_meta["included_sections"].append(section["name"])
+            if total > max_context_chars:
+                overflow = [sec["name"] for sec in selected_sections[idx + 1:] if isinstance(sec, dict) and sec.get("name")]
+                context_meta["omitted_sections"].extend(overflow)
+                break
 
     context_meta["final_context_chars"] = len("\n".join(parts).strip())
     return "\n".join(parts).strip(), context_meta
@@ -2937,11 +3081,13 @@ def run_llm_on_paper_dir(
     if not selected_tables and tables:
         selected_tables = _fallback_select_tables(tables)
         used_fallback_tables = True
-    if not selected_equations and equations:
+    sections_have_embedded_equations = _sections_have_embedded_equations(selected_sections)
+    equations_explicitly_selected = bool(selection.get("selected_equations"))
+    if not selected_equations and equations and not sections_have_embedded_equations:
         selected_equations = _fallback_select_equations(equations)
         used_fallback_equations = True
 
-    if equations:
+    if equations and (equations_explicitly_selected or not sections_have_embedded_equations):
         augmented_equations = _augment_selected_equations(
             selected_equations,
             equations,
@@ -2966,6 +3112,19 @@ def run_llm_on_paper_dir(
                 best = profile_candidates[0]
                 if all(best.get("name") != t.get("name") for t in selected_tables):
                     selected_tables.append(best)
+
+    if tables and _section_requests_interaction_tables(selected_sections):
+        interaction_candidates = sorted(
+            [
+                t for t in tables
+                if _interaction_table_score(t) > 0
+                and all(t.get("name") != existing.get("name") for existing in selected_tables)
+            ],
+            key=lambda t: (_interaction_table_score(t), _fallback_table_score(t), -int(t.get("length") or 0)),
+            reverse=True,
+        )
+        if interaction_candidates:
+            selected_tables.append(interaction_candidates[0])
 
     if sections and not _has_selected_microstructure_section(selected_sections):
         micro_candidates = sorted(

@@ -57,6 +57,58 @@ def _provenance_map(extracted: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+def _evidence_map(extracted: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for row in _safe_list(extracted.get("evidence_objects")):
+        if not isinstance(row, dict):
+            continue
+        eid = str(row.get("evidence_id") or "").strip()
+        if eid:
+            out[eid] = row
+    return out
+
+
+def _claim_evidence_summary(item: Dict[str, Any], evidence_map: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    claim_evidence = _safe_dict(item.get("evidence"))
+    table_evidence = _safe_dict(claim_evidence.get("table_evidence"))
+
+    if any(table_evidence.get(k) not in (None, "", [], {}) for k in ("row_name", "column_name", "value", "excerpt")):
+        return {
+            "kind": "table",
+            "file": claim_evidence.get("file"),
+            "page": None,
+            "row_name": table_evidence.get("row_name"),
+            "column_name": table_evidence.get("column_name"),
+            "value_text": table_evidence.get("value"),
+            "snippet": claim_evidence.get("evidence_text") or table_evidence.get("excerpt"),
+        }
+
+    for evidence_id in _safe_list(item.get("evidence_ids")):
+        evidence_obj = _safe_dict(evidence_map.get(str(evidence_id)))
+        locator = _safe_dict(evidence_obj.get("locator"))
+        if not any(locator.get(k) not in (None, "", [], {}) for k in ("row_name", "column_name", "value", "excerpt")):
+            continue
+        return {
+            "kind": evidence_obj.get("evidence_type") or "table",
+            "file": evidence_obj.get("source_file") or claim_evidence.get("file"),
+            "page": evidence_obj.get("page"),
+            "row_name": locator.get("row_name"),
+            "column_name": locator.get("column_name"),
+            "value_text": locator.get("value"),
+            "snippet": locator.get("excerpt") or evidence_obj.get("snippet") or claim_evidence.get("evidence_text"),
+        }
+
+    return {
+        "kind": "table" if table_evidence else None,
+        "file": claim_evidence.get("file"),
+        "page": None,
+        "row_name": table_evidence.get("row_name"),
+        "column_name": table_evidence.get("column_name"),
+        "value_text": table_evidence.get("value"),
+        "snippet": claim_evidence.get("evidence_text") or table_evidence.get("excerpt"),
+    }
+
+
 def _claim_rows_for_paper(paper_dir: Path, source_name: str) -> List[Dict[str, Any]]:
     src_path = paper_dir / source_name
     extracted = _load_json(src_path)
@@ -76,6 +128,7 @@ def _claim_rows_for_paper(paper_dir: Path, source_name: str) -> List[Dict[str, A
     material_phase_mode = _safe_dict(extracted.get("study")).get("study_type") or material.get("phase")
     llm_eval = _load_json(paper_dir / "llm_evaluation.json")
     audit_map = _audit_map(llm_eval)
+    evidence_map = _evidence_map(extracted)
 
     rows: List[Dict[str, Any]] = []
     for idx, _, item in iter_parameter_items_with_index(extracted):
@@ -85,8 +138,7 @@ def _claim_rows_for_paper(paper_dir: Path, source_name: str) -> List[Dict[str, A
         applies_to = _safe_dict(item.get("applies_to"))
         source = _safe_dict(item.get("source"))
         provenance = _safe_dict(item.get("provenance")) or _safe_dict(source)
-        claim_evidence = _safe_dict(item.get("evidence"))
-        table_evidence = _safe_dict(claim_evidence.get("table_evidence"))
+        evidence = _claim_evidence_summary(item, evidence_map)
 
         rows.append({
             "doi": document.get("doi") or doi,
@@ -104,10 +156,7 @@ def _claim_rows_for_paper(paper_dir: Path, source_name: str) -> List[Dict[str, A
             "unit_SI": item.get("unit_SI"),
             "scope": {
                 "scope": applies_to.get("scope"),
-                "phase_id": applies_to.get("phase_id"),
-                "mechanism": applies_to.get("mechanism"),
                 "family_id": applies_to.get("family_id"),
-                "family_name": applies_to.get("family_name"),
                 "system_ids": _safe_list(applies_to.get("system_ids")),
             },
             "provenance": {
@@ -119,15 +168,7 @@ def _claim_rows_for_paper(paper_dir: Path, source_name: str) -> List[Dict[str, A
                 "calibration_in_this_study": provenance.get("calibration_in_this_study"),
                 "calibration_method": provenance.get("calibration_method"),
             },
-            "evidence": {
-                "kind": "table" if table_evidence else None,
-                "file": claim_evidence.get("file"),
-                "page": None,
-                "row_name": table_evidence.get("row_name"),
-                "column_name": table_evidence.get("column_name"),
-                "value_text": table_evidence.get("value"),
-                "snippet": claim_evidence.get("evidence_text") or table_evidence.get("excerpt"),
-            },
+            "evidence": evidence,
             "prediction_context": {
                 "source_file": source_name,
                 "grounding_status": _safe_dict(item.get("quality_assessment")).get("grounding_status"),

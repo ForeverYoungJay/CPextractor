@@ -57,21 +57,35 @@ def backfill_document_metadata(extracted_json: Dict[str, Any], paper_dir: str, d
         "document_fields_filled": [],
     }
 
-    target_key = "document" if _is_extractor_first_payload(extracted_json) else "source_document"
-    sd = extracted_json.setdefault(target_key, {})
-    field_specs = (
+    extractor_first = _is_extractor_first_payload(extracted_json)
+    document = extracted_json.setdefault("document", {})
+    document_defaults = (
         ("title", None),
         ("authors", []),
         ("year", None),
-        ("journal", None) if target_key == "document" else ("journal_or_venue", None),
+        ("journal", None),
         ("doi", None),
+        ("notes", None),
     )
-    for k, default in field_specs:
-        if k not in sd:
-            sd[k] = default
-    if target_key == "source_document":
-        sd.pop("url", None)
-        sd.pop("notes", None)
+    for k, default in document_defaults:
+        if k not in document:
+            document[k] = default
+
+    source_document = None
+    if not extractor_first:
+        source_document = extracted_json.setdefault("source_document", {})
+        source_defaults = (
+            ("title", None),
+            ("authors", []),
+            ("year", None),
+            ("journal_or_venue", None),
+            ("doi", None),
+        )
+        for k, default in source_defaults:
+            if k not in source_document:
+                source_document[k] = default
+        source_document.pop("url", None)
+        source_document.pop("notes", None)
 
     xml_text = ""
     xml_path = Path(paper_dir) / "paper.xml"
@@ -92,24 +106,51 @@ def backfill_document_metadata(extracted_json: Dict[str, Any], paper_dir: str, d
     if not doi:
         doi = doi_hint
 
-    def _fill_scalar(key: str, value: Any):
+    def _fill_document_scalar(key: str, value: Any):
         if value in (None, "", []):
             return
-        if sd.get(key) in (None, "", []):
-            sd[key] = value
+        if document.get(key) in (None, "", []):
+            document[key] = value
             report["document_fields_filled"].append(key)
 
-    _fill_scalar("title", title)
-    if authors and (not isinstance(sd.get("authors"), list) or not sd.get("authors")):
-        sd["authors"] = authors
+    def _first_document_value(primary_key: str, legacy_key: str | None = None) -> Any:
+        if document.get(primary_key) not in (None, "", []):
+            return document.get(primary_key)
+        if source_document and legacy_key and source_document.get(legacy_key) not in (None, "", []):
+            return source_document.get(legacy_key)
+        return None
+
+    if document.get("title") in (None, "", []) and source_document and source_document.get("title") not in (None, "", []):
+        document["title"] = source_document.get("title")
+    if (not isinstance(document.get("authors"), list) or not document.get("authors")) and source_document:
+        if isinstance(source_document.get("authors"), list) and source_document.get("authors"):
+            document["authors"] = list(source_document.get("authors"))
+    if document.get("year") in (None, "", []) and source_document and source_document.get("year") not in (None, "", []):
+        document["year"] = source_document.get("year")
+    if document.get("journal") in (None, "", []) and source_document and source_document.get("journal_or_venue") not in (None, "", []):
+        document["journal"] = source_document.get("journal_or_venue")
+    if document.get("doi") in (None, "", []) and source_document and source_document.get("doi") not in (None, "", []):
+        document["doi"] = source_document.get("doi")
+
+    _fill_document_scalar("title", title)
+    if authors and (not isinstance(document.get("authors"), list) or not document.get("authors")):
+        document["authors"] = authors
         report["document_fields_filled"].append("authors")
-    _fill_scalar("year", year)
-    _fill_scalar("journal" if target_key == "document" else "journal_or_venue", journal)
-    _fill_scalar("doi", doi)
+    _fill_document_scalar("year", year)
+    _fill_document_scalar("journal", journal)
+    _fill_document_scalar("doi", doi)
+
+    if source_document is not None:
+        source_document["title"] = _first_document_value("title", "title")
+        source_document["authors"] = _first_document_value("authors", "authors") or []
+        source_document["year"] = _first_document_value("year", "year")
+        source_document["journal_or_venue"] = _first_document_value("journal", "journal_or_venue")
+        source_document["doi"] = _first_document_value("doi", "doi")
 
     if extracted_json.get("record_id") in (None, ""):
-        if sd.get("doi"):
-            extracted_json["record_id"] = str(sd["doi"]).lower()
+        resolved_doi = document.get("doi") or (source_document.get("doi") if source_document else None)
+        if resolved_doi:
+            extracted_json["record_id"] = str(resolved_doi).lower()
         elif doi_hint:
             extracted_json["record_id"] = str(doi_hint).lower()
         else:

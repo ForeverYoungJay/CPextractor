@@ -178,6 +178,14 @@ For already downloaded local papers:
 python3 scripts/eval/audit_extractions.py --config config.yaml
 ```
 
+To batch-run extractor only on local papers without postprocess or ingest:
+
+```bash
+python3 scripts/eval/run_extract_batch.py --config config.yaml
+```
+
+This writes `materials_extracted.extractor_raw.json` per paper and skips papers that already have that file unless you pass `--force`.
+
 ## Paper-Oriented Outputs
 
 One-click evaluation:

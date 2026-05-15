@@ -77,6 +77,29 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertIn("Comparative row: Structure=HCP, Material=Titanium Ti–6Al–4V, c/a=1.588, C11=162 GPa", rendered)
         self.assertIn("Prismatic 〈 a 〉=370 MPa, Basal 〈 a 〉=420 MPa, Pyramidal I 〈 c + a 〉=590 MPa", rendered)
 
+    def test_table_json_full_text_serializes_composition_matrix_as_material_blocks(self):
+        table_json = {
+            "caption": "Chemical composition of investigated materials (wt.%).",
+            "rows": [
+                ["Element", "CoNi-SB", "316L FP", "Copper"],
+                ["Al", "5.97", "", ""],
+                ["B", "0.014", "0.009", ""],
+                ["Co", "bal.", "0.19", ""],
+                ["Cu", "", "0.11", ""],
+                ["Ni", "35.8", "11.90", ""],
+            ],
+        }
+
+        rendered = _table_json_full_text(table_json)
+
+        self.assertIn("Matrix orientation: rows are composition components/elements; columns are materials", rendered)
+        self.assertIn("Material: CoNi-SB", rendered)
+        self.assertIn("Entries: Al=5.97; B=0.014; Co=bal.; Ni=35.8", rendered)
+        self.assertIn("Material: 316L FP", rendered)
+        self.assertIn("Entries: B=0.009; Co=0.19; Cu=0.11; Ni=11.90", rendered)
+        self.assertIn("Material: Copper", rendered)
+        self.assertIn("Entries: <NO EXPLICIT COMPOSITION ENTRIES>", rendered)
+
     def test_inject_legacy_compat_views_from_v3_keeps_v3_and_projects_legacy(self):
         payload = {
             "schema_version": "3.0.0",
@@ -202,19 +225,22 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertEqual(["12"], merged["parameter_claims"][0]["provenance"]["reference_ids"])
 
     def test_main_schema_exposes_direct_binding_fields(self):
-        self.assertEqual("5.1.0", EXTRACT_SCHEMA_SKELETON["schema_version"])
-        self.assertIn("document", EXTRACT_SCHEMA_SKELETON)
+        self.assertEqual("5.1.1", EXTRACT_SCHEMA_SKELETON["schema_version"])
+        self.assertNotIn("document", EXTRACT_SCHEMA_SKELETON)
         self.assertNotIn("study", EXTRACT_SCHEMA_SKELETON)
         self.assertIsInstance(EXTRACT_SCHEMA_SKELETON["process_states"][0]["state_type"], list)
         self.assertIn("deformation_systems", EXTRACT_SCHEMA_SKELETON)
         self.assertIn("simulation_geometries", EXTRACT_SCHEMA_SKELETON)
-        self.assertIn("orientation_inputs", EXTRACT_SCHEMA_SKELETON)
+        self.assertNotIn("orientation_inputs", EXTRACT_SCHEMA_SKELETON)
         self.assertIn("numerical_methods", EXTRACT_SCHEMA_SKELETON)
-        self.assertIn("simulation_outputs", EXTRACT_SCHEMA_SKELETON)
-        self.assertIn("model_evaluations", EXTRACT_SCHEMA_SKELETON)
+        self.assertNotIn("simulation_outputs", EXTRACT_SCHEMA_SKELETON)
+        self.assertNotIn("model_evaluations", EXTRACT_SCHEMA_SKELETON)
         self.assertIn("governing_equation_ids", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0])
         self.assertNotIn("qualifier", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["assertion"])
         self.assertIn("branch_ids", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["applies_to"])
+        self.assertIn("family_id", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["applies_to"])
+        self.assertIn("system_ids", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["applies_to"])
+        self.assertIn("reported_value", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["assertion"])
         self.assertIn("calibration", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["provenance"])
         self.assertIn("target_type", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["provenance"]["calibration"])
         self.assertIn("constituents", EXTRACT_SCHEMA_SKELETON)
@@ -222,6 +248,7 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertIn("branch_type", EXTRACT_SCHEMA_SKELETON["models"][0]["constitutive_branches"][0])
         self.assertIn("evidence_ids", EXTRACT_SCHEMA_SKELETON["models"][0])
         self.assertNotIn("geometry_representation", EXTRACT_SCHEMA_SKELETON["models"][0]["solver_framework"])
+        self.assertNotIn("constituent_id", EXTRACT_SCHEMA_SKELETON["microstructure_features"][0])
         self.assertEqual(
             ["string"],
             EXTRACT_SCHEMA_SKELETON["models"][0]["constitutive_description"]["slip_description"]["deformation_system_ids"],
@@ -250,13 +277,22 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertIn("Store equation support through `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
         self.assertIn("Do not put equation evidence IDs in `materials[].evidence_ids`, `models[].evidence_ids`, `constitutive_branches[].evidence_ids`, `parameter_claims[].evidence_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
 
-    def test_prompt_keeps_simulation_outputs_and_evaluations_explicit_only(self):
-        self.assertIn("leave these arrays empty rather than inferring them from provenance", EXTRACT_USER_PROMPT_TEMPLATE)
-        self.assertIn("These sections should remain empty unless the modeled output or evaluation role is explicit", EXTRACT_USER_PROMPT_TEMPLATE)
+    def test_prompt_removes_document_and_output_evaluation_blocks_from_extractor_schema(self):
+        self.assertIn("Do not emit a `document` block", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("do not invent separate output or evaluation objects", EXTRACT_USER_PROMPT_TEMPLATE)
 
     def test_prompt_supports_multi_branch_parameter_binding(self):
         self.assertIn("Use `parameter_claims[].applies_to.branch_ids` for branch linkage in every case", EXTRACT_USER_PROMPT_TEMPLATE)
         self.assertIn("same parameter claim is explicitly shared across multiple constitutive branches", EXTRACT_USER_PROMPT_TEMPLATE)
+
+    def test_prompt_requires_direct_id_mounting(self):
+        self.assertIn("fill `applies_to.material_id`, `applies_to.constituent_id`, `applies_to.process_state_id`, `applies_to.model_id`, `applies_to.condition_id`, `applies_to.branch_ids`, `applies_to.family_id`, and `applies_to.system_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
+
+    def test_prompt_requires_deterministic_semantic_ids(self):
+        self.assertIn("Make IDs deterministic and semantic, not conversational", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Prefer semantic IDs over encounter-order numbering", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Avoid arbitrary names like `mat_1`, `cond_2`, `feat_7`, `claim_12`, or `ev_3`", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("`material_id=mat_ti6al4v`, `process_state_id=ps_as_built_annealed_773k`", EXTRACT_USER_PROMPT_TEMPLATE)
 
     def test_prompt_requires_zener_claims_and_explicit_constituent_handling(self):
         self.assertIn("treat explicitly reported auxiliary elastic descriptors such as `Zener ratio`, `c/a`", EXTRACT_USER_PROMPT_TEMPLATE)

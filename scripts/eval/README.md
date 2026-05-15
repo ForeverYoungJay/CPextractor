@@ -35,9 +35,10 @@ python3 scripts/eval/export_annotation_sheet.py \
 - `symbol`
 - `value`
 - `unit`
-- `scope.phase_id`
-- `scope.family_name`
-- `scope.mechanism`
+- `evidence.file`
+- `evidence.row_name`
+- `evidence.column_name`
+- `evidence.value_text`
 - `annotation.status`
 - `annotation.notes`
 
@@ -61,11 +62,30 @@ python3 scripts/eval/export_annotation_packets.py \
   --csv-profile compact
 ```
 
+Prepare a difficulty-aware pilot packet set instead of exporting every paper:
+
+```bash
+python3 scripts/eval/prepare_annotation_pilot.py \
+  --input-root data/fulltext \
+  --output-root data/annotations/pilot_packets \
+  --n 50 \
+  --strategy journal_balanced \
+  --source materials_extracted.json \
+  --csv-profile compact
+```
+
+This creates a claim-level pilot set that is still diverse by journal, but prioritizes harder papers:
+- image-backed tables
+- flagged / review-required claims
+- missing-unit cases
+- grouped-row-like claims
+- higher claim-count papers
+
 This creates:
 
 - `data/annotations/packets/manifest.csv`
 - one folder per DOI, each with:
-  - `claims.csv` (compact by default: parameter, value, unit, light phase/family/mechanism scope, minimal annotation columns; no DOI/claim ID columns)
+  - `claims.csv` (compact by default: parameter, value, unit, table file/row/column context, minimal annotation columns; no DOI/claim ID columns)
   - `claims.jsonl`
   - `packet_meta.json`
   - `README.md`
@@ -79,9 +99,6 @@ Recommended packet workflow:
    - `symbol`
    - `value`
    - `unit`
-   - `scope.phase_id`
-   - `scope.family_name`
-   - `scope.mechanism`
    - `annotation.status`
    - `annotation.notes`
 3. Keep `claims.jsonl` unchanged; it stores the full original context.
@@ -93,6 +110,25 @@ python3 scripts/eval/build_gold_from_packets.py \
   --output data/annotations/gold_claims.jsonl \
   --write-per-packet-jsonl
 ```
+
+Run the claim-level annotation benchmarks with one command:
+
+```bash
+python3 scripts/eval/run_annotation_benchmarks.py \
+  --gold data/annotations/gold_claims.jsonl \
+  --pred-root data/fulltext \
+  --pred-source materials_extracted.json \
+  --outdir results/eval_annotation
+```
+
+This writes:
+- `results/eval_annotation/metrics/benchmark_claims.json`
+- `results/eval_annotation/metrics/benchmark_gate.json`
+- `results/eval_annotation/metrics/benchmark_slices.json`
+- `results/eval_annotation/metrics/annotation_benchmark_summary.json`
+- `results/eval_annotation/tables/table_bundle_completeness.csv`
+- `results/eval_annotation/tables/table_gate_by_paper.csv`
+- `results/eval_annotation/tables/table_slice_results.csv`
 
 ## 0b) Benchmarks after manual annotation
 

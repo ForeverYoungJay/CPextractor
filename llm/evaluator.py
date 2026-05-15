@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -26,6 +27,14 @@ def _safe_dict(value: Any) -> Dict[str, Any]:
 
 def _safe_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
+
+
+def _sections_have_embedded_equations(sections: List[Dict[str, Any]]) -> bool:
+    for section in sections:
+        text = str(section.get("text") or "")
+        if "Equation (" in text or re.search(r"\(\d+\)\s+[A-Za-z0-9α-ωΑ-Ωγτξhmdot˙]", text):
+            return True
+    return False
 
 
 EVIDENCE_AGENT_SYSTEM_PROMPT = """
@@ -398,7 +407,8 @@ def _resolve_selected_sources(
     if not selected_tables and tables:
         selected_tables = tables[:1]
         used_fallback_tables = True
-    if not selected_equations and equations:
+    sections_have_embedded_equations = _sections_have_embedded_equations(selected_sections)
+    if not selected_equations and equations and not sections_have_embedded_equations:
         selected_equations = equations[: min(2, len(equations))]
         used_fallback_equations = True
     return selected_sections, selected_tables, selected_equations, {

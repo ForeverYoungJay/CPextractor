@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+FINAL_SCHEMA_VERSION = "5.1.1"
+
 
 def _safe_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
@@ -326,38 +328,12 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
     simulation_geometries, geometry_ids_filled = _normalize_passthrough_records(
         extracted, "simulation_geometries", "geometry_id", "geom"
     )
-    orientation_inputs, orientation_ids_filled = _normalize_passthrough_records(
-        extracted, "orientation_inputs", "orientation_id", "ori"
-    )
     numerical_methods, numerical_method_ids_filled = _normalize_passthrough_records(
         extracted, "numerical_methods", "numerical_method_id", "num"
-    )
-    simulation_outputs, output_ids_filled = _normalize_passthrough_records(
-        extracted, "simulation_outputs", "output_id", "out"
-    )
-    model_evaluations, evaluation_ids_filled = _normalize_passthrough_records(
-        extracted, "model_evaluations", "evaluation_id", "eval"
     )
     microstructure_features, feature_ids_filled = _normalize_microstructure_features(extracted)
     parameter_claims, claim_ids_filled = _normalize_parameter_claims(extracted, materials, models)
     evidence_objects, evidence_ids_filled = _normalize_evidence_objects(extracted)
-
-    extracted["schema_version"] = "5.1.0"
-    extracted["document"] = document
-    extracted["materials"] = materials
-    extracted["process_states"] = process_states
-    extracted["constituents"] = constituents
-    extracted["deformation_systems"] = deformation_systems
-    extracted["models"] = models
-    extracted["simulation_geometries"] = simulation_geometries
-    extracted["orientation_inputs"] = orientation_inputs
-    extracted["numerical_methods"] = numerical_methods
-    extracted["conditions"] = conditions
-    extracted["simulation_outputs"] = simulation_outputs
-    extracted["model_evaluations"] = model_evaluations
-    extracted["microstructure_features"] = microstructure_features
-    extracted["parameter_claims"] = parameter_claims
-    extracted["evidence_objects"] = evidence_objects
 
     # Drop legacy views so downstream operates on the v5.1.0 hierarchy only.
     for key in (
@@ -373,11 +349,36 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
         "deformation_mechanisms",
         "samples",
         "mechanisms",
+        "orientation_inputs",
+        "simulation_outputs",
+        "model_evaluations",
     ):
         extracted.pop(key, None)
 
-    return extracted, {
-        "schema_version": "5.1.0",
+    extracted.pop("record_id", None)
+
+    ordered: Dict[str, Any] = {
+        "schema_version": FINAL_SCHEMA_VERSION,
+        "document": document,
+        "quality_tier": extracted.get("quality_tier"),
+        "materials": materials,
+        "process_states": process_states,
+        "constituents": constituents,
+        "microstructure_features": microstructure_features,
+        "deformation_systems": deformation_systems,
+        "models": models,
+        "numerical_methods": numerical_methods,
+        "conditions": conditions,
+        "parameter_claims": parameter_claims,
+        "evidence_objects": evidence_objects,
+    }
+    if simulation_geometries:
+        ordered["simulation_geometries"] = simulation_geometries
+    if extracted.get("global_notes") not in (None, "", [], {}):
+        ordered["global_notes"] = extracted.get("global_notes")
+
+    return ordered, {
+        "schema_version": FINAL_SCHEMA_VERSION,
         "materials": len(materials),
         "constituents": len(constituents),
         "process_states": len(process_states),
@@ -385,10 +386,7 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
         "conditions": len(conditions),
         "models": len(models),
         "simulation_geometries": len(simulation_geometries),
-        "orientation_inputs": len(orientation_inputs),
         "numerical_methods": len(numerical_methods),
-        "simulation_outputs": len(simulation_outputs),
-        "model_evaluations": len(model_evaluations),
         "microstructure_features": len(microstructure_features),
         "parameter_claims": len(parameter_claims),
         "evidence_objects": len(evidence_objects),
@@ -400,10 +398,7 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
         "branch_ids_filled": branch_ids_filled,
         "system_ids_filled": system_ids_filled,
         "geometry_ids_filled": geometry_ids_filled,
-        "orientation_ids_filled": orientation_ids_filled,
         "numerical_method_ids_filled": numerical_method_ids_filled,
-        "output_ids_filled": output_ids_filled,
-        "evaluation_ids_filled": evaluation_ids_filled,
         "feature_ids_filled": feature_ids_filled,
         "claim_ids_filled": claim_ids_filled,
         "evidence_ids_filled": evidence_ids_filled,

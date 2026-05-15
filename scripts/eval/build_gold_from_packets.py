@@ -11,9 +11,6 @@ EDITABLE_FIELDS = [
     "symbol",
     "value",
     "unit",
-    "scope.phase_id",
-    "scope.family_name",
-    "scope.mechanism",
     "annotation.status",
     "annotation.notes",
 ]
@@ -93,13 +90,6 @@ def _apply_csv_edits(base_rows: List[Dict[str, Any]], csv_rows: List[Dict[str, s
                     record["reported_unit"] = unit
                 else:
                     record["unit"] = unit
-            gold_scope = record.get("gold_scope")
-            if not isinstance(gold_scope, dict):
-                gold_scope = {}
-                record["gold_scope"] = gold_scope
-            for field in ("scope.phase_id", "scope.family_name", "scope.mechanism"):
-                if field in edited:
-                    _set_nested(record, field.replace("scope.", "gold_scope."), _parse_scalar(edited.get(field, "")))
             annotation = record.get("annotation")
             if not isinstance(annotation, dict):
                 annotation = {}

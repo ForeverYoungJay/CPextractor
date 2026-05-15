@@ -48,10 +48,7 @@ One JSON object per line:
   "unit_SI": "Pa",
   "scope": {
     "scope": "global",
-    "phase_id": null,
-    "mechanism": "all_slip",
     "family_id": null,
-    "family_name": null,
     "system_ids": []
   },
   "provenance": {
@@ -165,9 +162,8 @@ Recommended claim match key for benchmark:
 - `canonical_name`
 - coarse binding fields:
   - `scope.scope`
-  - `scope.phase_id`
-  - `scope.mechanism`
-  - `scope.family_id` or `scope.family_name`
+  - `scope.family_id`
+  - `scope.system_ids`
 
 Then compare:
 

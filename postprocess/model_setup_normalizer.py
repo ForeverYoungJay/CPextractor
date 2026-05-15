@@ -309,48 +309,6 @@ def normalize_model_setup(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
             model["constitutive_description"] = constitutive_description
 
     simulation_geometries = [g for g in _safe_list(extracted_json.get("simulation_geometries")) if isinstance(g, dict)]
-    if not simulation_geometries:
-        generated_geometries: List[Dict[str, Any]] = []
-        for idx, model in enumerate(models, start=1):
-            solver = _safe_dict(model.get("solver_framework"))
-            discretization = str(solver.get("discretization") or "").strip().lower()
-            grain_resolution = str(solver.get("grain_resolution") or "").strip().lower()
-            boundary_style = str(solver.get("boundary_condition_style") or "").strip().lower()
-            legacy_geometry = str(solver.get("geometry_representation") or "").strip().lower()
-            mesh_type = None
-            if legacy_geometry == "voxelized":
-                mesh_type = "voxel"
-            elif legacy_geometry == "tessellated":
-                mesh_type = "other"
-            elif discretization in {"fft", "spectral"}:
-                mesh_type = "spectral_grid"
-            geometry_type = None
-            if grain_resolution == "grain_resolved" or str(solver.get("scale") or "").strip().lower() in {"polycrystal", "aggregate"}:
-                geometry_type = "grain_aggregate"
-            if not any((geometry_type, mesh_type, discretization, grain_resolution, boundary_style)):
-                continue
-            generated_geometries.append({
-                "geometry_id": f"geom_{idx:03d}",
-                "model_id": model.get("model_id"),
-                "geometry_type": geometry_type,
-                "dimensions": None,
-                "number_of_grains": None,
-                "number_of_elements": None,
-                "mesh_type": mesh_type,
-                "element_type": None,
-                "grid_size": None,
-                "periodic_geometry": "yes" if boundary_style == "periodic" else None,
-                "grain_shape_assumption": None,
-                "evidence_ids": _safe_list(model.get("evidence_ids")),
-                "notes": _first_non_empty(
-                    model.get("notes"),
-                    solver.get("notes"),
-                    f"Backfilled from solver framework discretization={discretization or 'null'} and grain_resolution={grain_resolution or 'null'}",
-                ),
-            })
-        simulation_geometries = generated_geometries
-        extracted_json["simulation_geometries"] = simulation_geometries
-        report["simulation_geometries_added"] = len(generated_geometries)
 
     geometry_by_model: Dict[str, str] = {}
     for geometry in simulation_geometries:
@@ -360,33 +318,6 @@ def normalize_model_setup(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
             geometry_by_model[model_id] = geometry_id
 
     orientation_inputs = [o for o in _safe_list(extracted_json.get("orientation_inputs")) if isinstance(o, dict)]
-    if not orientation_inputs:
-        generated_orientations: List[Dict[str, Any]] = []
-        features = [f for f in _safe_list(extracted_json.get("microstructure_features")) if isinstance(f, dict)]
-        for idx, feature in enumerate(features, start=1):
-            family = str(feature.get("feature_family") or "").strip().lower()
-            if family not in {"texture", "orientation"}:
-                continue
-            source = _map_feature_source(feature.get("method"))
-            representation = _infer_orientation_representation(feature)
-            texture_type = _infer_texture_type(feature)
-            if not any((source, representation, texture_type)):
-                continue
-            model_id = single_model_id or ""
-            generated_orientations.append({
-                "orientation_id": f"ori_{idx:03d}",
-                "model_id": model_id or None,
-                "geometry_id": geometry_by_model.get(model_id) if model_id else None,
-                "source": source,
-                "representation": representation,
-                "texture_type": texture_type,
-                "number_of_orientations": None,
-                "evidence_ids": _safe_list(feature.get("evidence_ids")),
-                "notes": _first_non_empty(feature.get("description"), feature.get("notes")),
-            })
-        orientation_inputs = generated_orientations
-        extracted_json["orientation_inputs"] = orientation_inputs
-        report["orientation_inputs_added"] = len(generated_orientations)
 
     # Keep these extractor-owned sections untouched. If they are absent, do not
     # synthesize them from calibration provenance during postprocessing.

@@ -1,4 +1,6 @@
 import unittest
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
 from postprocess.workflow import (
     run_evidence_linking,
@@ -36,6 +38,46 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("model_setup_normalization", report)
         self.assertIn("document", updated)
         self.assertNotIn("source_document", updated)
+
+    def test_legacy_structure_normalization_also_backfills_canonical_document(self):
+        extracted = {
+            "schema_version": "2.1.1",
+            "materials": [],
+            "process_states": [],
+            "models": [],
+            "microstructure_features": [],
+            "conditions": [],
+            "parameter_claims": [],
+            "evidence_objects": [],
+        }
+
+        with TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "paper.xml").write_text(
+                """
+                <root>
+                  <dc:title>Example Legacy Paper</dc:title>
+                  <dc:creator>A. Author</dc:creator>
+                  <prism:publicationName>Acta Materialia</prism:publicationName>
+                  <prism:coverDate>2025-03-01</prism:coverDate>
+                  <prism:doi>10.1000/example</prism:doi>
+                </root>
+                """,
+                encoding="utf-8",
+            )
+
+            updated, _ = run_structure_normalization(
+                extracted,
+                paper_dir=tmpdir,
+                doi_hint=None,
+                reference_map=None,
+            )
+
+        self.assertIn("document", updated)
+        self.assertIn("source_document", updated)
+        self.assertEqual("Example Legacy Paper", updated["document"]["title"])
+        self.assertEqual("Acta Materialia", updated["document"]["journal"])
+        self.assertEqual("10.1000/example", updated["document"]["doi"])
+        self.assertEqual("Acta Materialia", updated["source_document"]["journal_or_venue"])
 
     def test_extractor_first_linking_skips_table_and_condition_rewriters(self):
         extracted = {

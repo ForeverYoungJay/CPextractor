@@ -35,7 +35,7 @@ llm:
   evaluation_feedback_json: "output/review/prompt_feedback.json"
   enable_source_enrichment: true
   prompt_version: "v2.0.0"
-  schema_version: "5.1.0"
+  schema_version: "5.1.1"
   extractor_version: "extractor_v2"
   model_select: "gpt-4.1-mini"
   model_extract: "gpt-4.1-mini"
@@ -60,7 +60,20 @@ pipeline:
   prefer_local_fulltext: true
   use_local_fulltext_dois: false
   local_fulltext_input_root: ""
-  dois: []
+  dois: [  #multi-material
+  - 10.1016/j.actamat.2025.121314
+#多温度，多grain size
+  - 10.1016/j.actamat.2025.121790
+  - 10.1016/j.addma.2025.105068
+
+  - 10.1016/j.actamat.2024.120250
+
+#多温度，多grain size
+  - 10.1016/j.commatsci.2025.114088
+#多样品
+  - 10.1016/j.cirpj.2025.09.013
+#多材料，多样品，多slip
+  - 10.1016/j.jma.2025.08.032]
   gate_on_evaluation: true
   db_ingest_block_verdicts: ["rejected"]
   db_ingest_min_document_confidence_score: 65.0
