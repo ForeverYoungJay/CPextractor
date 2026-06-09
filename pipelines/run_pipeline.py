@@ -31,6 +31,7 @@ from postprocess.workflow import (
     run_finalization,
 )
 from pipelines.decision_layer import build_ingest_gate_report, apply_decision_layer
+from pipelines.material_screening import screen_paper_dir_for_concrete_material
 
 
 DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", re.IGNORECASE)
@@ -229,6 +230,7 @@ def main():
         )
     )
     skip_quality_checks = bool(pipeline_cfg.get("skip_quality_checks", True))
+    require_concrete_material = bool(pipeline_cfg.get("require_concrete_material", True))
     image_table_cfg = pipeline_cfg.get("image_backed_tables", {}) or {}
     image_table_keywords = image_table_cfg.get("relevant_keywords") or []
     direct_image_table_input = bool(llm_cfg.get("direct_image_table_input", True))
@@ -263,6 +265,7 @@ def main():
             require_doi=bool(qcfg.get("require_doi", True)),
             allowed_doctypes=qcfg.get("allowed_doctypes", []),
             rank_keywords=qcfg.get("rank_keywords", []),
+            require_concrete_material=require_concrete_material,
             max_retries=int(qcfg.get("http_max_retries", 3)),
         )
 
@@ -315,6 +318,24 @@ def main():
                     image_backed_table_keywords=image_table_keywords,
                 )
             stage_timings["fulltext_prepare_seconds"] = round(time.perf_counter() - download_start, 3)
+
+            material_screening = screen_paper_dir_for_concrete_material(paper_dir, min_score=2)
+            Path(os.path.join(paper_dir, "material_screening.json")).write_text(
+                json.dumps(material_screening, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            if require_concrete_material and not material_screening.get("has_concrete_material_signal"):
+                elapsed = time.perf_counter() - t0
+                with open(status_path, "a", encoding="utf-8") as sf:
+                    sf.write(json.dumps({
+                        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                        "doi": doi,
+                        "status": "skipped_no_concrete_material",
+                        "seconds": elapsed,
+                        "material_screening": material_screening,
+                    }, ensure_ascii=False) + "\n")
+                print(f"⚠️ Skip {doi}: no concrete material signal found before LLM extraction")
+                continue
 
             # llm extraction (writes json files too, but returns extracted json)
             llm_result = run_llm_on_paper_dir(

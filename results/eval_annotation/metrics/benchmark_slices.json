@@ -1,0 +1,65 @@
+{
+  "slices": [
+    {
+      "slice": "grouped_row_like",
+      "gold_rows": 41,
+      "tp": 0,
+      "fp": 0,
+      "fn": 41,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "value_accuracy": 0.0,
+      "unit_accuracy": 0.0,
+      "canonical_name_accuracy": 0.0,
+      "grounding_accuracy": null,
+      "grounding_annotation_coverage": 0.0
+    },
+    {
+      "slice": "high_claim_count_paper",
+      "gold_rows": 1709,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1660,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "value_accuracy": 0.0,
+      "unit_accuracy": 0.0,
+      "canonical_name_accuracy": 0.0,
+      "grounding_accuracy": null,
+      "grounding_annotation_coverage": 0.0
+    },
+    {
+      "slice": "missing_unit",
+      "gold_rows": 643,
+      "tp": 0,
+      "fp": 0,
+      "fn": 629,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "value_accuracy": 0.0,
+      "unit_accuracy": 0.0,
+      "canonical_name_accuracy": 0.0,
+      "grounding_accuracy": null,
+      "grounding_annotation_coverage": 0.0
+    },
+    {
+      "slice": "zero_value",
+      "gold_rows": 44,
+      "tp": 0,
+      "fp": 0,
+      "fn": 44,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "value_accuracy": 0.0,
+      "unit_accuracy": 0.0,
+      "canonical_name_accuracy": 0.0,
+      "grounding_accuracy": null,
+      "grounding_annotation_coverage": 0.0
+    }
+  ],
+  "median_claim_count_threshold": 1709
+}

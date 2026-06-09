@@ -7,6 +7,8 @@ from typing import Any, Dict, List
 import requests
 from pathlib import Path
 
+from pipelines.material_screening import detect_concrete_material_signal
+
 SCOPUS_URL = "https://api.elsevier.com/content/search/scopus"
 
 
@@ -57,6 +59,7 @@ def scopus_search(
     require_doi=True,
     allowed_doctypes=None,
     rank_keywords=None,
+    require_concrete_material=True,
     max_retries=3,
 ):
     outdir = Path(outdir)
@@ -124,7 +127,7 @@ def scopus_search(
             dedup[key] = {**it, "__score": cur_score}
 
     filtered = []
-    dropped_no_doi = dropped_doctype = dropped_year = 0
+    dropped_no_doi = dropped_doctype = dropped_year = dropped_no_concrete_material = 0
     for it in dedup.values():
         doi = (it.get("prism:doi") or "").strip()
         year = _year_from_date(it.get("prism:coverDate", ""))
@@ -144,6 +147,17 @@ def scopus_search(
         if year is not None and year_to is not None and year > int(year_to):
             dropped_year += 1
             continue
+
+        if require_concrete_material:
+            text = " ".join([
+                str(it.get("dc:title", "")),
+                str(it.get("dc:description", "")),
+            ])
+            material_report = detect_concrete_material_signal(text, min_score=2)
+            if not material_report.get("matched"):
+                dropped_no_concrete_material += 1
+                continue
+            it = {**it, "__material_screening": material_report}
 
         filtered.append(it)
 
@@ -192,9 +206,11 @@ def scopus_search(
         "dropped_no_doi": dropped_no_doi,
         "dropped_doctype": dropped_doctype,
         "dropped_year": dropped_year,
+        "dropped_no_concrete_material": dropped_no_concrete_material,
         "year_from": year_from,
         "year_to": year_to,
         "require_doi": require_doi,
+        "require_concrete_material": require_concrete_material,
         "allowed_doctypes": sorted(allowed_doctypes),
         "rank_keywords": rank_keywords,
     }

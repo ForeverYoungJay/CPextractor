@@ -1,0 +1,37 @@
+{
+  "gold_rows": 1709,
+  "gold_positive_rows": 1709,
+  "pred_rows": 6093,
+  "claim_detection": {
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "tp": 0,
+    "fp": 6093,
+    "fn": 1660
+  },
+  "field_accuracy": {
+    "canonical_name_accuracy": 0.0,
+    "value_accuracy": 0.0,
+    "unit_accuracy": 0.0,
+    "grounding_accuracy": null,
+    "grounding_annotation_coverage": 0.0
+  },
+  "bundle": {
+    "macro_bundle_completeness": 0.0,
+    "paper_count": 1
+  },
+  "gate": {
+    "paper_count": 288,
+    "blocked_rate": 0.3541666666666667,
+    "gate_vs_gold_review_recommended_f1": 0.0,
+    "gate_vs_gold_block_recommended_f1": 0.0
+  },
+  "largest_slice": {
+    "slice": "high_claim_count_paper",
+    "gold_rows": 1709,
+    "f1": 0.0,
+    "value_accuracy": 0.0,
+    "unit_accuracy": 0.0
+  }
+}

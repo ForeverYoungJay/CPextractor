@@ -1,0 +1,5 @@
+canonical_name_accuracy,f1,fn,fp,gold_rows,grounding_accuracy,grounding_annotation_coverage,precision,recall,slice,tp,unit_accuracy,value_accuracy
+0.0,0.0,41,0,41,,0.0,0.0,0.0,grouped_row_like,0,0.0,0.0
+0.0,0.0,1660,0,1709,,0.0,0.0,0.0,high_claim_count_paper,0,0.0,0.0
+0.0,0.0,629,0,643,,0.0,0.0,0.0,missing_unit,0,0.0,0.0
+0.0,0.0,44,0,44,,0.0,0.0,0.0,zero_value,0,0.0,0.0

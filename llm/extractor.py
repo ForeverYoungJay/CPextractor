@@ -717,7 +717,6 @@ def _table_semantic_hint(table: Dict[str, Any]) -> str:
     }
     return f"Table semantic type: {semantic_type}. {hints.get(semantic_type, '')}".strip()
 
-
 _EXPLICIT_PARAMETER_NAME_RE = re.compile(
     r"\b(c11|c12|c13|c33|c44|c55|c66|tau0|tau_0|tau1|theta0|theta1|h0|h1|g0|g1|xi0|xi_inf|gamma0|gammadot0|qab|gamma|crss|elastic constant|hardening|slip resistance|reference shear rate)\b",
     re.IGNORECASE,
@@ -1128,15 +1127,18 @@ def ensure_image_backed_table_images(
 SELECTION_SYSTEM_PROMPT = """
 You are a crystal-plasticity literature triage assistant.
 Follow the 4-section protocol in the user prompt.
+Optimize for source coverage, not just source count: choose the smallest set of files that still covers every explicit numeric parameter family needed to reconstruct the reported simulation setup.
 Return JSON only.
 """
 
 
 SELECTION_USER_PROMPT_TEMPLATE = """
 1 Task description
-Select the MINIMUM section and table files needed to reliably extract crystal-plasticity parameters and the core material-profile context needed to interpret them.
+Select the MINIMUM section and table files needed to reliably extract crystal-plasticity parameters, any coupled-submodel parameters, and the core material-profile context needed to interpret them.
 
 2 Task requirements
+- First infer which parameter families the paper actually uses in the reported simulation workflow: bulk CP, hardening, slip/twin interaction, damage/cohesive, phase-field, diffusion/transport, thermal, fitted effective-stress relations, or other coupled submodels.
+- Then choose the smallest set of files that jointly covers those parameter families, plus the material identity and calibration context needed to interpret them.
 - Prioritize files containing: constitutive equations, parameter tables, calibration/validation details, slip/twin systems.
 - If standalone equations are available in the catalog, select the governing constitutive equations explicitly instead of assuming the matching section alone is enough.
 - Also include files needed to recover essential material-profile context when present:
@@ -1147,6 +1149,16 @@ Select the MINIMUM section and table files needed to reliably extract crystal-pl
   - sample or material-input tables for multi-material or multi-sample studies
 - Avoid over-selection; include only files needed to extract:
   material identity, composition or microstructure context, model type/framework, elastic constants, plastic parameters, and parameter provenance.
+- Distinguish parameter sources from result sources:
+  - parameter tables usually report coefficients, constants, fitted parameters, optimized estimates, material constants, model inputs, or named symbols with values
+  - result tables usually report predicted stresses, strains, rupture times, errors, or benchmark outcomes
+  - do not select a result table instead of a parameter table when both exist
+- Treat captions such as `model parameters used in ... model`, `parameters for ... model`, `fitted parameters`, `optimized parameter estimates`, or `identified coefficients` as strong evidence that the table is a primary parameter source.
+- If the paper contains more than one named model or submodel, try to cover each model with at least one explicit parameter source when such a source exists in the catalog.
+- If separate tables provide numeric parameters for coupled submodels such as cohesive-zone, traction-separation, phase-field, damage, diffusion, hydrogen transport, rupture/effective-stress fitting, or other simulation submodules, select those tables in addition to the main CP table.
+- Do not stop after selecting one parameter table when another table contains a different parameter family, material subset, or submodel needed to reproduce the simulation setup.
+- Do not assume the main CP parameter table is sufficient if the paper also uses interface, damage, transport, or fitted-relation parameters elsewhere.
+- Calibration or validation result tables are lower priority than parameter tables, but include at least one when it is the only source that defines the fitting target, condition binding, or parameter provenance.
 - Output JSON schema exactly:
 {{
   "selected_sections": ["filename.md"],
@@ -1157,13 +1169,18 @@ Select the MINIMUM section and table files needed to reliably extract crystal-pl
 
 3 Processing suggestions
 - Tables with parameters are highest priority.
+- Favor tables whose captions or previews indicate `parameters`, `coefficients`, `constants`, `optimized estimates`, `fitted parameters`, `identified parameters`, `material properties`, `model inputs`, or symbol-value layouts.
+- If two tables mention both parameters and errors, prefer the one that still contains explicit coefficient values; errors or prediction metrics alone should not displace it.
+- If one table says `model parameters used in crystal plasticity model` and another says `model parameters used in hydrogen diffusion model` or another named submodel, treat them as complementary rather than interchangeable.
 - Interaction-matrix tables are also highest priority when they encode latent hardening, forest interaction, slip-system coupling, or q_ab-type coefficients.
 - Governing equations are also first-class extraction inputs when available, especially for attaching parameters to explicit equation IDs.
+- When more than one table appears relevant, ask which table gives explicit reusable inputs to the model and which table only reports outputs from running the model; prefer the reusable-input table first.
 - Composition, phase-fraction, grain-size, texture, and material-input tables are second priority and should be included when they define the studied material system.
 - If a paper contains dedicated results sections for microstructure, texture evolution, EBSD/TKD, KAM, dislocation structure, twinning, or grain-boundary-mediated deformation, include at least one of those sections when they provide explicit descriptors used to interpret the parameterization.
 - Fatigue-test, loading-condition, temperature, strain-rate, and calibration-target sections are also high priority when they define deformation conditions.
 - Methods/simulation sections are next priority.
 - Results/discussion sections are included when they contain either calibration/validation targets or explicit microstructure/texture evidence needed to bind parameters to grain size, deformation mode, or representation assumptions.
+- A table of simulated stresses, rupture times, prediction errors, or benchmark outputs is not by itself a parameter table unless the paper explicitly uses those values as the only available fitted coefficients or target descriptors.
 - Abstract alone is never sufficient.
 - For multi-material or comparative papers, do not select only the parameter table if a separate composition or material table is needed to identify which material each parameter bundle belongs to.
 - Prefer specific subsections such as `Fatigue test`, `Material`, `Microstructural characterization`, or `Loading conditions` over relying only on a broad parent methods section.
@@ -1186,6 +1203,22 @@ Example C:
 Example D:
 - Input cues: one parameter table exists, but grain-size dependence, texture evolution, EBSD/KAM observations, or dislocation structures are described only in results subsections.
 - Output behavior: include the parameter table and at least one microstructure-rich results subsection, because those descriptors belong in `microstructure_features[]` and may define process-state or condition bindings.
+
+Example E:
+- Input cues: one paper has a CP parameter table, a separate fitted-coefficient table for an auxiliary rupture/effective-stress relation, and another table containing simulated rupture data or prediction errors.
+- Output behavior: select both parameter tables; select the result table only if it is needed to explain calibration targets or provenance. Do not replace the fitted-coefficient table with the result table.
+
+Example F:
+- Input cues: one table contains interface/cohesive, phase-field, or diffusion parameters, while another table contains bulk CP parameters.
+- Output behavior: select both, because they represent different parameter families required by the coupled simulation.
+
+Example G:
+- Input cues: one table is titled `Model parameters used in crystal plasticity model` and another is titled `Model parameters used in hydrogen diffusion model`.
+- Output behavior: select both if the paper uses both models in the reported simulation workflow; do not assume the CP table subsumes the transport table.
+
+Example H:
+- Input cues: one table reports `optimized parameter estimates` or `fitted parameters`, while another table reports rupture data, prediction errors, or benchmark outcomes for the same study.
+- Output behavior: select the fitted-parameter table first. Add the result table only if it is needed for calibration provenance, not as a substitute for the coefficient table.
 
 Current paper file catalog:
 Sections:

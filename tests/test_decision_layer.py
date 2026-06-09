@@ -17,7 +17,10 @@ class DecisionLayerTests(unittest.TestCase):
                 "review_required_parameter_count": 1,
                 "review_recommended": False,
             },
-            extracted_json={"parameter_claims": [{"claim_id": "c1"}]},
+            extracted_json={
+                "materials": [{"material_id": "mat_1", "name": "Ti-6Al-4V"}],
+                "parameter_claims": [{"claim_id": "c1"}],
+            },
             enabled=True,
             blocked_verdicts={"rejected"},
             min_document_confidence_score=65.0,
