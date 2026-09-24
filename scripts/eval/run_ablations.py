@@ -208,6 +208,9 @@ def main():
         results.append(result)
         save_json(Path(args.outdir) / "run_summary.json", results)
         print(f"{job['variant']} {job['doi']}: {result['status']}", flush=True)
+        if (result.get("error_type") == "RateLimitError"
+                and any(code in result.get("error", "") for code in ("insufficient_quota", "credit_balance_exhausted"))):
+            raise SystemExit("API credit balance exhausted; stopped remaining jobs before further requests")
     if any(r["status"] != "success" for r in results):
         raise SystemExit(1)
 
