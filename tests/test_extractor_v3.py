@@ -1,6 +1,9 @@
 import unittest
 import sys
 import types
+import json
+import tempfile
+from pathlib import Path
 
 
 openai_stub = types.ModuleType("openai")
@@ -22,18 +25,26 @@ def _download_table_image_stub(*args, **kwargs):
 
 
 fulltext_parser_stub.download_table_image = _download_table_image_stub
-sys.modules.setdefault("elsevier.fulltext_parser", fulltext_parser_stub)
+try:
+    import elsevier.fulltext_parser
+except ModuleNotFoundError:
+    sys.modules.setdefault("elsevier.fulltext_parser", fulltext_parser_stub)
 
 from llm.extractor import (
     EXTRACT_USER_PROMPT_TEMPLATE,
     EXTRACT_SCHEMA_SKELETON,
     _augment_selected_equations,
+    _fallback_select_equations,
     _inject_legacy_compat_views_from_v3,
     _merge_source_enrichment,
     _normalize_equation_references_in_payload,
+    _validate_extracted_payload,
+    build_context,
+    run_llm_on_paper_dir,
     _render_table_rows_with_alignment,
     _table_json_full_text,
 )
+import llm.extractor as extractor_mod
 
 
 class ExtractorV3Tests(unittest.TestCase):
@@ -225,14 +236,18 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertEqual(["12"], merged["parameter_claims"][0]["provenance"]["reference_ids"])
 
     def test_main_schema_exposes_direct_binding_fields(self):
-        self.assertEqual("5.1.1", EXTRACT_SCHEMA_SKELETON["schema_version"])
+        self.assertEqual("6.0.0", EXTRACT_SCHEMA_SKELETON["schema_version"])
         self.assertNotIn("document", EXTRACT_SCHEMA_SKELETON)
         self.assertNotIn("study", EXTRACT_SCHEMA_SKELETON)
         self.assertIsInstance(EXTRACT_SCHEMA_SKELETON["process_states"][0]["state_type"], list)
+        self.assertIn("deformation_families", EXTRACT_SCHEMA_SKELETON)
         self.assertIn("deformation_systems", EXTRACT_SCHEMA_SKELETON)
+        self.assertIn("equations", EXTRACT_SCHEMA_SKELETON)
         self.assertIn("simulation_geometries", EXTRACT_SCHEMA_SKELETON)
         self.assertNotIn("orientation_inputs", EXTRACT_SCHEMA_SKELETON)
         self.assertIn("numerical_methods", EXTRACT_SCHEMA_SKELETON)
+        self.assertNotIn("simulation_readiness", EXTRACT_SCHEMA_SKELETON)
+        self.assertNotIn("quality_control", EXTRACT_SCHEMA_SKELETON)
         self.assertNotIn("simulation_outputs", EXTRACT_SCHEMA_SKELETON)
         self.assertNotIn("model_evaluations", EXTRACT_SCHEMA_SKELETON)
         self.assertIn("governing_equation_ids", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0])
@@ -241,7 +256,11 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertIn("family_id", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["applies_to"])
         self.assertIn("system_ids", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["applies_to"])
         self.assertIn("reported_value", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["assertion"])
+        self.assertIn("normalized_value", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["assertion"])
+        self.assertIn("symbol_normalized", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["parameter"])
+        self.assertIn("simulation_role", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0])
         self.assertIn("calibration", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["provenance"])
+        self.assertIn("source_scope", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["provenance"])
         self.assertIn("target_type", EXTRACT_SCHEMA_SKELETON["parameter_claims"][0]["provenance"]["calibration"])
         self.assertIn("constituents", EXTRACT_SCHEMA_SKELETON)
         self.assertIn("constitutive_branches", EXTRACT_SCHEMA_SKELETON["models"][0])
@@ -249,6 +268,10 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertIn("evidence_ids", EXTRACT_SCHEMA_SKELETON["models"][0])
         self.assertNotIn("geometry_representation", EXTRACT_SCHEMA_SKELETON["models"][0]["solver_framework"])
         self.assertNotIn("constituent_id", EXTRACT_SCHEMA_SKELETON["microstructure_features"][0])
+        self.assertEqual(
+            ["string"],
+            EXTRACT_SCHEMA_SKELETON["models"][0]["constitutive_description"]["slip_description"]["deformation_family_ids"],
+        )
         self.assertEqual(
             ["string"],
             EXTRACT_SCHEMA_SKELETON["models"][0]["constitutive_description"]["slip_description"]["deformation_system_ids"],
@@ -263,7 +286,11 @@ class ExtractorV3Tests(unittest.TestCase):
     def test_prompt_requires_many_to_many_equation_binding(self):
         self.assertIn("Treat `models[].constitutive_branches[].governing_equation_ids` as a full multi-equation array", EXTRACT_USER_PROMPT_TEMPLATE)
         self.assertIn("parameter_claims[].applies_to.branch_ids", EXTRACT_USER_PROMPT_TEMPLATE)
-        self.assertIn("Do not embed full equation objects or equation text inside `models[]`, `constitutive_branches[]`, or `parameter_claims[]`", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Put reusable equation objects in top-level `equations[]`", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Do not rely on deterministic postprocessing to create family or equation objects", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Readiness and quality judgments belong to evaluator/review stages", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Every equation ID used in `models[].equation_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Do not leave equation-object completion to postprocessing", EXTRACT_USER_PROMPT_TEMPLATE)
 
     def test_prompt_requires_claim_specific_table_evidence_packaging(self):
         self.assertIn("prefer claim-specific evidence packaging over whole-table summaries", EXTRACT_USER_PROMPT_TEMPLATE)
@@ -274,7 +301,7 @@ class ExtractorV3Tests(unittest.TestCase):
 
     def test_prompt_uses_governing_equation_ids_instead_of_equation_evidence(self):
         self.assertIn("Do not create equation-only `evidence_objects[]` entries", EXTRACT_USER_PROMPT_TEMPLATE)
-        self.assertIn("Store equation support through `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
+        self.assertIn("Store equation support through top-level `equations[]`, `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
         self.assertIn("Do not put equation evidence IDs in `materials[].evidence_ids`, `models[].evidence_ids`, `constitutive_branches[].evidence_ids`, `parameter_claims[].evidence_ids`", EXTRACT_USER_PROMPT_TEMPLATE)
 
     def test_prompt_removes_document_and_output_evaluation_blocks_from_extractor_schema(self):
@@ -355,8 +382,70 @@ class ExtractorV3Tests(unittest.TestCase):
             },
         ]
 
-        augmented = _augment_selected_equations([], equations, selected_sections, limit=8)
+        augmented = _augment_selected_equations([], equations, selected_sections)
         self.assertEqual({"eq_0003", "eq_0007"}, {row["selection_id"] for row in augmented})
+
+    def test_equation_selection_has_no_fixed_eight_equation_cap(self):
+        selected_sections = [
+            {
+                "name": "004_Constitutive law.md",
+                "title": "Constitutive law",
+                "selection_preview": "Flow rule and hardening equations",
+            }
+        ]
+        equations = [
+            {
+                "selection_id": f"eq_{idx:04d}",
+                "name": f"eq_{idx:04d}",
+                "section_title": "Constitutive law",
+                "text": "hardening flow rule",
+                "length": 100,
+            }
+            for idx in range(1, 13)
+        ]
+
+        augmented = _augment_selected_equations([], equations, selected_sections)
+        fallback = _fallback_select_equations(equations)
+
+        self.assertEqual(12, len(augmented))
+        self.assertEqual(12, len(fallback))
+
+    def test_build_context_includes_all_selected_equations_when_budget_fits(self):
+        equations = [
+            {
+                "name": f"eq_{idx:04d}",
+                "extract_text": f"Equation ID: eq_{idx:04d}\nLabel: ({idx})\nPlain Text\nhardening flow {idx}",
+            }
+            for idx in range(1, 12)
+        ]
+
+        _, meta = build_context([], [], equations, max_context_chars=12000)
+
+        self.assertEqual([f"eq_{idx:04d}" for idx in range(1, 12)], meta["included_equations"])
+        self.assertEqual([], meta["omitted_equations"])
+
+    def test_validate_payload_requires_top_level_equation_objects_for_links(self):
+        payload = {
+            "schema_version": "6.0.0",
+            "materials": [],
+            "process_states": [],
+            "constituents": [],
+            "microstructure_features": [],
+            "deformation_systems": [],
+            "deformation_families": [],
+            "models": [{"model_id": "model_cp", "equation_ids": ["eq_0004"], "constitutive_branches": []}],
+            "equations": [],
+            "simulation_geometries": [],
+            "numerical_methods": [],
+            "conditions": [],
+            "parameter_claims": [],
+            "evidence_objects": [],
+            "global_notes": None,
+        }
+
+        errors = _validate_extracted_payload(payload)
+
+        self.assertIn("models[0].equation_ids references missing top-level equations[] object: eq_0004", errors)
 
     def test_normalize_equation_references_keeps_only_numbered_labels(self):
         payload = {
@@ -381,6 +470,86 @@ class ExtractorV3Tests(unittest.TestCase):
         self.assertEqual(["(5)", "(7)"], normalized["models"][0]["equation_ids"])
         self.assertEqual(["(4)"], normalized["models"][0]["constitutive_branches"][0]["governing_equation_ids"])
         self.assertEqual(["(5)"], normalized["parameter_claims"][0]["governing_equation_ids"])
+
+    def test_run_llm_on_paper_dir_reuses_existing_selection_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paper_dir = Path(tmp)
+            sections_dir = paper_dir / "sections"
+            tables_dir = paper_dir / "tables"
+            equations_dir = paper_dir / "equations"
+            sections_dir.mkdir()
+            tables_dir.mkdir()
+            equations_dir.mkdir()
+            (sections_dir / "001_Methods.md").write_text(
+                "# Methods\nCrystal plasticity model with explicit parameter values.",
+                encoding="utf-8",
+            )
+            (tables_dir / "table_001.json").write_text(
+                json.dumps({"caption": "Parameters", "rows": [["tau0", "85"]]}),
+                encoding="utf-8",
+            )
+            (equations_dir / "eq_0001.json").write_text(
+                json.dumps({"equation_id": "eq_0001", "label": "(1)", "text": "tau = tau0"}),
+                encoding="utf-8",
+            )
+            (paper_dir / "llm_selected_files.json").write_text(
+                json.dumps({
+                    "selected_sections": ["001_Methods.md"],
+                    "selected_tables": ["table_001"],
+                    "selected_equations": ["eq_0001"],
+                }),
+                encoding="utf-8",
+            )
+
+            calls = {"select": 0}
+            old_select = extractor_mod.llm_select_files
+            old_extract = extractor_mod.llm_extract
+
+            def fail_select(*args, **kwargs):
+                calls["select"] += 1
+                raise AssertionError("selection LLM should be skipped")
+
+            def fake_extract(*args, **kwargs):
+                return {
+                    "schema_version": "6.0.0",
+                    "materials": [],
+                    "process_states": [],
+                    "constituents": [],
+                    "microstructure_features": [],
+                    "models": [],
+                    "deformation_families": [],
+                    "deformation_systems": [],
+                    "simulation_geometries": [],
+                    "numerical_methods": [],
+                    "conditions": [],
+                    "parameter_claims": [],
+                    "equations": [],
+                    "evidence_objects": [],
+                    "global_notes": None,
+                }, extractor_mod._ZeroUsage(), 0.0
+
+            try:
+                extractor_mod.llm_select_files = fail_select
+                extractor_mod.llm_extract = fake_extract
+                result = run_llm_on_paper_dir(
+                    paper_dir=str(paper_dir),
+                    model_select="select",
+                    model_extract="extract",
+                    max_snippet_chars=200,
+                    max_context_chars=2000,
+                    enable_source_enrichment=False,
+                    direct_image_table_input=False,
+                )
+            finally:
+                extractor_mod.llm_select_files = old_select
+                extractor_mod.llm_extract = old_extract
+
+            self.assertEqual(0, calls["select"])
+            self.assertTrue(result["metrics"]["select"]["reused_existing_selection"])
+            self.assertEqual(0, result["metrics"]["select"]["total_tokens"])
+            refreshed = json.loads((paper_dir / "llm_selected_files.json").read_text(encoding="utf-8"))
+            self.assertTrue(refreshed["reused_existing_selection"])
+            self.assertEqual(["table_001.json"], refreshed["resolved_selected_table_files"])
 
 if __name__ == "__main__":
     unittest.main()

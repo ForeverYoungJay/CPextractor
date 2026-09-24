@@ -1,220 +1,124 @@
 # CPextractor
 
-CPextractor is a literature-to-database pipeline for crystal plasticity parameter curation.
+CPextractor curates crystal-plasticity literature into parameter claims with
+material/model context, provenance and evidence pointers, then supports review,
+PostgreSQL/pgvector retrieval, a Streamlit chatbot and a CP knowledge graph.
 
-It turns Elsevier/Scopus papers into:
-- structured CP records in `parameters.registry`
-- parameter-level claims with provenance and calibrated confidence
-- evidence-grounded review artifacts
-- PostgreSQL records for retrieval, RAG, and analytics
+## Current implementation
 
-## What The Code Does
+The active extractor schema is **6.0.0**. The main pipeline is
+`pipelines/run_pipeline.py`. It selects relevant local sections/tables/equations,
+extracts hierarchical `parameter_claims`, links evidence and equations, evaluates
+claims, fuses confidence and applies the database gate.
 
-The main entry point is [pipelines/run_pipeline.py](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/pipelines/run_pipeline.py).
+The default configuration uses `gpt-4.1-mini` for selection, `gpt-5.1` for
+extraction and `gpt-4.1` in **single_judge** mode for evaluation. Committee review
+is available but not the default. The extractor-internal double pass is off.
+`pipeline.skip_quality_checks` defaults to true. New extractor-first schemas skip
+legacy parameter/provenance/table/condition rewriting while retaining unit,
+material, model and evidence processing. `parameters.registry` is a compatibility
+view, not the primary v6 extraction target.
 
-The runtime flow is:
-1. collect DOI targets from `pipeline.dois`, local fulltext folders, or Scopus
-2. download and parse Elsevier XML into `paper.xml`, `sections/*.md`, `tables/*.json`, `equations/*`, and `references.json`
-3. run a two-stage LLM extractor:
-   - file selection
-   - schema-constrained extraction
-4. normalize parameters, units, provenance, and document metadata
-5. resolve condition binding for material, phase, family, system, and loading context
-6. ground evidence back to file spans and table cells
-7. run multi-agent LLM evaluation:
-   - evidence judge
-   - normalization judge
-   - consistency judge
-   - meta judge
-8. fuse rule checks, grounding status, and judge verdicts into final confidence and quality tier
-9. build `parameter_claims`
-10. gate low-quality papers from formal DB ingest
-11. ingest structured records, chunks, embeddings, references, and evaluation artifacts
+The acquisition path implemented by the main pipeline uses Elsevier XML and
+Scopus/local DOI discovery. A general PDF fallback is not established by this
+release. Quality tiers and confidence are operational signals, not validated
+probabilities or expert acceptance labels.
 
-## Core Data Model
+## Install and run
 
-The extractor still uses `parameters.registry` as an intermediate extraction target, but the finalized stored document is now a hierarchical v3 schema centered on:
+The core environment was checked with Python 3.13. Offline evaluation needs only
+Python's standard library. Pipeline/annotation dependencies are pinned separately
+from the optional UI:
 
-- `document`
-- `materials[] -> phases[]`
-- `process_states[]`
-- `conditions[]`
-- `models[]`
-- `mechanisms`
-- `microstructure_features[]`
-- `parameter_claims[]`
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+cp config.example.yaml config.yaml
+```
 
-Each registry item still represents one extracted parameter record with:
-- normalized parameter identity
-- reported and SI-normalized value
-- scope and mechanism binding
-- provenance source
-- confidence
-
-On top of that, the pipeline now also builds:
-- `materials[]` with nested `phases[]`
-- `process_states[]` and `conditions[]`
-- `models[]` and `mechanisms`
-- `evidence_objects`: reusable evidence spans and table-cell references
-- `parameter_claims`: the smallest trusted unit for review, auditing, and downstream use
-
-`parameter_claims` are designed for publication-grade curation. A claim keeps:
-- `canonical_name`
-- normalized value
-- `applies_to`
-- binding context
-- material / process-state / condition / mechanism scope
-- source provenance
-- direct evidence locator plus grounded evidence ids
-- confidence
-- audit verdict
-- uncertainty typing
-
-## Quality Control Stack
-
-The QA stack is layered rather than a single LLM verdict.
-
-### Layer 1: Rule Validation
-- schema completeness
-- unit sanity
-- scope consistency
-- provenance conflict detection
-- basic physics-aware checks
-
-### Layer 2: Evidence Grounding
-- file-level matching
-- char span and line span
-- table-cell fallback grounding
-- reusable `evidence_objects`
-
-### Layer 3: Multi-Agent Judge
-- evidence support
-- normalization correctness
-- document consistency
-- document-level meta verdict: `accepted / flagged / rejected`
-
-### Layer 4: Confidence Fusion And Tiering
-- `document_confidence_score`
-- `document_confidence`
-- `quality_tier = gold / silver / candidate`
-- database ingest gate uses document verdict plus `document_confidence_score`, rejected-parameter count, and review escalation
-
-## Database Outputs
-
-Main tables are defined in [schema.sql](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/schema.sql).
-
-Structured content:
-- `papers`
-- `extractions`
-- `chunks`
-- `parameter_vectors`
-- `references`
-- `paper_references`
-- `parameter_references`
-
-Evaluation content:
-- `pipeline_runs`
-- `evaluation_runs`
-- `parameter_audits`
-- `evaluation_paper_summary`
-
-## Retrieval And Chatbot
-
-The chatbot in [chatbot.py](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/chatbot.py) uses hybrid retrieval:
-- vector retrieval over `chunks`
-- vector retrieval over `parameter_vectors`
-- structured retrieval over finalized `extractions.extracted_json -> parameter_claims[]` plus hierarchical `materials[] / samples[] / conditions[]`
-- LLM synthesis constrained to provided evidence
-
-This supports:
-- CP chatbot
-- evidence-grounded QA
-- structured parameter lookup
-
-The ingest layer now reuses embeddings when source text has not changed:
-- `chunks.content_hash + embedding_model`
-- `parameter_vectors.content_hash + embedding_model`
-
-So if `sections/*.md`, `tables/*.md`, or parameter claims are unchanged for the same DOI, re-ingest can skip repeated embedding cost.
-
-## Evaluation Structure
-
-The evaluation pipeline is now explicitly split into three paper-facing targets:
-
-### A. Extraction Correctness
-- field precision / recall / F1
-- numeric accuracy proxy
-- unit normalization accuracy
-- provenance completeness proxy
-
-### B. Judge Correctness
-- evidence judge correctness
-- normalization judge correctness
-- consistency judge correctness
-- meta-judge reliability
-- Brier / ECE / risk-coverage / wrong@high-confidence
-
-### C. Database Utility
-- structured retrieval hit rate
-- RAG answer grounding rate
-- analyst query success rate
-- downstream analytics consistency
-
-## Quick Start
+Edit the ignored `config.yaml` to select local input/output roots and DOIs. Provider
+credentials are read from `OPENAI_API_KEY` and `ELSEVIER_API_KEY`. The committed
+example contains no provider credentials. The local database example is for
+local development.
 
 ```bash
 docker compose up -d
 docker exec -i cp_pgvector psql -U cpuser -d cpdb < schema.sql
-
-export ELSEVIER_API_KEY="..."
-export OPENAI_API_KEY="..."
-
-python3 pipelines/run_pipeline.py
+.venv/bin/python pipelines/run_pipeline.py --config config.yaml
 ```
 
-For already downloaded local papers:
+For the UI, install `requirements-ui.txt` and run `streamlit run chatbot_ui.py`.
+Live pipeline runs require provider access and a running database; offline
+benchmarking and release checks do not call either service.
+
+## Data and applications
+
+The schema links `document`, `materials -> phases`, `process_states`, `conditions`,
+`models`, mechanisms, microstructure features, claims and evidence objects.
+A claim records its reported value/unit, parameter identity, applicability,
+provenance roles and governing equations.
+
+`schema.sql` defines paper/extraction storage, text/parameter/table-row vectors,
+reference and lineage relations, and pipeline/evaluation audits. Embedding reuse
+uses content hashes and model identifiers. `chatbot.py` combines structured,
+vector, table-row and equation retrieval. `kg/builder.py` exports a property graph:
 
 ```bash
-python3 scripts/eval/audit_extractions.py --config config.yaml
+.venv/bin/python -m kg.builder --root data/fulltext --output-json output/kg/cp_kg.json --output-graphml output/kg/cp_kg.graphml --output-cypher output/kg/cp_kg.cypher
+.venv/bin/python -m kg.ingest_to_pg --config config.yaml --root data/fulltext
 ```
 
-To batch-run extractor only on local papers without postprocess or ingest:
+## Benchmark and review workflow
+
+The evaluation contract is [docs/benchmark_protocol.md](docs/benchmark_protocol.md).
+It fixes the paper universe, DOI normalization, one-to-one semantic matching,
+field denominators, error taxonomy and calibration/test separation. Generated
+claim IDs do not determine cross-run identity. Unreviewed papers are not negative
+gold, and draft annotations start as `pending`.
 
 ```bash
-python3 scripts/eval/run_extract_batch.py --config config.yaml
+python3 scripts/eval/prepare_reliable_pilot.py --input-root data/fulltext --output-root output/pilot50 --n 50
+python3 scripts/eval/prepare_reliable_pilot.py --collect output/pilot50 --output-jsonl output/pilot50/reviewed.jsonl
+python3 scripts/eval/evaluate_release.py --gold output/pilot50/reviewed.jsonl --pred-root data/fulltext --manifest output/pilot50/manifest.json --split development --outdir output/eval/development
 ```
 
-This writes `materials_extracted.extractor_raw.json` per paper and skips papers that already have that file unless you pass `--force`.
-
-## Paper-Oriented Outputs
-
-One-click evaluation:
+Review the original source, correct records, add omitted claims and record who
+reviewed which fields. AI-assisted field review remains diagnostic. After genuine
+exhaustive expert adjudication, add `--strict` for publication evaluation.
+Unknown labels and missing confidence stay unknown.
 
 ```bash
-python3 scripts/eval/run_all.py \
-  --gold gold.jsonl \
-  --pred-root data/fulltext \
-  --qrels qrels.jsonl \
-  --runs runs.jsonl \
-  --pipeline-csv pipeline_runs.csv \
-  --review-csv output/review/review_queue.csv \
-  --outdir results/eval \
-  --method-name CPextractor
+python3 scripts/eval/evaluate_release.py --gold output/pilot50/reviewed.jsonl --pred-root data/fulltext --manifest output/pilot50/manifest.json --split calibration --strict --outdir output/eval/calibration
+python3 scripts/eval/calibrate_gate.py --evaluation-dir output/eval/calibration --outdir output/eval/calibration_policy
+python3 scripts/eval/evaluate_release.py --gold output/pilot50/reviewed.jsonl --pred-root data/fulltext --manifest output/pilot50/manifest.json --split test --strict --outdir output/eval/test
+python3 scripts/eval/calibrate_gate.py --evaluation-dir output/eval/test --policy output/eval/calibration_policy/frozen_policy.json --outdir output/eval/test_confidence
 ```
 
-Case-study analytics:
+Explicit paper gate labels are required for false-admission/false-block rates.
+Field-only review cannot certify full simulation usability. Historical metrics in
+`results/eval_annotation` used an earlier matching/counting policy and are not
+release-validation results.
+
+## Ablations and release checks
+
+Plan isolated baseline/committee/rules/double-pass/model comparisons without API
+calls, then execute after the evaluation protocol and credentials are ready:
 
 ```bash
-python3 scripts/analytics/materials_insight.py --root data/fulltext --outdir output/analytics
+.venv/bin/python scripts/eval/run_ablations.py --config config.example.yaml --manifest output/pilot50/manifest.json --outdir output/ablations --split development
 ```
 
-## Key Files
+`--execute` performs model calls; `--diagnostic` explicitly permits pre-validation
+experiments. Jobs are isolated by variant/repeat/DOI and never ingest the formal
+DB. `summarize_ablations.py` retains failed and unrun jobs, and leaves unavailable
+costs null rather than assigning a misleading price to combined model usage.
 
-- [pipelines/run_pipeline.py](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/pipelines/run_pipeline.py)
-- [llm/extractor.py](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/llm/extractor.py)
-- [llm/evaluator.py](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/llm/evaluator.py)
-- [postprocess/evidence_grounding.py](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/postprocess/evidence_grounding.py)
-- [postprocess/condition_binding.py](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/postprocess/condition_binding.py)
-- [postprocess/claim_builder.py](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/postprocess/claim_builder.py)
-- [postprocess/confidence_fusion.py](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/postprocess/confidence_fusion.py)
-- [chatbot.py](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/chatbot.py)
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python scripts/release/check_release.py --manifest output/pilot50/manifest.json --outdir output/release --run-tests --archive
+```
+
+The source archive excludes corpus files and personal configuration. A passing
+software test run does not imply an expert-validated scientific release.
+See [docs/release_workflow.md](docs/release_workflow.md) for deliverables and
+remaining scientific acceptance criteria.

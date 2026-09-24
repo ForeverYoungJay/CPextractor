@@ -467,11 +467,21 @@ def extract_caption(table_tag):
     return None
 
 
+def _appendix_table_label_from_caption(caption: str | None) -> str | None:
+    """Recover appendix/supplement table labels embedded in caption text."""
+    if not caption:
+        return None
+    match = re.match(r"^\s*(Table\s+[A-Za-z][A-Za-z0-9]*(?:[._-]\d+)?)\b", caption, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return normalize_text(match.group(1))
+
+
 def extract_table_label(table_tag):
     label = table_tag.find(["ce:label", "label"])
     if label:
         return normalize_text(label.get_text(" ", strip=True))
-    return None
+    return _appendix_table_label_from_caption(extract_caption(table_tag))
 
 
 def build_object_ref_map(soup):

@@ -82,6 +82,43 @@ class ClaimBuilderTests(unittest.TestCase):
         self.assertEqual("material_constitutive_parameter", claim["claim_class"])
         self.assertEqual(report["claims_built"], 1)
 
+    def test_preserves_v6_normalized_and_simulation_role_fields(self):
+        extracted_json = {
+            "schema_version": "6.0.0",
+            "parameter_claims": [
+                {
+                    "claim_id": "claim_tau0",
+                    "parameter": {
+                        "canonical_name": "tau0",
+                        "symbol_reported": "τ0",
+                        "symbol_normalized": "tau_0",
+                    },
+                    "assertion": {
+                        "value_type": "scalar",
+                        "reported_value": "85",
+                        "reported_unit": "MPa",
+                        "normalized_value": 85,
+                        "normalized_unit": "MPa",
+                    },
+                    "provenance": {
+                        "origin_type": "reported_in_current_paper",
+                        "source_scope": "current_paper",
+                    },
+                    "simulation_role": {"is_required_for_simulation": "yes"},
+                }
+            ],
+            "evidence_objects": [],
+        }
+
+        updated, _ = build_parameter_claims(extracted_json)
+        claim = updated["parameter_claims"][0]
+
+        self.assertEqual("tau_0", claim["parameter"]["symbol_normalized"])
+        self.assertEqual(85, claim["assertion"]["normalized_value"])
+        self.assertEqual("MPa", claim["assertion"]["normalized_unit"])
+        self.assertEqual("current_paper", claim["provenance"]["source_scope"])
+        self.assertEqual("yes", claim["simulation_role"]["is_required_for_simulation"])
+
     def test_infers_claim_class_for_condition_and_numerical_parameters(self):
         extracted_json = {
             "parameter_claims": [

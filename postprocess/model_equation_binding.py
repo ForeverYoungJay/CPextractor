@@ -460,6 +460,62 @@ def _load_equation_index(paper_dir: str) -> List[Dict[str, Any]]:
     return rows or _load_inline_equations_from_sections(paper_dir)
 
 
+def _top_level_equation_object(eq_id: str, row: Dict[str, Any]) -> Dict[str, Any]:
+    label = row.get("label")
+    if not label and row.get("equation_index") not in (None, ""):
+        try:
+            label = f"({int(row.get('equation_index'))})"
+        except Exception:
+            label = None
+    return {
+        "equation_id": eq_id,
+        "equation_label": label,
+        "equation_text": row.get("latex") or row.get("text"),
+        "equation_type": None,
+        "symbols": [],
+        "evidence_ids": [],
+        "notes": f"Backfilled from {row.get('text_file')}" if row.get("text_file") else None,
+    }
+
+
+def _sync_top_level_equations(
+    extracted: Dict[str, Any],
+    *,
+    equation_by_id: Dict[str, Dict[str, Any]],
+) -> Tuple[Dict[str, Any], int]:
+    referenced: List[str] = []
+    for model in _safe_list(extracted.get("models")):
+        if not isinstance(model, dict):
+            continue
+        referenced.extend(_safe_list(model.get("equation_ids")))
+        for branch in _safe_list(model.get("constitutive_branches")):
+            if isinstance(branch, dict):
+                referenced.extend(_safe_list(branch.get("governing_equation_ids")))
+    for claim in _safe_list(extracted.get("parameter_claims")):
+        if isinstance(claim, dict):
+            referenced.extend(_safe_list(claim.get("governing_equation_ids")))
+
+    equations = [row for row in _safe_list(extracted.get("equations")) if isinstance(row, dict)]
+    existing = {
+        str(row.get("equation_id") or "").strip()
+        for row in equations
+        if str(row.get("equation_id") or "").strip()
+    }
+    added = 0
+    for eq_id in _merge_unique(referenced):
+        if eq_id in existing:
+            continue
+        source = equation_by_id.get(eq_id)
+        if not source:
+            continue
+        equations.append(_top_level_equation_object(eq_id, source))
+        existing.add(eq_id)
+        added += 1
+    if equations:
+        extracted["equations"] = equations
+    return extracted, added
+
+
 def _backfill_equation_ids(
     extracted_json: Dict[str, Any],
     *,
@@ -669,6 +725,10 @@ def bind_model_equations(
             refreshed_models.append(row)
         extracted["models"] = refreshed_models
 
+    extracted, top_level_equations_added = _sync_top_level_equations(
+        extracted,
+        equation_by_id=equation_by_id,
+    )
     extracted["evidence_objects"] = evidence_objects
     return extracted, {
         "models": len(out_models),
@@ -676,5 +736,6 @@ def bind_model_equations(
         "bound_equations": bound_equations,
         "branches_backfilled": backfill_report["branches_backfilled"],
         "claims_backfilled": backfill_report["claims_backfilled"],
+        "top_level_equations_added": top_level_equations_added,
         "equation_sources": len(equation_rows),
     }

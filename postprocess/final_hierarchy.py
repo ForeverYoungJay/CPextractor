@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Tuple
 
-FINAL_SCHEMA_VERSION = "5.1.1"
+FINAL_SCHEMA_VERSION = "6.0.0"
 
 
 def _safe_dict(value: Any) -> Dict[str, Any]:
@@ -22,6 +23,40 @@ def _first_non_empty(*values: Any) -> Any:
         if value not in (None, "", [], {}):
             return value
     return None
+
+
+_PLAIN_NUMBER_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
+_TIMES_TEN_RE = re.compile(
+    r"^\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+))\s*(?:×|x|\\*)\s*10\s*(?:\^)?\s*([-+]?\d+)\s*$",
+    re.IGNORECASE,
+)
+_BARE_TEN_EXP_RE = re.compile(r"^\s*10\s*(?:\^)?\s*([-+]?\d+)\s*$", re.IGNORECASE)
+
+
+def _coerce_numeric_claim_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if not raw:
+        return value
+    normalized = (
+        raw.replace("−", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("\u00a0", " ")
+    )
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    match = _TIMES_TEN_RE.fullmatch(normalized)
+    if match:
+        return float(match.group(1)) * (10 ** int(match.group(2)))
+    match = _BARE_TEN_EXP_RE.fullmatch(normalized)
+    if match:
+        return 10 ** int(match.group(1))
+    compact = normalized.replace(" ", "")
+    if _PLAIN_NUMBER_RE.fullmatch(compact):
+        number = float(compact)
+        return int(number) if number.is_integer() and "." not in compact and "e" not in compact.lower() else number
+    return value
 
 
 def _normalize_document(extracted_json: Dict[str, Any]) -> Dict[str, Any]:
@@ -45,6 +80,7 @@ def _normalize_materials(extracted_json: Dict[str, Any]) -> Tuple[List[Dict[str,
             materials = [{
                 "material_id": "mat_001",
                 "name": legacy_material.get("name"),
+                "normalized_name": legacy_material.get("normalized_name"),
                 "chemical_formula": legacy_material.get("chemical_formula"),
                 "material_class": legacy_material.get("material_class"),
                 "phase_mode": legacy_material.get("phase_mode"),
@@ -222,6 +258,7 @@ def _normalize_passthrough_records(
     key: str,
     id_field: str,
     prefix: str,
+    add_evidence_ids: bool = True,
 ) -> Tuple[List[Dict[str, Any]], int]:
     records = [r for r in _safe_list(extracted_json.get(key)) if isinstance(r, dict)]
     ids_filled = 0
@@ -231,7 +268,8 @@ def _normalize_passthrough_records(
         if not str(row.get(id_field) or "").strip():
             row[id_field] = f"{prefix}_{idx:03d}"
             ids_filled += 1
-        row.setdefault("evidence_ids", [])
+        if add_evidence_ids:
+            row.setdefault("evidence_ids", [])
         out.append(row)
     return out, ids_filled
 
@@ -254,23 +292,28 @@ def _normalize_parameter_claims(extracted_json: Dict[str, Any], materials: List[
                 "parameter_family": parameter.get("parameter_family"),
                 "raw_name": parameter.get("raw_name"),
                 "symbol_reported": parameter.get("symbol_reported"),
+                "symbol_normalized": parameter.get("symbol_normalized"),
                 "domain": parameter.get("domain"),
                 "description": parameter.get("description"),
             },
             "assertion": {
                 "value_type": assertion.get("value_type"),
-                "reported_value": assertion.get("reported_value"),
+                "reported_value": _coerce_numeric_claim_value(assertion.get("reported_value")),
                 "reported_unit": assertion.get("reported_unit"),
+                "normalized_value": _coerce_numeric_claim_value(assertion.get("normalized_value")),
+                "normalized_unit": assertion.get("normalized_unit"),
                 "valid_range": assertion.get("valid_range"),
             },
             "applies_to": dict(_safe_dict(claim.get("applies_to"))),
             "provenance": {
                 "origin_type": provenance.get("origin_type"),
+                "source_scope": provenance.get("source_scope"),
                 "reference_ids": _safe_list(provenance.get("reference_ids")),
                 "adopted_from_reference_ids": _safe_list(provenance.get("adopted_from_reference_ids")),
                 "calibration_based_on_reference_ids": _safe_list(provenance.get("calibration_based_on_reference_ids")),
                 "calibration": _safe_dict(provenance.get("calibration")) or None,
             },
+            "simulation_role": _safe_dict(claim.get("simulation_role")) or None,
             "governing_equation_ids": _safe_list(claim.get("governing_equation_ids")),
             "evidence_ids": _safe_list(claim.get("evidence_ids")),
             "notes": claim.get("notes"),
@@ -325,6 +368,12 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
     deformation_systems, system_ids_filled = _normalize_passthrough_records(
         extracted, "deformation_systems", "system_id", "sys"
     )
+    deformation_families, family_ids_filled = _normalize_passthrough_records(
+        extracted, "deformation_families", "family_id", "family"
+    )
+    equations, equation_ids_filled = _normalize_passthrough_records(
+        extracted, "equations", "equation_id", "eq"
+    )
     simulation_geometries, geometry_ids_filled = _normalize_passthrough_records(
         extracted, "simulation_geometries", "geometry_id", "geom"
     )
@@ -335,7 +384,7 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
     parameter_claims, claim_ids_filled = _normalize_parameter_claims(extracted, materials, models)
     evidence_objects, evidence_ids_filled = _normalize_evidence_objects(extracted)
 
-    # Drop legacy views so downstream operates on the v5.1.0 hierarchy only.
+    # Drop legacy views so downstream operates on the current hierarchy only.
     for key in (
         "source_document",
         "material",
@@ -352,6 +401,8 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
         "orientation_inputs",
         "simulation_outputs",
         "model_evaluations",
+        "simulation_readiness",
+        "quality_control",
     ):
         extracted.pop(key, None)
 
@@ -366,25 +417,27 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
         "constituents": constituents,
         "microstructure_features": microstructure_features,
         "deformation_systems": deformation_systems,
+        "deformation_families": deformation_families,
         "models": models,
+        "equations": equations,
+        "simulation_geometries": simulation_geometries,
         "numerical_methods": numerical_methods,
         "conditions": conditions,
         "parameter_claims": parameter_claims,
         "evidence_objects": evidence_objects,
+        "global_notes": extracted.get("global_notes"),
     }
-    if simulation_geometries:
-        ordered["simulation_geometries"] = simulation_geometries
-    if extracted.get("global_notes") not in (None, "", [], {}):
-        ordered["global_notes"] = extracted.get("global_notes")
 
     return ordered, {
         "schema_version": FINAL_SCHEMA_VERSION,
         "materials": len(materials),
         "constituents": len(constituents),
         "process_states": len(process_states),
+        "deformation_families": len(deformation_families),
         "deformation_systems": len(deformation_systems),
         "conditions": len(conditions),
         "models": len(models),
+        "equations": len(equations),
         "simulation_geometries": len(simulation_geometries),
         "numerical_methods": len(numerical_methods),
         "microstructure_features": len(microstructure_features),
@@ -396,7 +449,9 @@ def build_final_hierarchy(extracted_json: Dict[str, Any]) -> Tuple[Dict[str, Any
         "condition_ids_filled": condition_ids_filled,
         "model_ids_filled": model_ids_filled,
         "branch_ids_filled": branch_ids_filled,
+        "family_ids_filled": family_ids_filled,
         "system_ids_filled": system_ids_filled,
+        "equation_ids_filled": equation_ids_filled,
         "geometry_ids_filled": geometry_ids_filled,
         "numerical_method_ids_filled": numerical_method_ids_filled,
         "feature_ids_filled": feature_ids_filled,

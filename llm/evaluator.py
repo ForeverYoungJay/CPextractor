@@ -248,6 +248,70 @@ Return JSON only.
 """
 
 
+SINGLE_AUDIT_AGENT_SYSTEM_PROMPT = """
+You are a compact all-in-one audit judge for crystal-plasticity parameter extraction.
+Judge evidence support, normalization, and binding consistency together.
+Return JSON only.
+"""
+
+
+SINGLE_AUDIT_AGENT_USER_PROMPT_TEMPLATE = """
+1 Task description
+Audit extracted crystal-plasticity parameter records with one compact judge.
+
+2 Task requirements
+- Use only the supplied document summary and compact parameter records.
+- For each parameter, judge evidence support, unit/parameter normalization, and scope/model/branch consistency.
+- Output JSON exactly:
+{
+  "verdict": "accepted / flagged / rejected",
+  "summary": "short string",
+  "global_issues": [
+    {
+      "severity": "high / medium / low",
+      "category": "evidence / normalization / consistency / completeness / other",
+      "issue": "string",
+      "recommendation": "string"
+    }
+  ],
+  "parameter_audits": [
+    {
+      "location": "string",
+      "verdict": "accepted / flagged / rejected",
+      "supportiveness": "supported / unsupported / contradictory / insufficient_evidence",
+      "normalization_correctness": "correct / uncertain / likely_incorrect",
+      "completeness": "complete / partially_complete / incomplete / not_applicable",
+      "confidence": "high / medium / low",
+      "error_types": ["unsupported_claim / wrong_value / wrong_unit_conversion / wrong_parameter_mapping / condition_binding_error / cross_material_mixup / model_variant_confusion / other"],
+      "uncertainty_types": ["missing_evidence / weak_grounding / table_parse_uncertain / normalization_ambiguous / condition_binding_ambiguous / other"],
+      "reason": "string",
+      "recommendation": "string",
+      "review_required": "yes / no"
+    }
+  ],
+  "strengths": ["string"],
+  "recommended_actions": ["string"]
+}
+
+3 Processing suggestions
+- Do not repeat the source text in your answer.
+- Use `flagged` for weak or incomplete evidence unless there is a clear contradiction.
+- Do not mark a standard SI conversion wrong if it is numerically consistent.
+- Do not flag many-to-many equation bindings as inconsistent by themselves.
+- For image/table-backed claims, treat coherent row/column/value locator evidence as primary evidence unless contradicted.
+- Keep reasons short but specific.
+
+Reviewed feedback summary:
+__FEEDBACK_SUMMARY__
+
+Document summary:
+__DOC_SUMMARY__
+
+Parameter records:
+__RECORDS_JSON__
+"""
+
+
 META_AGENT_USER_PROMPT_TEMPLATE = """
 1 Task description
 Produce the final document-level audit result for a crystal-plasticity extraction.
@@ -927,6 +991,168 @@ def _build_parameter_records(
     return records[:limit] if limit > 0 else records
 
 
+def _compact_evidence_object_for_eval(obj: Dict[str, Any], max_chars: int = 220) -> Dict[str, Any]:
+    locator = _safe_dict(obj.get("locator"))
+    compact = {
+        "evidence_id": obj.get("evidence_id"),
+        "evidence_type": obj.get("evidence_type"),
+        "source_file": obj.get("source_file"),
+        "source_id": obj.get("source_id"),
+        "table_id": locator.get("table_id"),
+        "row_name": _trim_text(str(locator.get("row_name") or ""), max_chars),
+        "column_name": _trim_text(str(locator.get("column_name") or ""), max_chars),
+        "cell_ref": locator.get("cell_ref"),
+        "value": _trim_text(str(locator.get("value") or ""), max_chars),
+        "excerpt": _trim_text(str(locator.get("excerpt") or obj.get("snippet") or ""), max_chars),
+    }
+    return {k: v for k, v in compact.items() if v not in (None, "", [])}
+
+
+def _compact_context_list(values: Any, keep_keys: List[str]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for value in _safe_list(values):
+        if not isinstance(value, dict):
+            continue
+        compact = {key: value.get(key) for key in keep_keys if value.get(key) not in (None, "", [])}
+        if compact:
+            out.append(compact)
+    return out
+
+
+def _parameter_record_for_agent(record: Dict[str, Any], mode: str) -> Dict[str, Any]:
+    parameter = _safe_dict(record.get("parameter"))
+    assertion = _safe_dict(record.get("assertion"))
+    applies_to = _safe_dict(record.get("applies_to"))
+    base = {
+        "location": record.get("location"),
+        "record_index": record.get("record_index"),
+        "parameter": {
+            "canonical_name": parameter.get("canonical_name") or record.get("canonical_name"),
+            "parameter_family": parameter.get("parameter_family"),
+            "raw_name": parameter.get("raw_name"),
+            "symbol_reported": parameter.get("symbol_reported") or record.get("symbol_reported"),
+            "symbol_normalized": parameter.get("symbol_normalized"),
+            "domain": parameter.get("domain") or record.get("domain"),
+            "description": parameter.get("description"),
+        },
+        "assertion": {
+            "value_type": assertion.get("value_type"),
+            "reported_value": assertion.get("reported_value") if assertion.get("reported_value") not in (None, "") else record.get("reported_value"),
+            "reported_unit": assertion.get("reported_unit") if assertion.get("reported_unit") not in (None, "") else record.get("reported_unit"),
+            "normalized_value": assertion.get("normalized_value") if assertion.get("normalized_value") not in (None, "") else record.get("normalized_value"),
+            "normalized_unit": assertion.get("normalized_unit") if assertion.get("normalized_unit") not in (None, "") else record.get("normalized_unit"),
+            "valid_range": assertion.get("valid_range"),
+        },
+        "applies_to": {
+            "material_id": applies_to.get("material_id"),
+            "constituent_id": applies_to.get("constituent_id"),
+            "process_state_id": applies_to.get("process_state_id"),
+            "model_id": applies_to.get("model_id"),
+            "condition_id": applies_to.get("condition_id"),
+            "branch_ids": _safe_list(applies_to.get("branch_ids")),
+            "family_id": applies_to.get("family_id"),
+            "system_ids": _safe_list(applies_to.get("system_ids")),
+            "mechanism": applies_to.get("mechanism"),
+            "scope": applies_to.get("scope"),
+        },
+        "provenance": record.get("provenance"),
+        "governing_equation_ids": _safe_list(record.get("governing_equation_ids")),
+    }
+    base = {k: v for k, v in base.items() if v not in (None, "", []) and v != {}}
+    for nested_key in ("parameter", "assertion", "applies_to"):
+        if isinstance(base.get(nested_key), dict):
+            base[nested_key] = {
+                k: v for k, v in base[nested_key].items()
+                if v not in (None, "", []) and v != {}
+            }
+
+    if mode == "evidence":
+        evidence_summary = _safe_dict(record.get("evidence_summary"))
+        compact_summary = {
+            "primary_text": _trim_text(str(evidence_summary.get("primary_text") or ""), 300),
+            "table_locator": evidence_summary.get("table_locator"),
+        }
+        compact_summary = {k: v for k, v in compact_summary.items() if v not in (None, "", []) and v != {}}
+        base.update({
+            "evidence_ids": _safe_list(record.get("evidence_ids")),
+            "evidence_objects": [
+                _compact_evidence_object_for_eval(obj)
+                for obj in _safe_list(record.get("evidence_objects"))
+                if isinstance(obj, dict)
+            ],
+            "evidence_summary": compact_summary,
+            "inferred_support": [
+                {
+                    "source": item.get("source"),
+                    "kind": item.get("kind"),
+                    "text": _trim_text(str(item.get("text") or ""), 220),
+                }
+                for item in _safe_list(record.get("inferred_support"))
+                if isinstance(item, dict)
+            ][:2],
+        })
+    elif mode == "normalization":
+        base.update({
+            "canonical_name": record.get("canonical_name"),
+            "symbol_reported": record.get("symbol_reported"),
+            "domain": record.get("domain"),
+            "reported_value": record.get("reported_value"),
+            "reported_unit": record.get("reported_unit"),
+            "normalized_value": record.get("normalized_value"),
+            "normalized_unit": record.get("normalized_unit"),
+        })
+    elif mode in {"consistency", "single"}:
+        base.update({
+            "model_context": record.get("model_context"),
+            "branch_contexts": _compact_context_list(
+                record.get("branch_contexts") or ([record.get("branch_context")] if record.get("branch_context") else []),
+                ["branch_id", "branch_type", "name", "governing_equation_ids"],
+            ),
+            "system_contexts": _compact_context_list(
+                record.get("system_contexts"),
+                ["system_id", "system_type", "family_name", "plane", "direction"],
+            ),
+            "geometry_contexts": _compact_context_list(
+                record.get("geometry_contexts"),
+                ["geometry_id", "geometry_type", "mesh_type", "periodic_geometry"],
+            ),
+            "numerical_method_contexts": _compact_context_list(
+                record.get("numerical_method_contexts"),
+                ["numerical_method_id", "time_integration", "nonlinear_solver", "regularization"],
+            ),
+        })
+        if mode == "single":
+            evidence_summary = _safe_dict(record.get("evidence_summary"))
+            compact_summary = {
+                "primary_text": _trim_text(str(evidence_summary.get("primary_text") or ""), 260),
+                "table_locator": evidence_summary.get("table_locator"),
+            }
+            compact_summary = {k: v for k, v in compact_summary.items() if v not in (None, "", []) and v != {}}
+            base.update({
+                "evidence_ids": _safe_list(record.get("evidence_ids")),
+                "evidence_objects": [
+                    _compact_evidence_object_for_eval(obj, max_chars=180)
+                    for obj in _safe_list(record.get("evidence_objects"))
+                    if isinstance(obj, dict)
+                ],
+                "evidence_summary": compact_summary,
+                "inferred_support": [
+                    {
+                        "source": item.get("source"),
+                        "kind": item.get("kind"),
+                        "text": _trim_text(str(item.get("text") or ""), 180),
+                    }
+                    for item in _safe_list(record.get("inferred_support"))
+                    if isinstance(item, dict)
+                ][:1],
+            })
+
+    return {
+        k: v for k, v in base.items()
+        if v not in (None, "", []) and v != {}
+    }
+
+
 def _audit_axis_value(record: Dict[str, Any], axis: str) -> str:
     applies_to = _safe_dict(record.get("applies_to"))
     parameter = _safe_dict(record.get("parameter"))
@@ -1293,6 +1519,7 @@ def _run_parameter_agent(
     feedback_summary: str,
     extra_prompt_kwargs: Dict[str, Any] | None = None,
     payload_key: str,
+    record_mode: str,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     audits: List[Dict[str, Any]] = []
     total_tokens = 0
@@ -1302,7 +1529,8 @@ def _run_parameter_agent(
     extra_prompt_kwargs = extra_prompt_kwargs or {}
 
     for start_idx in range(0, len(parameter_records), max(1, batch_size)):
-        batch = parameter_records[start_idx:start_idx + max(1, batch_size)]
+        source_batch = parameter_records[start_idx:start_idx + max(1, batch_size)]
+        batch = [_parameter_record_for_agent(record, record_mode) for record in source_batch]
         prompt = user_prompt_template.replace("__RECORDS_JSON__", json.dumps(batch, ensure_ascii=False, indent=2))
         prompt = prompt.replace("__FEEDBACK_SUMMARY__", feedback_summary)
         for k, v in extra_prompt_kwargs.items():
@@ -1354,7 +1582,8 @@ def _run_consistency_agent(
     feedback_summary: str,
     max_retries: int,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    prompt = CONSISTENCY_AGENT_USER_PROMPT_TEMPLATE.replace("__RECORDS_JSON__", json.dumps(parameter_records, ensure_ascii=False, indent=2))
+    compact_records = [_parameter_record_for_agent(record, "consistency") for record in parameter_records]
+    prompt = CONSISTENCY_AGENT_USER_PROMPT_TEMPLATE.replace("__RECORDS_JSON__", json.dumps(compact_records, ensure_ascii=False, indent=2))
     prompt = prompt.replace("__DOC_SUMMARY__", json.dumps(doc_summary, ensure_ascii=False, indent=2))
     prompt = prompt.replace("__FEEDBACK_SUMMARY__", feedback_summary)
     started = time.perf_counter()
@@ -1389,6 +1618,107 @@ def _run_consistency_agent(
         "total_tokens": getattr(usage, "total_tokens", 0),
         "time_seconds": round(elapsed, 2),
         "audited_parameter_count": len(payload.get("parameter_flags", []) or []),
+    }
+
+
+def _normalize_single_audit_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        payload = {}
+    payload.setdefault("verdict", "flagged")
+    payload.setdefault("summary", "")
+    payload.setdefault("global_issues", [])
+    payload.setdefault("parameter_audits", [])
+    payload.setdefault("strengths", [])
+    payload.setdefault("recommended_actions", [])
+    payload["verdict"] = _normalize_verdict(payload.get("verdict"), default="flagged")
+    normalized_rows: List[Dict[str, Any]] = []
+    for row in payload.get("parameter_audits", []) or []:
+        if not isinstance(row, dict):
+            continue
+        row["verdict"] = _normalize_verdict(row.get("verdict"), default="flagged")
+        row["confidence"] = _normalize_confidence(row.get("confidence"), default="medium")
+        row.setdefault("supportiveness", "insufficient_evidence")
+        row.setdefault("normalization_correctness", "uncertain")
+        row.setdefault("completeness", "not_applicable")
+        row.setdefault("error_types", [])
+        row.setdefault("uncertainty_types", [])
+        row.setdefault("reason", "")
+        row.setdefault("recommendation", "")
+        review_raw = str(row.get("review_required") or "").strip().lower()
+        if review_raw in {"yes", "true", "1"}:
+            row["review_required"] = True
+        elif review_raw in {"no", "false", "0"}:
+            row["review_required"] = False
+        else:
+            row["review_required"] = _review_required_from_raw_consensus(
+                verdict=row["verdict"],
+                disagreement=False,
+                votes=[row["verdict"]],
+                error_types=_safe_list(row.get("error_types")),
+                uncertainty_types=_safe_list(row.get("uncertainty_types")),
+            )
+        normalized_rows.append(_remove_rating_fields(row))
+    payload["parameter_audits"] = normalized_rows
+    return _remove_rating_fields(payload)
+
+
+def _single_audit_report(parameter_audits: List[Dict[str, Any]], global_issues: List[Dict[str, Any]]) -> Dict[str, Any]:
+    escalations = sum(1 for row in parameter_audits if isinstance(row, dict) and bool(row.get("review_required")))
+    raw_rows = [
+        {
+            "location": row.get("location"),
+            "verdict": row.get("verdict"),
+            "error_types": _safe_list(row.get("error_types")),
+            "uncertainty_types": _safe_list(row.get("uncertainty_types")),
+            "reason": row.get("reason"),
+            "recommendation": row.get("recommendation"),
+            "review_required": row.get("review_required"),
+        }
+        for row in parameter_audits
+        if isinstance(row, dict)
+    ]
+    return {
+        "parameter_disagreements": [],
+        "disagreement_count": 0,
+        "human_escalation_count": escalations,
+        "global_issues": global_issues,
+        "raw_parameter_consensus": raw_rows,
+        "mode": "single_judge",
+    }
+
+
+def _run_single_audit_agent(
+    *,
+    client: OpenAI,
+    model_evaluate: str,
+    parameter_records: List[Dict[str, Any]],
+    doc_summary: Dict[str, Any],
+    feedback_summary: str,
+    max_retries: int,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    compact_records = [_parameter_record_for_agent(record, "single") for record in parameter_records]
+    prompt = SINGLE_AUDIT_AGENT_USER_PROMPT_TEMPLATE.replace("__RECORDS_JSON__", json.dumps(compact_records, ensure_ascii=False, indent=2))
+    prompt = prompt.replace("__DOC_SUMMARY__", json.dumps(doc_summary, ensure_ascii=False, indent=2))
+    prompt = prompt.replace("__FEEDBACK_SUMMARY__", feedback_summary)
+    started = time.perf_counter()
+    resp = _chat_completion_with_retry(
+        client,
+        model=model_evaluate,
+        messages=[
+            {"role": "system", "content": SINGLE_AUDIT_AGENT_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        max_retries=max(1, max_retries),
+    )
+    elapsed = time.perf_counter() - started
+    usage = resp.usage
+    payload = _normalize_single_audit_payload(json.loads(resp.choices[0].message.content))
+    return payload, {
+        "input_tokens": getattr(usage, "prompt_tokens", 0),
+        "output_tokens": getattr(usage, "completion_tokens", 0),
+        "total_tokens": getattr(usage, "total_tokens", 0),
+        "time_seconds": round(elapsed, 2),
+        "audited_parameter_count": len(payload.get("parameter_audits", []) or []),
     }
 
 
@@ -1790,6 +2120,7 @@ def run_llm_evaluation(
     paper_dir: str,
     extracted_json: Dict[str, Any],
     model_evaluate: str,
+    evaluator_mode: str = "single_judge",
     max_context_chars: int = 18000,
     max_retries: int = 2,
     parameter_limit: int = 40,
@@ -1821,6 +2152,94 @@ def run_llm_evaluation(
     )
     doc_summary = _build_document_summary(extracted_json)
 
+    normalized_mode = str(evaluator_mode or "single_judge").strip().lower()
+    if normalized_mode in {"single", "single_agent", "single_judge", "one_judge"}:
+        single_payload, single_metrics = _run_single_audit_agent(
+            client=client,
+            model_evaluate=model_evaluate,
+            parameter_records=parameter_records,
+            doc_summary=doc_summary,
+            feedback_summary=feedback_summary,
+            max_retries=max_retries,
+        )
+        parameter_audits = _safe_list(single_payload.get("parameter_audits"))
+        committee_report = _single_audit_report(
+            parameter_audits,
+            _safe_list(single_payload.get("global_issues")),
+        )
+        payload = {
+            **single_payload,
+            "context_used": context_meta,
+            "committee": {
+                "mode": "single_judge",
+                "single_audit_judge": {
+                    "parameter_audits": parameter_audits,
+                    "global_issues": single_payload.get("global_issues", []),
+                    "summary": single_payload.get("summary", ""),
+                },
+                "disagreement_summary": committee_report,
+            },
+            "parameter_audits": parameter_audits,
+            "parameter_audit_coverage": {
+                "audited": len(parameter_audits),
+                "available": len(all_parameter_records),
+                "limit": parameter_limit,
+                "truncated_by_limit": bool(parameter_limit > 0 and len(all_parameter_records) > len(parameter_records)),
+                "per_evidence_chars": per_evidence_chars,
+                "sampling": sampling_meta,
+                "audited_locations": [str(r.get("location") or "") for r in parameter_records],
+                "omitted_locations": [
+                    str(r.get("location") or "")
+                    for r in all_parameter_records[len(parameter_records):]
+                    if isinstance(r, dict)
+                ],
+                "truncated_evidence_locations": [
+                    str(r.get("location") or "")
+                    for r in parameter_records
+                    if isinstance(r, dict) and bool(
+                        ((r.get("evidence_summary") or {}) if isinstance(r.get("evidence_summary"), dict) else {}).get("primary_text_truncated")
+                    )
+                ],
+            },
+            "review_escalation": {
+                "required": bool(committee_report.get("human_escalation_count")),
+                "count": committee_report.get("human_escalation_count", 0),
+                "disagreement_count": 0,
+            },
+            "feedback_summary_used": feedback_summary,
+        }
+        payload = _remove_rating_fields(payload)
+        evaluator_input_payload = {
+            "schema_version": extracted_json.get("schema_version"),
+            "context_used": context_meta,
+            "document_summary": doc_summary,
+            "parameter_audit_coverage": {
+                "available": len(all_parameter_records),
+                "audited": len(parameter_records),
+                "limit": parameter_limit,
+                "per_evidence_chars": per_evidence_chars,
+                "sampling": sampling_meta,
+            },
+            "parameter_records": [_parameter_record_for_agent(record, "single") for record in parameter_records],
+        }
+        evaluator_input_payload = _remove_rating_fields(evaluator_input_payload)
+        evaluator_input_path = os.path.join(paper_dir, "llm_evaluation_input.json")
+        with open(evaluator_input_path, "w", encoding="utf-8") as f:
+            json.dump(evaluator_input_payload, f, ensure_ascii=False, indent=2)
+        metrics = {
+            "model": model_evaluate,
+            "mode": "single_judge",
+            "committee": {
+                "single_audit_judge": single_metrics,
+            },
+            "input_tokens": single_metrics["input_tokens"],
+            "output_tokens": single_metrics["output_tokens"],
+            "total_tokens": single_metrics["total_tokens"],
+            "time_seconds": single_metrics["time_seconds"],
+            "context_used": context_meta,
+        }
+        return payload, metrics
+
     evidence_rows, evidence_metrics = _run_parameter_agent(
         client=client,
         model_evaluate=model_evaluate,
@@ -1831,6 +2250,7 @@ def run_llm_evaluation(
         max_retries=max_retries,
         feedback_summary=feedback_summary,
         payload_key="parameter_audits",
+        record_mode="evidence",
     )
 
     normalization_rows, normalization_metrics = _run_parameter_agent(
@@ -1843,6 +2263,7 @@ def run_llm_evaluation(
         max_retries=max_retries,
         feedback_summary=feedback_summary,
         payload_key="parameter_audits",
+        record_mode="normalization",
     )
 
     consistency_payload, consistency_metrics = _run_consistency_agent(

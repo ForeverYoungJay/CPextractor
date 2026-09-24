@@ -25,13 +25,73 @@ def _download_table_image_stub(*args, **kwargs):
 
 
 fulltext_parser_stub.download_table_image = _download_table_image_stub
-sys.modules.setdefault("elsevier.fulltext_parser", fulltext_parser_stub)
+try:
+    import elsevier.fulltext_parser
+except ModuleNotFoundError:
+    sys.modules.setdefault("elsevier.fulltext_parser", fulltext_parser_stub)
 
-from llm.evaluator import _build_document_summary, _build_parameter_records
+from llm.evaluator import _build_document_summary, _build_parameter_records, _parameter_record_for_agent
 from postprocess.quality_checks import run_quality_checks
 
 
 class EvaluatorV5Tests(unittest.TestCase):
+    def test_parameter_record_agent_views_do_not_repeat_evidence_everywhere(self):
+        record = {
+            "location": "parameter_claims[0]",
+            "record_index": 0,
+            "parameter": {
+                "canonical_name": "crss_initial",
+                "symbol_reported": "tau0",
+                "domain": "plastic",
+            },
+            "assertion": {
+                "reported_value": 85,
+                "reported_unit": "MPa",
+                "normalized_value": 85000000,
+                "normalized_unit": "Pa",
+            },
+            "applies_to": {
+                "model_id": "model_cp",
+                "branch_ids": ["branch_flow"],
+                "scope": "branch",
+            },
+            "evidence_ids": ["ev_long"],
+            "evidence_objects": [
+                {
+                    "evidence_id": "ev_long",
+                    "evidence_type": "table_cell",
+                    "source_file": "table_1.json",
+                    "locator": {
+                        "table_id": "Table 1",
+                        "row_name": "tau0",
+                        "column_name": "Value",
+                        "value": "85",
+                        "excerpt": "tau0 = 85 MPa; " + ("extra " * 100),
+                    },
+                    "snippet": "tau0 = 85 MPa; " + ("extra " * 100),
+                }
+            ],
+            "evidence_summary": {"primary_text": "tau0 = 85 MPa; " + ("extra " * 100)},
+            "model_context": {"model_id": "model_cp", "model_type": "crystal_plasticity"},
+            "branch_contexts": [{"branch_id": "branch_flow", "branch_type": "plastic_flow"}],
+        }
+
+        evidence_view = _parameter_record_for_agent(record, "evidence")
+        normalization_view = _parameter_record_for_agent(record, "normalization")
+        consistency_view = _parameter_record_for_agent(record, "consistency")
+        single_view = _parameter_record_for_agent(record, "single")
+
+        self.assertIn("evidence_objects", evidence_view)
+        self.assertLessEqual(len(evidence_view["evidence_objects"][0]["excerpt"]), 240)
+        self.assertNotIn("evidence_objects", normalization_view)
+        self.assertNotIn("evidence_summary", normalization_view)
+        self.assertNotIn("evidence_objects", consistency_view)
+        self.assertIn("model_context", consistency_view)
+        self.assertIn("branch_contexts", consistency_view)
+        self.assertIn("evidence_objects", single_view)
+        self.assertIn("model_context", single_view)
+        self.assertLessEqual(len(single_view["evidence_objects"][0]["excerpt"]), 200)
+
     def test_quality_checks_accepts_branch_and_constituent_scope(self):
         extracted = {
             "schema_version": "5.1.0",

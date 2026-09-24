@@ -24,6 +24,7 @@ These two layers do not currently share the same version number, so they are lis
 | `5.0.2` | 2026-04-21 workspace state | current uncommitted working tree | historical workspace version before the 5.1.0 schema expansion |
 | `5.1.0` | 2026-05-12 workspace state | historical working-tree state before extractor-first tightening | previous schema line with document/output/evaluation blocks still inside extractor |
 | `5.1.1` | 2026-05-13 workspace state | current uncommitted working tree | [`llm/extractor.py`](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/llm/extractor.py#L1221) contains `"schema_version": "5.1.1"` |
+| `6.0.0` | 2026-06-09 workspace state | current uncommitted working tree | [`llm/extractor.py`](/Users/yang/Library/CloudStorage/OneDrive-国立研究開発法人物質・材料研究機構/自分/CPextractor/llm/extractor.py#L1299) contains `"schema_version": "6.0.0"` |
 
 ## Extractor Schema Timeline
 
@@ -58,6 +59,11 @@ These two layers do not currently share the same version number, so they are lis
    Restored explicit family/system binding fields on `parameter_claims[].applies_to`.
    Normalized mixed value fields into `*_value_text` plus structured numeric/range/comparator fields where high ambiguity previously caused drift.
 
+9. `6.0.0`
+   Adds first-class `deformation_families[]` and top-level `equations[]` while keeping `deformation_systems[]` for explicit plane-direction systems.
+   Expands parameter claims with `symbol_normalized`, normalized assertion fields, richer provenance source scope, and `simulation_role`.
+   Keeps readiness, quality-control, and annotation/evaluation status out of the production extractor schema; those judgments belong to evaluator/review stages after evidence and model bindings are assembled.
+
 ## Final Hierarchy Schema
 
 The finalized stored document is still treated as hierarchical `v3`, even though the extractor schema has already advanced to the `4.x` line.
@@ -71,10 +77,10 @@ The finalized stored document is still treated as hierarchical `v3`, even though
 
 ## Current Version Split
 
-As of 2026-05-13:
+As of 2026-06-09:
 
-- extractor schema: `5.1.1`
-- configured pipeline schema version in config: `5.1.1`
-- final hierarchy schema written by postprocess: `5.1.0`
+- extractor schema: `6.0.0`
+- configured pipeline schema version in config: `6.0.0`
+- final hierarchy schema written by postprocess: `6.0.0`
 
-The repository still preserves historical schema lines, but the active extractor now operates on the `5.1.1` line while the downstream finalized hierarchy remains on the `5.1.0` family.
+The repository still preserves historical schema lines, but the active extractor and downstream finalized hierarchy now operate on the `6.0.0` line.

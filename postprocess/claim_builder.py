@@ -127,6 +127,7 @@ def _canonical_parameter_payload(item: Dict[str, Any], original_claim: Dict[str,
         "parameter_family": parameter.get("parameter_family"),
         "raw_name": _first_non_null(parameter.get("raw_name"), original_claim.get("raw_name")),
         "symbol_reported": _first_non_null(parameter.get("symbol_reported"), original_claim.get("symbol"), item.get("symbol")),
+        "symbol_normalized": parameter.get("symbol_normalized"),
         "domain": _first_non_null(parameter.get("domain"), original_claim.get("domain"), item.get("domain")),
         "description": _first_non_null(parameter.get("description"), original_claim.get("description"), item.get("description")),
     }
@@ -139,6 +140,8 @@ def _canonical_assertion_payload(item: Dict[str, Any], original_claim: Dict[str,
         "value_type": _first_non_null(assertion.get("value_type"), "scalar" if _first_non_null(item.get("value"), original_claim.get("value")) not in (None, "") else None),
         "reported_value": _first_non_null(assertion.get("reported_value"), original_claim.get("value"), item.get("value")),
         "reported_unit": _first_non_null(assertion.get("reported_unit"), original_claim.get("unit"), item.get("unit")),
+        "normalized_value": _first_non_null(assertion.get("normalized_value"), original_claim.get("value_SI"), item.get("value_SI")),
+        "normalized_unit": _first_non_null(assertion.get("normalized_unit"), original_claim.get("unit_SI"), item.get("unit_SI")),
         "valid_range": _first_non_null(assertion.get("valid_range"), original_claim.get("valid_range"), item.get("valid_range")),
     }
     return {k: v for k, v in payload.items() if v not in (None, "", [])}
@@ -149,6 +152,7 @@ def _canonical_provenance_payload(source_payload: Dict[str, Any], original_claim
     calibration = _safe_dict(original_prov.get("calibration"))
     payload = {
         "origin_type": _first_non_null(original_prov.get("origin_type"), source_payload.get("origin_type")),
+        "source_scope": original_prov.get("source_scope"),
         "reference_ids": _first_non_null(original_prov.get("reference_ids"), source_payload.get("reference_ids"), []),
         "adopted_from_reference_ids": _first_non_null(original_prov.get("adopted_from_reference_ids"), source_payload.get("adopted_from_reference_ids"), []),
         "calibration_based_on_reference_ids": _first_non_null(original_prov.get("calibration_based_on_reference_ids"), source_payload.get("calibration_based_on_reference_ids"), []),
@@ -242,6 +246,7 @@ def build_parameter_claims(
             "assertion": _canonical_assertion_payload(item, original_claim),
             "applies_to": applies_to,
             "provenance": _canonical_provenance_payload(source_payload, original_claim),
+            "simulation_role": _safe_dict(original_claim.get("simulation_role")) or _safe_dict(item.get("simulation_role")),
             "governing_equation_ids": (
                 original_claim.get("governing_equation_ids")
                 if isinstance(original_claim.get("governing_equation_ids"), list)

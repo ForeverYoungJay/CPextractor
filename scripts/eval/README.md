@@ -1,3 +1,16 @@
+# Evaluation tools
+
+The current release workflow is documented in [../../docs/benchmark_protocol.md](../../docs/benchmark_protocol.md)
+and [../../docs/release_workflow.md](../../docs/release_workflow.md).
+Use `evaluate_release.py` (or its alias `run_annotation_benchmarks.py`) with an
+explicit manifest. Strict mode requires exhaustive expert gold. Drafts now start
+as pending. `benchmark_gate.py` requires explicit manifest gate labels; old
+unlabeled-paper gate scores are invalid for release validation.
+
+The examples below describe older annotation formats and standalone utilities.
+They may be used for migration/diagnostics, but are not an alternative publication
+acceptance path. Never interpret default/preannotated correct rows as expert gold.
+
 # Evaluation Scripts
 
 All scripts are standalone CLI tools. Inputs are `.json`/`.jsonl` unless noted.
@@ -40,6 +53,7 @@ python3 scripts/eval/export_annotation_sheet.py \
 - `evidence.column_name`
 - `evidence.value_text`
 - `annotation.status`
+- `annotation.error_tags`
 - `annotation.notes`
 
 Use `--profile full` only when you want to annotate grounding/provenance details too.
@@ -50,6 +64,38 @@ After editing in Excel/Numbers, convert it back:
 python3 scripts/eval/import_annotation_sheet.py \
   --input data/annotations/annotation_draft.csv \
   --output data/annotations/gold_claims.jsonl
+```
+
+## XLSX annotation sheets with dropdowns
+
+For expert review, create an `.xlsx` workbook with dropdowns for `annotation.status` and `annotation.error_tags`:
+
+```bash
+python3 scripts/eval/annotation_xlsx_pipeline.py export-root \
+  --input-root data/fulltext \
+  --output-root data/annotations/xlsx \
+  --per-paper
+```
+
+This writes:
+
+- `data/annotations/xlsx/usable_parameter_annotation.xlsx`
+- `data/annotations/xlsx/packets/<doi>/usable_parameters.xlsx`
+
+After expert editing, import the workbook back to JSONL:
+
+```bash
+python3 scripts/eval/annotation_xlsx_pipeline.py import-xlsx \
+  --input-xlsx data/annotations/xlsx/usable_parameter_annotation.xlsx \
+  --output-jsonl data/annotations/gold_usable_parameters.jsonl
+```
+
+You can also convert an existing annotation JSONL directly:
+
+```bash
+python3 scripts/eval/annotation_xlsx_pipeline.py export-json \
+  --input-json data/annotations/usable_parameter_annotation_draft.jsonl \
+  --output-xlsx data/annotations/usable_parameter_annotation.xlsx
 ```
 
 Export one file per paper for paper-by-paper annotation:
@@ -100,6 +146,7 @@ Recommended packet workflow:
    - `value`
    - `unit`
    - `annotation.status`
+   - `annotation.error_tags`
    - `annotation.notes`
 3. Keep `claims.jsonl` unchanged; it stores the full original context.
 4. After editing all desired packets, build a combined gold file:

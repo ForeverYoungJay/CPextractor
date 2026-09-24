@@ -1,5 +1,6 @@
 # pipelines/run_pipeline.py
 import os
+import argparse
 import yaml
 from openai import OpenAI
 import sys
@@ -82,6 +83,106 @@ def write_json_snapshot(path: str | Path, payload: dict) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _token_metric(metrics: dict | None, key: str) -> int:
+    if not isinstance(metrics, dict):
+        return 0
+    try:
+        return int(metrics.get(key) or 0)
+    except Exception:
+        return 0
+
+
+def _time_metric(metrics: dict | None, key: str) -> float:
+    if not isinstance(metrics, dict):
+        return 0.0
+    try:
+        return float(metrics.get(key) or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _print_metric_line(label: str, metrics: dict | None, *, indent: str = "  ") -> None:
+    input_tokens = _token_metric(metrics, "input_tokens")
+    output_tokens = _token_metric(metrics, "output_tokens")
+    total_tokens = _token_metric(metrics, "total_tokens")
+    seconds = _time_metric(metrics, "time_seconds")
+    print(
+        f"{indent}{label}: "
+        f"{total_tokens:,} tokens "
+        f"(in {input_tokens:,}, out {output_tokens:,}), "
+        f"{seconds:.2f}s"
+    )
+
+
+def print_pipeline_cost_summary(doi: str, reports: dict) -> None:
+    metrics = reports.get("pipeline_metrics") if isinstance(reports, dict) else {}
+    eval_metrics = reports.get("llm_evaluation_metrics") if isinstance(reports, dict) else {}
+    metrics = metrics if isinstance(metrics, dict) else {}
+    eval_metrics = eval_metrics if isinstance(eval_metrics, dict) else {}
+
+    select_metrics = metrics.get("select") if isinstance(metrics.get("select"), dict) else {}
+    extract_metrics = metrics.get("extract") if isinstance(metrics.get("extract"), dict) else {}
+    enrich_metrics = metrics.get("source_enrichment") if isinstance(metrics.get("source_enrichment"), dict) else {}
+    stages = metrics.get("stages") if isinstance(metrics.get("stages"), dict) else {}
+
+    llm_input = (
+        _token_metric(select_metrics, "input_tokens")
+        + _token_metric(extract_metrics, "input_tokens")
+        + _token_metric(enrich_metrics, "input_tokens")
+        + _token_metric(eval_metrics, "input_tokens")
+    )
+    llm_output = (
+        _token_metric(select_metrics, "output_tokens")
+        + _token_metric(extract_metrics, "output_tokens")
+        + _token_metric(enrich_metrics, "output_tokens")
+        + _token_metric(eval_metrics, "output_tokens")
+    )
+    llm_total = (
+        _token_metric(select_metrics, "total_tokens")
+        + _token_metric(extract_metrics, "total_tokens")
+        + _token_metric(enrich_metrics, "total_tokens")
+        + _token_metric(eval_metrics, "total_tokens")
+    )
+    total_seconds = _time_metric(metrics, "total_seconds")
+
+    print(f"📊 Pipeline cost/time for {doi}")
+    _print_metric_line("select", select_metrics)
+    _print_metric_line("extract", extract_metrics)
+    two_pass = extract_metrics.get("two_pass") if isinstance(extract_metrics, dict) else {}
+    if isinstance(two_pass, dict) and two_pass.get("enabled"):
+        print(
+            "    two_pass profile: "
+            f"{_token_metric(two_pass, 'profile_total_tokens'):,} tokens "
+            f"(in {_token_metric(two_pass, 'profile_input_tokens'):,}, "
+            f"out {_token_metric(two_pass, 'profile_output_tokens'):,})"
+        )
+    if bool(enrich_metrics.get("enabled")) or _token_metric(enrich_metrics, "total_tokens"):
+        _print_metric_line("source_enrichment", enrich_metrics)
+    if eval_metrics:
+        _print_metric_line(f"evaluation[{eval_metrics.get('mode') or 'unknown'}]", eval_metrics)
+    print(
+        f"  LLM total: {llm_total:,} tokens "
+        f"(in {llm_input:,}, out {llm_output:,})"
+    )
+    if stages:
+        stage_bits = []
+        for key in (
+            "fulltext_prepare_seconds",
+            "structure_normalization_seconds",
+            "evidence_linking_seconds",
+            "llm_evaluation_seconds",
+            "deterministic_validation_seconds",
+            "finalization_seconds",
+            "ingest_seconds",
+        ):
+            if key in stages:
+                stage_bits.append(f"{key.removesuffix('_seconds')}={_time_metric(stages, key):.2f}s")
+        if stage_bits:
+            print("  stages: " + ", ".join(stage_bits))
+    if total_seconds:
+        print(f"  pipeline total time: {total_seconds:.2f}s")
 
 
 def _sanitize_snapshot_for_disk(payload: dict) -> dict:
@@ -179,8 +280,10 @@ def _ensure_references_json_from_xml(
 
 
 def main():
-
-    with open("config.yaml", "r", encoding="utf-8") as f:
+    parser = argparse.ArgumentParser(description="Run the CPextractor literature pipeline.")
+    parser.add_argument("--config", default="config.yaml")
+    args = parser.parse_args()
+    with open(args.config, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
     # configs
@@ -345,6 +448,10 @@ def main():
                 max_snippet_chars=int(llm_cfg["max_snippet_chars"]),
                 max_context_chars=int(llm_cfg["max_context_chars"]),
                 max_extract_retries=int(llm_cfg.get("max_extract_retries", 2)),
+                two_pass_extraction=bool(llm_cfg.get("two_pass_extraction", False)),
+                compact_evidence=bool(llm_cfg.get("compact_evidence", True)),
+                max_evidence_excerpt_chars=int(llm_cfg.get("max_evidence_excerpt_chars", 180)),
+                max_evidence_snippet_chars=int(llm_cfg.get("max_evidence_snippet_chars", 240)),
                 enable_source_enrichment=bool(llm_cfg.get("enable_source_enrichment", True)),
                 direct_image_table_input=direct_image_table_input,
                 image_download_api_key=elsevier_key,
@@ -400,11 +507,12 @@ def main():
                     paper_dir=paper_dir,
                     extracted_json=extracted,
                     model_evaluate=llm_cfg.get("model_evaluate", llm_cfg["model_extract"]),
+                    evaluator_mode=str(llm_cfg.get("evaluator_mode", "single_judge")),
                     max_context_chars=int(llm_cfg.get("max_evaluate_context_chars", 18000)),
                     max_retries=int(llm_cfg.get("max_evaluate_retries", 2)),
                     parameter_limit=int(llm_cfg.get("evaluate_parameter_limit", 40)),
                     field_batch_size=int(llm_cfg.get("evaluate_parameter_batch_size", 12)),
-                    per_evidence_chars=int(llm_cfg.get("evaluate_evidence_chars", 800)),
+                    per_evidence_chars=int(llm_cfg.get("evaluate_evidence_chars", 300)),
                     quality_report={},
                     evidence_report=reports.get("evidence_grounding") or {},
                     feedback_artifact_path=llm_cfg.get("evaluation_feedback_json"),
@@ -494,6 +602,7 @@ def main():
                     "seconds": elapsed,
                     "ingest_gate": reports.get("ingest_gate"),
                 }, ensure_ascii=False) + "\n")
+            print_pipeline_cost_summary(doi, reports)
             if blocked_by_gate:
                 print(f"⚠️ Gated from DB ingest: {doi}")
             else:

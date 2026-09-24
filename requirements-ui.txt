@@ -1,0 +1,3 @@
+-r requirements.txt
+# Optional UI; resolve and archive its environment before a UI release.
+streamlit>=1.40,<2

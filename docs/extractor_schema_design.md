@@ -144,24 +144,28 @@ Each claim should carry:
 - provenance
 - evidence
 
-For the current `5.1.0` line:
+For the current `6.0.0` line:
 
-- `assertion` keeps `value_type`, `reported_value`, `reported_unit`, and `valid_range`.
+- `assertion` keeps `value_type`, `reported_value`, `reported_unit`, optional normalized value/unit fields, and `valid_range`.
 - `assertion.qualifier` is no longer part of the active schema.
+- `parameter.symbol_reported` preserves the paper symbol, while `parameter.symbol_normalized` can hold the stable normalized symbol when clear.
 - `provenance.reference_ids` is the full claim-level reference union.
 - `provenance.adopted_from_reference_ids` and `provenance.calibration_based_on_reference_ids` are role-specific subsets of `reference_ids`.
+- `provenance.source_scope` distinguishes current-paper, cited-reference, supplementary, inferred, and unclear sources.
+- `simulation_role` records whether the claim is required for simulation, an initial value, an evolution parameter, a boundary/loading parameter, or a numerical parameter.
 - The two role-specific arrays may overlap with each other and may repeat IDs already present in `reference_ids`.
 
 The important binding pattern is:
 
-- `context.material_id`
-- `context.phase_id`
-- `context.process_state_id`
-- `context.condition_id`
-- `context.mechanism_scope.level`
-- `context.mechanism_scope.mechanism_type`
-- `context.mechanism_scope.family_id`
-- `context.mechanism_scope.system_ids`
+- `applies_to.material_id`
+- `applies_to.constituent_id`
+- `applies_to.process_state_id`
+- `applies_to.model_id`
+- `applies_to.condition_id`
+- `applies_to.branch_ids`
+- `applies_to.mechanism`
+- `applies_to.family_id`
+- `applies_to.system_ids`
 
 ## Evidence Strategy
 

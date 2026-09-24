@@ -6,7 +6,7 @@ import time
 from elsevier.fulltext_parser import download_table_image
 from llm.openai_sanitize import sanitize_text_for_openai, validate_openai_json_payload
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+client = None  # Initialized only for live requests, so offline tooling needs no API key.
 
 
 def _is_retryable_llm_error(exc: Exception) -> bool:
@@ -26,6 +26,11 @@ def _is_retryable_llm_error(exc: Exception) -> bool:
 
 
 def _chat_completion_with_retry(*, model: str, messages: List[Dict[str, Any]], max_retries: int = 4):
+    global client
+    if client is None:
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not set")
+        client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     delay = 1.0
     last_exc: Exception | None = None
     request_payload = validate_openai_json_payload({
@@ -173,6 +178,7 @@ def _render_comparative_parameter_matrix(table_json: Dict[str, Any], max_rows: i
         "Comparative matrix orientation: preserve multi-row headers, inherited row labels, "
         "and all explicit column values for each material/structure row."
     )
+    lines.extend(_comparative_parameter_row_summaries(rows, max_rows=max_rows))
     render_limit = len(rows) if max_rows is None else max_rows
     lines.extend(
         _render_table_rows_with_alignment(
@@ -184,6 +190,67 @@ def _render_comparative_parameter_matrix(table_json: Dict[str, Any], max_rows: i
     if max_rows is not None and len(rows) > max_rows:
         lines.append(f"... ({len(rows) - max_rows} more rows)")
     return "\n".join(lines).strip()
+
+
+def _comparative_parameter_row_summaries(rows: List[Any], max_rows: int | None = None) -> List[str]:
+    summaries: List[str] = []
+    limit = len(rows) if max_rows is None else min(max_rows, len(rows))
+    saw_hcp_slip_header = False
+    for row in rows[:limit]:
+        if not isinstance(row, list):
+            continue
+        cells = [str(cell or "").strip() for cell in row]
+        joined = " ".join(cells)
+        if not saw_hcp_slip_header and "Prismatic" in joined and "Basal" in joined and "Pyramidal" in joined:
+            summaries.append("HCP slip-mode columns: Prismatic 〈 a 〉, Basal 〈 a 〉, Pyramidal I 〈 c + a 〉")
+            saw_hcp_slip_header = True
+        structure = cells[0] if len(cells) > 0 else ""
+        if structure == "FCC" and len(cells) > 12:
+            material = cells[2] if len(cells) > 2 else ""
+            zener = cells[4] if len(cells) > 4 else ""
+            c11 = cells[6] if len(cells) > 6 else ""
+            c12 = cells[7] if len(cells) > 7 else ""
+            c44 = cells[8] if len(cells) > 8 else ""
+            slip = cells[11] if len(cells) > 11 else ""
+            parts = [f"Structure={structure}"]
+            if material:
+                parts.append(f"Material={material}")
+            if zener:
+                parts.append(f"Zener={zener}")
+            if c11:
+                parts.append(f"C11={c11} GPa")
+            if c12:
+                parts.append(f"C12={c12} GPa")
+            if c44:
+                parts.append(f"C44={c44} GPa")
+            if slip:
+                parts.append(f"τ0,i for {{ 1 1 ¯ 1 }} 〈 110 〉={slip} MPa")
+            summaries.append("Comparative row: " + ", ".join(parts))
+        elif structure == "HCP" and len(cells) > 25:
+            material = cells[2] if len(cells) > 2 else ""
+            ca = cells[4] if len(cells) > 4 else ""
+            c11 = cells[6] if len(cells) > 6 else ""
+            prismatic = cells[23] if len(cells) > 23 else ""
+            basal = cells[24] if len(cells) > 24 else ""
+            pyramidal = cells[25] if len(cells) > 25 else ""
+            parts = [f"Structure={structure}"]
+            if material:
+                parts.append(f"Material={material}")
+            if ca:
+                parts.append(f"c/a={ca}")
+            if c11:
+                parts.append(f"C11={c11} GPa")
+            summaries.append("Comparative row: " + ", ".join(parts))
+            slip_parts = []
+            if prismatic:
+                slip_parts.append(f"Prismatic 〈 a 〉={prismatic} MPa")
+            if basal:
+                slip_parts.append(f"Basal 〈 a 〉={basal} MPa")
+            if pyramidal:
+                slip_parts.append(f"Pyramidal I 〈 c + a 〉={pyramidal} MPa")
+            if slip_parts:
+                summaries.append(", ".join(slip_parts))
+    return summaries
 
 
 def _normalize_component_value(text: Any) -> str:
@@ -850,7 +917,7 @@ def _fallback_select_equations(equations: List[Dict[str, Any]]) -> List[Dict[str
         reverse=True,
     )
     ranked = [e for e in ranked if _equation_relevance_score(e) > 0]
-    return ranked[:8]
+    return ranked
 
 
 def _section_equation_relevance_score(section: Dict[str, Any]) -> int:
@@ -878,7 +945,7 @@ def _augment_selected_equations(
     equations: List[Dict[str, Any]],
     selected_sections: List[Dict[str, Any]],
     *,
-    limit: int = 8,
+    limit: int | None = None,
 ) -> List[Dict[str, Any]]:
     if not equations:
         return selected_equations
@@ -893,11 +960,11 @@ def _augment_selected_equations(
                 continue
             out.append(row)
             seen.add(eq_id)
-            if len(out) >= limit:
+            if limit is not None and len(out) >= limit:
                 return
 
     _add(selected_equations)
-    if len(out) >= limit:
+    if limit is not None and len(out) >= limit:
         return out
 
     section_names = {
@@ -930,7 +997,7 @@ def _augment_selected_equations(
         reverse=True,
     )
     _add(matched_by_section)
-    if len(out) >= limit:
+    if limit is not None and len(out) >= limit:
         return out
 
     if has_equation_rich_section:
@@ -1296,11 +1363,12 @@ Return JSON only.
 
 EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
 {
-  "schema_version": "5.1.1",
+  "schema_version": "6.0.0",
   "materials": [
     {
       "material_id": "string or null",
       "name": "string or null",
+      "normalized_name": "string or null",
       "chemical_formula": "string or null",
       "material_class": "steel / titanium_alloy / nickel_superalloy / magnesium_alloy / zirconium_alloy / aluminum_alloy / copper_alloy / ceramic / intermetallic / polymer / composite / other / null",
       "phase_mode": "single_phase / multi_phase / null",
@@ -1311,6 +1379,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
           {
             "component": "string or null",
             "value": "number or string or null",
+            "unit": "string or null",
             "notes": "string or null"
           }
         ],
@@ -1417,12 +1486,25 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
       "model_id": "string or null",
       "constituent_id": "string or null",
       "system_type": "slip / twin / transformation / other / null",
-      "family_name": "basal / prismatic / pyramidal_a / pyramidal_ca / octahedral / cube / other / string or null",
       "plane": "string or null",
       "direction": "string or null",
-      "number_of_systems": "number or null",
+      "notation": "Miller / Miller-Bravais / other / null",
       "schmid_tensor_defined": "yes / no / null",
       "non_schmid_effects": "yes / no / null",
+      "evidence_ids": ["string"],
+      "notes": "string or null"
+    }
+  ],
+  "deformation_families": [
+    {
+      "family_id": "string or null",
+      "model_id": "string or null",
+      "constituent_id": "string or null",
+      "family_name": "basal <a> / prismatic <a> / pyramidal <a> / pyramidal <c+a> / octahedral {111}<110> / cube / {110}<111> / {112}<111> / tensile twin / compression twin / other / string or null",
+      "mechanism": "slip / twinning / transformation / other / string or null",
+      "crystal_structure": "FCC / BCC / HCP / BCT / other / string or null",
+      "number_of_systems": "number or null",
+      "deformation_system_ids": ["string"],
       "evidence_ids": ["string"],
       "notes": "string or null"
     }
@@ -1484,6 +1566,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         },
         "slip_description": {
           "slip_families_defined": "yes / no / null",
+          "deformation_family_ids": ["string"],
           "deformation_system_ids": ["string"],
           "notes": "string or null"
         },
@@ -1492,6 +1575,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
           "form": "ptr / twinning_detwinning / reorientation / volume_fraction_based / user_defined / other / string or null",
           "reorientation_treated": "yes / no / null",
           "detwinning_treated": "yes / no / null",
+          "deformation_family_ids": ["string"],
           "deformation_system_ids": ["string"],
           "notes": "string or null"
         },
@@ -1512,8 +1596,11 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         {
           "branch_id": "string or null",
           "branch_type": "plastic_flow / creep_flow / combined_flow / crss_evolution / hardening / latent_hardening / backstress_evolution / twinning_evolution / damage_evolution / thermal_activation / other / string or null",
+          "mechanism": "slip / twinning / transformation / damage / thermal / mixed / other / string or null",
           "name": "string or null",
           "description": "string or null",
+          "deformation_family_ids": ["string"],
+          "deformation_system_ids": ["string"],
           "governing_equation_ids": ["string; required array of all explicit equation labels that govern this branch, not just one primary equation; if the branch uses multiple equations keep every explicit relevant label such as '(4)', '(5)', '(6)', '(7)'"],
           "parameter_families": ["string"],
           "evidence_ids": ["string"],
@@ -1521,6 +1608,18 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         }
       ],
       "equation_ids": ["string; required model-level union of all explicit governing equation labels used by this model; preserve every explicit relevant label instead of truncating to the first visible equation"],
+      "evidence_ids": ["string"],
+      "notes": "string or null"
+    }
+  ],
+  "equations": [
+    {
+      "equation_id": "string or null",
+      "model_id": "string or null",
+      "equation_label": "string or null",
+      "equation_text": "string or null",
+      "equation_type": "elasticity / flow_rule / hardening / latent_hardening / twinning / damage / thermal / numerical / other / string or null",
+      "symbols": ["string"],
       "evidence_ids": ["string"],
       "notes": "string or null"
     }
@@ -1626,19 +1725,22 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
   "parameter_claims": [
     {
       "claim_id": "string or null",
-      "claim_class": "material_constitutive_parameter / experimental_condition_parameter / numerical_model_parameter / null",
+      "claim_class": "material_constitutive_parameter / experimental_condition_parameter / numerical_model_parameter / simulation_geometry_parameter / microstructure_parameter / null",
       "parameter": {
         "canonical_name": "string or null",
-        "parameter_family": "elastic_constants / slip_kinetics / hardening / backstress / latent_hardening / twinning / damage / thermal / numerical / geometry / other / string or null",
+        "parameter_family": "elastic_constants / slip_kinetics / hardening / backstress / latent_hardening / twinning / damage / thermal / numerical / geometry / microstructure / other / string or null",
         "raw_name": "string or null",
         "symbol_reported": "string or null",
+        "symbol_normalized": "string or null",
         "domain": "elastic / plastic / creep / hardening / twinning / damage / thermal / numerical / other / string or null",
         "description": "string or null"
       },
       "assertion": {
-        "value_type": "scalar / range / categorical / text / expression / other / null",
+        "value_type": "scalar / vector / matrix / tensor / range / categorical / text / expression / table / other / null",
         "reported_value": "number or string or null",
         "reported_unit": "string or null",
+        "normalized_value": "number or string or null",
+        "normalized_unit": "string or null",
         "valid_range": "string or null"
       },
       "applies_to": {
@@ -1652,11 +1754,12 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
         "family_id": "string or null",
         "family_name": "string or null",
         "system_ids": ["string"],
-        "scope": "global / constituent / family / system / branch / local_region / other / string or null",
+        "scope": "global / material / constituent / phase / model / branch / family / system / condition / local_region / numerical / geometry / other / string or null",
         "notes": "string or null"
       },
       "provenance": {
-        "origin_type": "original / adopted / calibrated / adopted_then_calibrated / null",
+        "origin_type": "reported_in_current_paper / original / adopted / calibrated / fitted / assumed / computed / adopted_then_calibrated / not_reported / ambiguous / null",
+        "source_scope": "current_paper / cited_reference / supplementary_information / inferred / unclear / null",
         "reference_ids": ["string"],
         "adopted_from_reference_ids": ["string"],
         "calibration_based_on_reference_ids": ["string"],
@@ -1667,6 +1770,14 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
           "observation_scope": "macroscopic / phase / grain_family / slip_family / local_region / other / string or null",
           "notes": "string or null"
         }
+      },
+      "simulation_role": {
+        "is_required_for_simulation": "yes / no / unclear / null",
+        "is_initial_value": "yes / no / unclear / null",
+        "is_evolution_parameter": "yes / no / unclear / null",
+        "is_boundary_or_loading_parameter": "yes / no / unclear / null",
+        "is_numerical_parameter": "yes / no / unclear / null",
+        "notes": "string or null"
       },
       "governing_equation_ids": ["string; required array of all explicit equation labels that directly define, use, or evolve this parameter claim; if multiple equations use or evolve the parameter, keep every explicit relevant label rather than choosing only one"],
       "evidence_ids": ["string"],
@@ -1703,7 +1814,7 @@ EXTRACT_SCHEMA_JSON_TEMPLATE = r"""
 
 EXTRACT_USER_PROMPT_TEMPLATE = """
 1 Task description
-Extract crystal-plasticity information from the provided paper excerpt into the v5.1.1 hierarchical CP schema.
+Extract crystal-plasticity information from the provided paper excerpt into the v6.0.0 hierarchical CP schema.
 
 2 Task requirements
 - Use only explicit evidence in the excerpt.
@@ -1716,19 +1827,26 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
 - Use `process_states[].state_type` as an ordered list when multiple state descriptors are explicitly true at the same time.
   Example: `["as_received", "forged", "solution_treated"]`.
 - Do not create a top-level `phases[]` block. Use `constituents[]` for phases, precipitates, pores, and other constituent-level entities.
-- Use `deformation_systems[]` for explicit slip, twin, and transformation systems or families used by the model.
+- Use `deformation_families[]` for named deformation families such as basal, prismatic, pyramidal, octahedral, cube, BCC slip families, or twin families.
+- Use `deformation_systems[]` for explicit plane-direction systems, system notation, Schmid-tensor definitions, and non-Schmid behavior. Link systems to `deformation_families[]` by `family_id` where possible.
 - Use `simulation_geometries[]` for explicit RVE, unit-cell, grain-aggregate, voxel, spectral-grid, mesh, or specimen geometry setup.
 - Use `numerical_methods[]` for explicit integration, nonlinear solver, increment-control, or regularization choices.
+- Use `equations[]` for explicit governing equations or equation-like expressions in the selected excerpt. Keep equation text concise but faithful; link equations to models, branches, and parameter claims through equation IDs.
+- Every equation ID used in `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, or `parameter_claims[].governing_equation_ids` must also appear as an object in top-level `equations[]`.
+- When selected equation blocks are present, scan every selected equation block and emit every equation that governs the extracted models or extracted parameter claims. Do not stop after a fixed number of equations.
 - Keep `parameter_claims[]` claim-centric: separate `parameter`, `assertion`, `applies_to`, `provenance`, and `evidence_ids`.
-- Classify every `parameter_claims[]` item into one of three roles when explicit or strongly implied:
-  `material_constitutive_parameter`, `experimental_condition_parameter`, or `numerical_model_parameter`.
+- Classify every `parameter_claims[]` item into the most specific supported role when explicit or strongly implied:
+  `material_constitutive_parameter`, `experimental_condition_parameter`, `numerical_model_parameter`, `simulation_geometry_parameter`, or `microstructure_parameter`.
 - Use `material_constitutive_parameter` for elastic constants, slip/creep/hardening/backstress/twinning/damage/thermal constitutive quantities.
 - Use `experimental_condition_parameter` for setup quantities that are really test or loading conditions, such as imposed temperature, strain rate, hold time, load ratio, frequency, environment pressure, or similar condition-setting values when they are still represented as parameter claims.
 - Use `numerical_model_parameter` for solver or discretization settings such as tolerances, time step controls, iteration limits, regularization lengths, mesh-related numerical settings, or other explicit model-solution parameters.
 - Do not rely on postprocessing to split, remap, or sharpen evidence. The extractor output itself must already contain final claim-level evidence bindings.
+- Do not rely on deterministic postprocessing to create family or equation objects. If the excerpt supports these objects, emit them directly in the JSON.
+- Do not leave equation-object completion to postprocessing. The extractor should produce link-complete `equations[]` records for all explicit equations it references.
+- Do not emit `simulation_readiness` or `quality_control` from extraction. Readiness and quality judgments belong to evaluator/review stages after evidence and model bindings are assembled.
 - Do not emit a `document` block. Document-level metadata is backfilled deterministically after extraction.
 - Prefer final-ready bindings now rather than leaving them for later normalization or postprocessing.
-- Assign stable, reusable IDs whenever the excerpt supports them: `material_id`, `process_state_id`, `constituent_id`, `condition_id`, `model_id`, `branch_id`, `family_id`, `system_id`, `geometry_id`, `numerical_method_id`, `feature_id`, `claim_id`, `evidence_id`.
+- Assign stable, reusable IDs whenever the excerpt supports them: `material_id`, `process_state_id`, `constituent_id`, `condition_id`, `model_id`, `branch_id`, `family_id`, `system_id`, `equation_id`, `geometry_id`, `numerical_method_id`, `feature_id`, `claim_id`, `evidence_id`.
 - Make IDs deterministic and semantic, not conversational.
   Derive each ID from the same stable entity meaning every time, using short lowercase ASCII snake_case slugs built from explicit names, roles, phases, temperatures, strain rates, model names, or table-local labels when available.
 - Reuse the same ID for the same entity everywhere in one extraction.
@@ -1772,6 +1890,8 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
 - Distinguish simulation setup from calibration provenance.
   Mesh, grid, RVE, grain count, and periodic geometry belong in `simulation_geometries[]`.
   Calibration and validation targets should stay in `parameter_claims[].provenance.calibration`; do not invent separate output or evaluation objects.
+- Distinguish deformation families from explicit systems.
+  A named family such as basal or octahedral belongs in `deformation_families[]`; a concrete plane-direction pair belongs in `deformation_systems[]`.
 - Split calibration descriptions claim-by-claim whenever the paper calibrates different parameter subsets against different observables, even under the same temperature and strain-rate.
   One physical condition can legitimately support multiple distinct calibration targets across parameter claims.
 - Use `parameter_claims[].provenance.calibration.target_type`, `target_description`, and `observation_scope` to preserve what data stream was used for fitting.
@@ -1785,7 +1905,7 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
 - Use `models[].equation_ids` only as the model-level summary list of all equations used by the model.
   In practice this should be the union of all `models[].constitutive_branches[].governing_equation_ids`, plus any additional model-wide equations that are explicit but not branch-specific.
 - Do not embed full equation objects or equation text inside `models[]`, `constitutive_branches[]`, or `parameter_claims[]`.
-  Keep only `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids` for structured equation linkage.
+  Put reusable equation objects in top-level `equations[]`, and keep only `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids` for structured equation linkage.
 - Populate `models[].constitutive_branches[]` whenever the excerpt clearly separates multiple equation branches or evolution laws.
   Typical examples are plastic branch, creep branch, combined plasticity-plus-creep branch, CRSS evolution, and backstress evolution.
 - Use `parameter_claims[].applies_to.branch_ids` for branch linkage in every case.
@@ -1796,8 +1916,8 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
 - Use `parameter_claims[].governing_equation_ids` for the equations that directly govern, use, or evolve a specific parameter claim.
   A parameter may legitimately reference multiple equations, so keep all explicit relevant equation numbers rather than forcing a single primary equation.
   The same parameter can appear in one flow law and one evolution law; preserve both labels when the text makes both roles explicit.
-- When referring to equations in extracted JSON, use only the explicit equation number/label from the paper text, such as `(3)` or `(7)`.
-  Postprocessing will resolve numbered labels to canonical equation IDs later.
+- When referring to equations in extracted JSON, use stable `equation_id` values from the selected equation blocks when available, such as `eq_0003`.
+- In top-level `equations[]`, use `equation_label` for the paper's visible label such as `(3)` and keep `equation_id` identical to the IDs used in all model, branch, and claim equation-link arrays.
 - Bind equations by reading the constitutive text semantically, not by relying on parameter names alone.
   If the paper explains that one equation is the flow rule, another is the creep branch, another is the hardening or CRSS evolution law, and another is the backstress law, reflect those roles directly in `constitutive_branches[]`, `models[].equation_ids`, and `parameter_claims[].governing_equation_ids`.
   Do not stop after attaching the first visible equation if later numbered equations in the same constitutive block are also explicitly part of the same formulation.
@@ -1811,7 +1931,9 @@ Extract crystal-plasticity information from the provided paper excerpt into the 
   A paper can be physically polycrystalline yet still use one shared parameter set or a homogenized constitutive description.
   Record the physical microstructure in `materials[]`, `constituents[]`, `process_states[]`, and `microstructure_features[]`.
   Record modeling choices such as shared versus constituent-specific parameterization through `models[]`, `constitutive_branches[]`, `parameter_claims[].applies_to`, and `microstructure_features[].parameterization_scope` when explicit.
-- If the paper explicitly names basal, prismatic, pyramidal, octahedral, cube, twinning, or transformation systems or families used by the simulation, emit `deformation_systems[]` entries instead of keeping those details only in notes.
+- If the paper explicitly names basal, prismatic, pyramidal, octahedral, cube, twinning, or transformation families used by the simulation, emit `deformation_families[]` entries instead of keeping those details only in notes.
+- If the paper names only a family and not a distinct plane-direction system, emit a `deformation_families[]` entry and leave `deformation_systems[]` empty for that family unless the system is explicit.
+- If the paper gives a family plus plane/direction notation, emit both a family entry and one or more linked system entries.
 - If the paper gives explicit system-level non-Schmid behavior, Schmid-tensor statements, plane/direction notation, or number of systems, store them in `deformation_systems[]`.
 - If the paper gives explicit geometry or mesh setup, emit one `simulation_geometries[]` entry per explicit setup tied to the relevant `model_id`.
 - Extract the following schema from the paper excerpt:
@@ -1821,15 +1943,22 @@ __SCHEMA_JSON__
 - Prefer table values over narrative values when both are present.
 - Use `provenance` only for provenance and origin tracing.
 - Use `evidence_objects[]` plus `evidence_ids` for evidence storage.
+- Keep evidence compact: `evidence_objects[].locator.excerpt` should normally be no more than 160 characters and `evidence_objects[].snippet` should normally be no more than 220 characters.
+- Do not repeat full table rows, captions, or long narrative passages across many evidence objects. Store the smallest value-bearing span that lets a reviewer verify the claim.
+- Prefer `source_file`, `locator.row_name`, `locator.column_name`, and `locator.value` for structured grounding, with a short excerpt only when needed.
+- Reuse a compact evidence object when exactly the same short span supports several claims; otherwise create claim-specific compact evidence rather than broad whole-table evidence.
+- Keep evidence `notes` null unless the note changes the interpretation of the claim.
 - For table-backed parameter claims, prefer claim-specific evidence packaging over whole-table summaries.
 - Do not rely on later cleanup to infer obvious scope. If a table row or sentence makes the binding explicit, encode it directly now.
 - When a selected equation directly defines the model, flow rule, hardening law, yield function, or evolution law, attach it to the relevant branch first; `models[].equation_ids` should then act as the union summary across branches.
 - If the excerpt presents a constitutive subsection with several numbered equations belonging to the same CP formulation, attach all governing equation IDs that are explicitly part of that formulation rather than only the first equation.
+- Also create matching `equations[]` records for explicit equations when their labels or text are visible in the excerpt.
+- Before returning JSON, check that every equation ID in every model, branch, and claim has a matching top-level `equations[]` object.
 - If those equations play different constitutive roles, also distribute them into `models[].constitutive_branches[]` with the right `branch_type`.
 - Never collapse a multi-equation branch or parameter into a single equation label merely for simplicity.
   If the text explicitly supports multiple labels, the corresponding `governing_equation_ids` array should keep all of them.
 - Do not create equation-only `evidence_objects[]` entries just because an equation is relevant.
-  Store equation support through `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids` instead of duplicating it in `evidence_ids`.
+  Store equation support through top-level `equations[]`, `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, and `parameter_claims[].governing_equation_ids` instead of duplicating it in unrelated `evidence_ids`.
 - Do not put equation evidence IDs in `materials[].evidence_ids`, `models[].evidence_ids`, `constitutive_branches[].evidence_ids`, `parameter_claims[].evidence_ids`, or other record-level evidence links unless the equation itself is being quoted as narrative evidence beyond the equation label.
 - If equations appear only inline inside section text, still bind parameters and branches to the explicit numbered labels from the text rather than dropping the relationship.
 - If a parameter subset is calibrated from one target and another subset from a different target, keep their `provenance.calibration` blocks distinct even if they share one `condition_id`.
@@ -2006,10 +2135,10 @@ Example Q: A paper gives one parameter table, a texture table listing ED-oriente
 Expected behavior: keep the parameter claims from the parameter table, and also emit multiple `microstructure_features[]` entries for texture fraction, bimodal or uniform morphology, heterogeneous KAM or lattice distortion, grain-boundary sliding, and low-versus-high dislocation density where each fact is explicitly supported.
 
 Example R: One constitutive section states the active constitutive channels and then gives several numbered equations for flow and one or more evolution laws.
-Expected behavior: attach all governing constitutive equations to `models[].equation_ids` and create separate `constitutive_branches[]` entries for each explicit branch or evolution law.
+Expected behavior: create top-level `equations[]` records, attach all governing constitutive equations to `models[].equation_ids`, and create separate `constitutive_branches[]` entries for each explicit branch or evolution law.
 
 Example R2: The model uses basal and prismatic slip, and the paper explicitly states the family names, plane/direction notation, and number of systems.
-Expected behavior: emit separate `deformation_systems[]` entries, assign stable `family_id` and `system_id` values, and link them from `models[].constitutive_description.slip_description.deformation_system_ids` and any parameter claims with family or system scope.
+Expected behavior: emit separate `deformation_families[]` entries for basal and prismatic, emit linked `deformation_systems[]` entries only where plane-direction systems are explicit, and link them from `models[].constitutive_description.slip_description.deformation_family_ids` / `deformation_system_ids` and any parameter claims with family or system scope.
 
 Example R3: The paper states that a CPFE simulation used an RVE with 300 grains, periodic boundary conditions, and a voxel grid.
 Expected behavior: emit a `simulation_geometries[]` entry linked to the model instead of keeping those details only in `solver_framework.notes`.
@@ -2106,6 +2235,38 @@ def _validate_extracted_payload(payload: Dict[str, Any]) -> List[str]:
             return
 
     _walk(EXTRACT_SCHEMA_SKELETON, payload, "")
+
+    equation_keys: set[str] = set()
+    for equation in _safe_list(payload.get("equations")):
+        if not isinstance(equation, dict):
+            continue
+        for field in ("equation_id", "equation_label"):
+            text = str(equation.get(field) or "").strip()
+            if text:
+                equation_keys.add(text)
+
+    def _check_equation_refs(values: Any, path: str) -> None:
+        for ref in _safe_list(values):
+            text = str(ref or "").strip()
+            if text and text not in equation_keys:
+                errors.append(f"{path} references missing top-level equations[] object: {text}")
+
+    for model_idx, model in enumerate(_safe_list(payload.get("models"))):
+        if not isinstance(model, dict):
+            continue
+        _check_equation_refs(model.get("equation_ids"), f"models[{model_idx}].equation_ids")
+        for branch_idx, branch in enumerate(_safe_list(model.get("constitutive_branches"))):
+            if isinstance(branch, dict):
+                _check_equation_refs(
+                    branch.get("governing_equation_ids"),
+                    f"models[{model_idx}].constitutive_branches[{branch_idx}].governing_equation_ids",
+                )
+    for claim_idx, claim in enumerate(_safe_list(payload.get("parameter_claims"))):
+        if isinstance(claim, dict):
+            _check_equation_refs(
+                claim.get("governing_equation_ids"),
+                f"parameter_claims[{claim_idx}].governing_equation_ids",
+            )
     return errors
 
 
@@ -2623,6 +2784,76 @@ def _build_extract_prompt(context: str) -> str:
     return prompt.replace("{context}", context)
 
 
+EXTRACT_PROFILE_USER_PROMPT_TEMPLATE = """
+1 Task description
+Extract only the compact document profile needed before claim extraction.
+
+2 Task requirements
+- Use only explicit evidence in the excerpt.
+- Return JSON only.
+- Do not extract `parameter_claims[]` or `evidence_objects[]` in this pass.
+- Do extract materials, process states, constituents, models, constitutive branches, deformation families/systems, simulation geometries, numerical methods, conditions, microstructure features, and all explicit governing equations that appear in selected equation blocks.
+- Every equation ID used by a model or branch must also appear in top-level `equations[]`.
+- Keep notes short and use stable semantic IDs.
+
+3 Output shape
+{{
+  "schema_version": "6.0.0",
+  "materials": [],
+  "process_states": [],
+  "constituents": [],
+  "microstructure_features": [],
+  "models": [],
+  "deformation_families": [],
+  "deformation_systems": [],
+  "simulation_geometries": [],
+  "numerical_methods": [],
+  "conditions": [],
+  "equations": [],
+  "global_notes": null
+}}
+
+4 Paper excerpt
+{context}
+"""
+
+
+EXTRACT_CLAIMS_USER_PROMPT_TEMPLATE = """
+1 Task description
+Complete the v6.0.0 extraction using the compact profile plus claim/equation/table context.
+
+2 Task requirements
+- Return the full schema JSON, not just claims.
+- Preserve and refine the profile entities when the claim context supports them.
+- Extract `parameter_claims[]` from explicit values only.
+- Create compact claim-level `evidence_objects[]`; do not duplicate long table rows, captions, or narrative passages.
+- Keep `locator.excerpt` normally <= 160 characters and `snippet` normally <= 220 characters.
+- Prefer row/column/value locators over long snippets.
+- Reuse evidence objects only when the same short span directly supports every linked claim.
+- Keep all explicit top-level `equations[]` used by models, branches, or claims; do not rely on postprocessing to create equations.
+- Every equation ID used in `models[].equation_ids`, `models[].constitutive_branches[].governing_equation_ids`, or `parameter_claims[].governing_equation_ids` must also appear as an object in top-level `equations[]`.
+
+3 Full schema
+__SCHEMA_JSON__
+
+4 Compact profile from pass 1
+__PROFILE_JSON__
+
+5 Claim/equation/table context
+{context}
+"""
+
+
+def _build_extract_profile_prompt(context: str) -> str:
+    return EXTRACT_PROFILE_USER_PROMPT_TEMPLATE.replace("{context}", context)
+
+
+def _build_extract_claims_prompt(context: str, profile: Dict[str, Any]) -> str:
+    prompt = EXTRACT_CLAIMS_USER_PROMPT_TEMPLATE.replace("__SCHEMA_JSON__", EXTRACT_SCHEMA_JSON_TEMPLATE)
+    prompt = prompt.replace("__PROFILE_JSON__", json.dumps(profile, ensure_ascii=False, indent=2))
+    return prompt.replace("{context}", context)
+
+
 SOURCE_ENRICH_SYSTEM_PROMPT = """
 You refine provenance fields for previously extracted CP parameters.
 Return JSON only.
@@ -2860,6 +3091,32 @@ def build_context(selected_sections, selected_tables, selected_equations, max_co
         semantic_hint = _table_semantic_hint(table)
         return f"{semantic_hint}\n{full_text}" if full_text else semantic_hint
 
+    def _add_equations_with_budget(equation_rows: List[Dict[str, Any]], budget_total: int) -> None:
+        nonlocal total
+        if not equation_rows or budget_total <= 0:
+            if equation_rows:
+                context_meta["omitted_equations"].extend(
+                    [row["name"] for row in equation_rows if isinstance(row, dict) and row.get("name")]
+                )
+            return
+        per_equation_budget = max(400, budget_total // max(1, len(equation_rows)))
+        for idx, eq in enumerate(equation_rows):
+            remaining_budget = max_context_chars - total
+            if remaining_budget <= 0:
+                context_meta["omitted_equations"].extend(
+                    [row["name"] for row in equation_rows[idx:] if isinstance(row, dict) and row.get("name")]
+                )
+                break
+            local_budget = max(400, min(remaining_budget, per_equation_budget))
+            raw_text = str(eq.get("extract_text") or eq.get("text") or "")
+            content = _trim_text_with_ellipsis(raw_text, local_budget)
+            if len(raw_text) > local_budget:
+                context_meta["truncated_equations"].append(eq["name"])
+            chunk = f"\n\n=== EQUATION: {eq['name']} ===\n{content}"
+            parts.append(chunk)
+            total += len(chunk)
+            context_meta["included_equations"].append(eq["name"])
+
     table_chunks: List[Tuple[Dict[str, Any], str, str]] = []
     table_chars_total = 0
     for table in selected_tables:
@@ -2880,25 +3137,9 @@ def build_context(selected_sections, selected_tables, selected_equations, max_co
         if selected_equations and not selected_sections:
             equation_budget_total = remaining_budget_total
         section_budget_total = max(0, remaining_budget_total - equation_budget_total)
-        per_equation_budget = equation_budget_total // max(1, len(selected_equations)) if selected_equations else 0
         per_section_budget = section_budget_total // max(1, len(selected_sections)) if selected_sections else 0
 
-        for idx, eq in enumerate(selected_equations):
-            remaining_budget = max_context_chars - total
-            if remaining_budget <= 0:
-                context_meta["omitted_equations"].extend(
-                    [row["name"] for row in selected_equations[idx:] if isinstance(row, dict) and row.get("name")]
-                )
-                break
-            local_budget = max(400, min(remaining_budget, per_equation_budget or remaining_budget))
-            raw_text = str(eq.get("extract_text") or eq.get("text") or "")
-            content = _trim_text_with_ellipsis(raw_text, local_budget)
-            if len(raw_text) > local_budget:
-                context_meta["truncated_equations"].append(eq["name"])
-            chunk = f"\n\n=== EQUATION: {eq['name']} ===\n{content}"
-            parts.append(chunk)
-            total += len(chunk)
-            context_meta["included_equations"].append(eq["name"])
+        _add_equations_with_budget(selected_equations, equation_budget_total)
 
         for idx, section in enumerate(selected_sections):
             remaining_budget = max_context_chars - total
@@ -2921,30 +3162,14 @@ def build_context(selected_sections, selected_tables, selected_equations, max_co
                 context_meta["omitted_sections"].extend(overflow)
                 break
     else:
-        equation_budget_total = int(max_context_chars * 0.2) if selected_equations else 0
+        equation_budget_total = int(max_context_chars * 0.45) if selected_equations else 0
         remaining_after_equations = max_context_chars - equation_budget_total
         table_budget_total = remaining_after_equations if not selected_sections else int(remaining_after_equations * 0.8)
         section_budget_total = remaining_after_equations - table_budget_total
-        per_equation_budget = equation_budget_total // max(1, len(selected_equations)) if selected_equations else 0
         per_table_budget = table_budget_total // max(1, len(selected_tables)) if selected_tables else 0
         per_section_budget = section_budget_total // max(1, len(selected_sections)) if selected_sections else 0
 
-        for idx, eq in enumerate(selected_equations):
-            remaining_budget = max_context_chars - total
-            if remaining_budget <= 0:
-                context_meta["omitted_equations"].extend(
-                    [row["name"] for row in selected_equations[idx:] if isinstance(row, dict) and row.get("name")]
-                )
-                break
-            local_budget = max(400, min(remaining_budget, per_equation_budget or remaining_budget))
-            raw_text = str(eq.get("extract_text") or eq.get("text") or "")
-            content = _trim_text_with_ellipsis(raw_text, local_budget)
-            if len(raw_text) > local_budget:
-                context_meta["truncated_equations"].append(eq["name"])
-            chunk = f"\n\n=== EQUATION: {eq['name']} ===\n{content}"
-            parts.append(chunk)
-            total += len(chunk)
-            context_meta["included_equations"].append(eq["name"])
+        _add_equations_with_budget(selected_equations, equation_budget_total)
 
         for idx, table in enumerate(selected_tables):
             remaining_budget = max_context_chars - total
@@ -3016,7 +3241,79 @@ def _build_extract_messages(prompt: str, selected_tables: List[Dict[str, Any]]) 
     ]
 
 
-def llm_extract(context: str, selected_tables: List[Dict[str, Any]], model: str, max_retries: int = 2) -> Tuple[Dict[str, Any], Any, float]:
+class _UsageTotals:
+    def __init__(self):
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.total_tokens = 0
+
+    def add(self, usage: Any) -> None:
+        if usage is None:
+            return
+        self.prompt_tokens += int(getattr(usage, "prompt_tokens", 0) or 0)
+        self.completion_tokens += int(getattr(usage, "completion_tokens", 0) or 0)
+        self.total_tokens += int(getattr(usage, "total_tokens", 0) or 0)
+
+
+class _ZeroUsage:
+    prompt_tokens = 0
+    completion_tokens = 0
+    total_tokens = 0
+
+
+def _compact_extracted_evidence(
+    payload: Dict[str, Any],
+    *,
+    max_excerpt_chars: int = 180,
+    max_snippet_chars: int = 240,
+    max_notes_chars: int = 160,
+) -> Dict[str, Any]:
+    for obj in payload.get("evidence_objects") or []:
+        if not isinstance(obj, dict):
+            continue
+        locator = obj.get("locator")
+        if isinstance(locator, dict):
+            if locator.get("excerpt") not in (None, ""):
+                locator["excerpt"] = trim_text(str(locator.get("excerpt") or ""), max_excerpt_chars)
+            for key in ("row_name", "column_name", "value"):
+                if locator.get(key) not in (None, ""):
+                    locator[key] = trim_text(str(locator.get(key) or ""), max_notes_chars)
+        if obj.get("snippet") not in (None, ""):
+            obj["snippet"] = trim_text(str(obj.get("snippet") or ""), max_snippet_chars)
+        if obj.get("notes") not in (None, ""):
+            obj["notes"] = trim_text(str(obj.get("notes") or ""), max_notes_chars)
+    return payload
+
+
+def _extract_once(
+    *,
+    prompt: str,
+    selected_tables: List[Dict[str, Any]],
+    model: str,
+    max_retries: int,
+    validate: bool,
+) -> Tuple[Dict[str, Any], Any, List[str]]:
+    resp = _chat_completion_with_retry(
+        model=model,
+        messages=_build_extract_messages(prompt, selected_tables),
+        max_retries=max(1, max_retries),
+    )
+    raw_payload = json.loads(resp.choices[0].message.content)
+    payload = _coerce_to_schema_shape(EXTRACT_SCHEMA_SKELETON, raw_payload)
+    errors = _validate_extracted_payload(payload) if validate else []
+    return payload, resp.usage, errors
+
+
+def llm_extract(
+    context: str,
+    selected_tables: List[Dict[str, Any]],
+    model: str,
+    max_retries: int = 2,
+    *,
+    compact_evidence: bool = True,
+    max_evidence_excerpt_chars: int = 180,
+    max_evidence_snippet_chars: int = 240,
+) -> Tuple[Dict[str, Any], Any, float]:
     prompt = _build_extract_prompt(context)
     attempts = max(1, max_retries + 1)
     start_all = time.perf_counter()
@@ -3024,19 +3321,23 @@ def llm_extract(context: str, selected_tables: List[Dict[str, Any]], model: str,
     last_usage = None
 
     for attempt in range(1, attempts + 1):
-        resp = _chat_completion_with_retry(
+        payload, usage, errors = _extract_once(
+            prompt=prompt,
+            selected_tables=selected_tables,
             model=model,
-            messages=_build_extract_messages(prompt, selected_tables),
             max_retries=4,
+            validate=True,
         )
-
-        last_usage = resp.usage
-        raw_payload = json.loads(resp.choices[0].message.content)
-        payload = _coerce_to_schema_shape(EXTRACT_SCHEMA_SKELETON, raw_payload)
-        errors = _validate_extracted_payload(payload)
+        last_usage = usage
         if not errors:
+            if compact_evidence:
+                payload = _compact_extracted_evidence(
+                    payload,
+                    max_excerpt_chars=max_evidence_excerpt_chars,
+                    max_snippet_chars=max_evidence_snippet_chars,
+                )
             elapsed = time.perf_counter() - start_all
-            return payload, resp.usage, elapsed
+            return payload, usage, elapsed
 
         last_errors = errors
         if attempt < attempts:
@@ -3050,6 +3351,66 @@ def llm_extract(context: str, selected_tables: List[Dict[str, Any]], model: str,
     elapsed = time.perf_counter() - start_all
     raise RuntimeError(f"Extraction JSON validation failed after {attempts} attempts: {last_errors}")
 
+
+def llm_extract_two_pass(
+    *,
+    profile_context: str,
+    claim_context: str,
+    selected_tables: List[Dict[str, Any]],
+    model: str,
+    max_retries: int = 2,
+    compact_evidence: bool = True,
+    max_evidence_excerpt_chars: int = 180,
+    max_evidence_snippet_chars: int = 240,
+) -> Tuple[Dict[str, Any], Any, float, Dict[str, Any]]:
+    start_all = time.perf_counter()
+    usage_totals = _UsageTotals()
+    profile_prompt = _build_extract_profile_prompt(profile_context)
+    profile, profile_usage, _ = _extract_once(
+        prompt=profile_prompt,
+        selected_tables=[],
+        model=model,
+        max_retries=4,
+        validate=False,
+    )
+    usage_totals.add(profile_usage)
+
+    attempts = max(1, max_retries + 1)
+    last_errors: List[str] = []
+    claims_prompt = _build_extract_claims_prompt(claim_context, profile)
+    for attempt in range(1, attempts + 1):
+        payload, usage, errors = _extract_once(
+            prompt=claims_prompt,
+            selected_tables=selected_tables,
+            model=model,
+            max_retries=4,
+            validate=True,
+        )
+        usage_totals.add(usage)
+        if not errors:
+            if compact_evidence:
+                payload = _compact_extracted_evidence(
+                    payload,
+                    max_excerpt_chars=max_evidence_excerpt_chars,
+                    max_snippet_chars=max_evidence_snippet_chars,
+                )
+            elapsed = time.perf_counter() - start_all
+            return payload, usage_totals, elapsed, {
+                "enabled": True,
+                "profile_input_tokens": getattr(profile_usage, "prompt_tokens", 0),
+                "profile_output_tokens": getattr(profile_usage, "completion_tokens", 0),
+                "profile_total_tokens": getattr(profile_usage, "total_tokens", 0),
+            }
+        last_errors = errors
+        if attempt < attempts:
+            claims_prompt = (
+                _build_extract_claims_prompt(claim_context, profile)
+                + "\n\nValidation errors from your previous output:\n"
+                + "\n".join(f"- {e}" for e in errors)
+                + "\nPlease regenerate and return valid JSON only."
+            )
+    raise RuntimeError(f"Two-pass extraction JSON validation failed after {attempts} attempts: {last_errors}")
+
 def run_llm_on_paper_dir(
     paper_dir: str,
     model_select: str,
@@ -3057,6 +3418,10 @@ def run_llm_on_paper_dir(
     max_snippet_chars: int,
     max_context_chars: int,
     max_extract_retries: int = 2,
+    two_pass_extraction: bool = False,
+    compact_evidence: bool = True,
+    max_evidence_excerpt_chars: int = 180,
+    max_evidence_snippet_chars: int = 240,
     enable_source_enrichment: bool = True,
     direct_image_table_input: bool = True,
     image_download_api_key: str | None = None,
@@ -3077,11 +3442,30 @@ def run_llm_on_paper_dir(
             inst_token=image_download_inst_token,
         )
 
-    selection, sel_usage, sel_time = llm_select_files(
-        sections, tables, equations,
-        model=model_select,
-        max_snippet_chars=max_snippet_chars
-    )
+    selection_path = os.path.join(paper_dir, "llm_selected_files.json")
+    reused_selection = False
+    selection: Dict[str, Any]
+    sel_usage: Any
+    sel_time: float
+    if os.path.exists(selection_path):
+        try:
+            with open(selection_path, "r", encoding="utf-8") as f:
+                selection = json.load(f)
+            sel_usage = _ZeroUsage()
+            sel_time = 0.0
+            reused_selection = True
+        except Exception:
+            selection, sel_usage, sel_time = llm_select_files(
+                sections, tables, equations,
+                model=model_select,
+                max_snippet_chars=max_snippet_chars
+            )
+    else:
+        selection, sel_usage, sel_time = llm_select_files(
+            sections, tables, equations,
+            model=model_select,
+            max_snippet_chars=max_snippet_chars
+        )
 
     selected_section_names = set(selection.get("selected_sections", []))
     selected_table_ids = set()
@@ -3125,7 +3509,6 @@ def run_llm_on_paper_dir(
             selected_equations,
             equations,
             selected_sections,
-            limit=8,
         )
         if len(augmented_equations) > len(selected_equations):
             selected_equations = augmented_equations
@@ -3169,7 +3552,7 @@ def run_llm_on_paper_dir(
             if all(candidate.get("name") != s.get("name") for s in selected_sections):
                 selected_sections.append(candidate)
 
-    with open(os.path.join(paper_dir, "llm_selected_files.json"), "w", encoding="utf-8") as f:
+    with open(selection_path, "w", encoding="utf-8") as f:
         selection_out = dict(selection)
         selection_out["selected_sections"] = [s["name"] for s in selected_sections]
         selection_out["selected_tables"] = [t.get("selection_id") or Path(t["name"]).stem for t in selected_tables]
@@ -3177,6 +3560,7 @@ def run_llm_on_paper_dir(
         selection_out["resolved_section_files"] = [s["name"] for s in selected_sections]
         selection_out["resolved_selected_table_files"] = [t["name"] for t in selected_tables]
         selection_out["resolved_selected_equation_ids"] = [e.get("selection_id") or e["name"] for e in selected_equations]
+        selection_out["reused_existing_selection"] = reused_selection
         selection_out["used_fallback_selection"] = used_fallback_sections or used_fallback_tables or used_fallback_equations
         selection_out["fallback"] = {
             "sections": used_fallback_sections,
@@ -3189,19 +3573,42 @@ def run_llm_on_paper_dir(
         t for t in selected_tables if str(t.get("table_kind") or "") != "image_backed"
     ]
     context, context_meta = build_context(selected_sections, extract_tables, selected_equations, max_context_chars=max_context_chars)
+    claim_context_meta: Dict[str, Any] | None = None
     skipped_no_explicit_parameters = _should_skip_extraction_no_explicit_parameters(selected_sections, selected_tables)
+    two_pass_meta: Dict[str, Any] = {"enabled": False}
     if skipped_no_explicit_parameters:
         extracted = _empty_extraction_payload(
             "Skipped LLM extraction because the selected context did not contain explicit parameter values."
         )
         ext_usage = None
         ext_time = 0.0
+    elif two_pass_extraction:
+        claim_sections = [] if (extract_tables or selected_equations) else selected_sections
+        claim_context, claim_context_meta = build_context(
+            claim_sections,
+            extract_tables,
+            selected_equations,
+            max_context_chars=max_context_chars,
+        )
+        extracted, ext_usage, ext_time, two_pass_meta = llm_extract_two_pass(
+            profile_context=context,
+            claim_context=claim_context,
+            selected_tables=extract_tables,
+            model=model_extract,
+            max_retries=max_extract_retries,
+            compact_evidence=compact_evidence,
+            max_evidence_excerpt_chars=max_evidence_excerpt_chars,
+            max_evidence_snippet_chars=max_evidence_snippet_chars,
+        )
     else:
         extracted, ext_usage, ext_time = llm_extract(
             context,
             extract_tables,
             model=model_extract,
             max_retries=max_extract_retries,
+            compact_evidence=compact_evidence,
+            max_evidence_excerpt_chars=max_evidence_excerpt_chars,
+            max_evidence_snippet_chars=max_evidence_snippet_chars,
         )
     enrich_usage = None
     enrich_time = None
@@ -3245,6 +3652,8 @@ def run_llm_on_paper_dir(
                 "output_tokens": sel_usage.completion_tokens,
                 "total_tokens": sel_usage.total_tokens,
                 "time_seconds": sel_time,
+                "reused_existing_selection": reused_selection,
+                "selection_file": selection_path,
             },
             "extract": {
                 "input_tokens": getattr(ext_usage, "prompt_tokens", 0) if ext_usage else 0,
@@ -3252,6 +3661,12 @@ def run_llm_on_paper_dir(
                 "total_tokens": getattr(ext_usage, "total_tokens", 0) if ext_usage else 0,
                 "time_seconds": ext_time,
                 "skipped_no_explicit_parameters": skipped_no_explicit_parameters,
+                "two_pass": two_pass_meta,
+                "compact_evidence": {
+                    "enabled": bool(compact_evidence),
+                    "max_excerpt_chars": max_evidence_excerpt_chars,
+                    "max_snippet_chars": max_evidence_snippet_chars,
+                },
             },
             "source_enrichment": {
                 "enabled": bool(enable_source_enrichment),
@@ -3270,5 +3685,6 @@ def run_llm_on_paper_dir(
                 "resolved_equation_ids": [e.get("selection_id") or e["name"] for e in selected_equations],
             },
             "context": context_meta,
+            "claim_context": claim_context_meta,
         }
     }

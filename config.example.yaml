@@ -1,0 +1,98 @@
+# Copy to ignored config.yaml. Supply provider keys through environment variables.
+elsevier:
+  api_key: null
+  inst_token: null
+  crossref_mailto: null
+  resolve_missing_reference_doi: true
+  http_max_retries: 3
+search:
+  query: TITLE-ABS-KEY(("crystal plasticity" OR CPFE OR VPSC OR "crystal plasticity
+    finite element") AND (simulation OR modeling OR constitutive))
+  count: 25
+  max_pages: 40
+  year_from: 2015
+  year_to: null
+  require_doi: true
+  allowed_doctypes:
+  - ar
+  - re
+  - cp
+  rank_keywords:
+  - crystal plasticity
+  - cpfe
+  - vpsc
+  - fft
+  - constitutive
+  - slip system
+  - hardening
+  http_max_retries: 4
+  dois_limit: 0
+paths:
+  scopus_export: data/scopus_export
+  fulltext: output/runs/default
+llm:
+  max_snippet_chars: 600
+  max_context_chars: 24000
+  max_extract_retries: 2
+  two_pass_extraction: false
+  compact_evidence: true
+  max_evidence_excerpt_chars: 180
+  max_evidence_snippet_chars: 240
+  enable_evaluator: true
+  evaluator_mode: single_judge
+  model_evaluate: gpt-4.1
+  max_evaluate_context_chars: 18000
+  max_evaluate_retries: 2
+  evaluate_parameter_limit: 40
+  evaluate_parameter_batch_size: 12
+  evaluate_evidence_chars: 300
+  evaluation_feedback_json: null
+  enable_source_enrichment: false
+  prompt_version: v2.1.1
+  schema_version: 6.0.0
+  extractor_version: extractor_v2
+  model_select: gpt-4.1-mini
+  model_extract: gpt-5.1
+  direct_image_table_input: true
+db:
+  host: localhost
+  port: 55432
+  name: cpdb
+  user: cpuser
+  password: cppassword
+rag:
+  embedding_model: text-embedding-3-small
+  embedding_dim: 1536
+  chunk_chars: 1200
+  chunk_overlap: 200
+  batch_size: 64
+  embedding_max_retries: 3
+pipeline:
+  skip_fulltext_download: true
+  prefer_local_fulltext: true
+  use_local_fulltext_dois: true
+  local_fulltext_input_root: data/fulltext
+  require_concrete_material: true
+  dois: []
+  gate_on_evaluation: true
+  db_ingest_block_verdicts:
+  - fail
+  db_ingest_min_document_confidence_score: 65.0
+  db_ingest_block_review_escalation_on_pass: false
+  db_ingest_review_escalation_pass_min_confidence_score: 85.0
+  db_ingest_review_escalation_pass_max_review_required_parameters: 2
+  image_backed_tables:
+    enabled: true
+    model: gpt-4.1
+    preprocess: true
+    relevant_keywords:
+    - crystal plasticity
+    - cpfe
+    - slip
+    - hardening
+    - elastic
+    - plastic
+    - constitutive
+    - parameter
+    - property
+  skip_quality_checks: true

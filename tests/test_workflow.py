@@ -123,7 +123,7 @@ class WorkflowTests(unittest.TestCase):
             quality_report=None,
         )
 
-        self.assertEqual(updated["schema_version"], "5.1.0")
+        self.assertEqual(updated["schema_version"], "6.0.0")
         self.assertIn("parameter_claims", report)
         self.assertIn("final_hierarchy", report)
 

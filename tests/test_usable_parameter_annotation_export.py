@@ -100,7 +100,7 @@ class UsableParameterAnnotationExportTests(unittest.TestCase):
             self.assertNotIn("value_text", row["evidence"])
             self.assertEqual("calibrated", row["provenance"]["origin_type"])
             self.assertNotIn("source_scope", row["provenance"])
-            self.assertEqual({"status": "correct"}, row["annotation"])
+            self.assertEqual({"status": "pending", "error_tags": [], "notes": ""}, row["annotation"])
 
     def test_export_usable_parameter_packets_writes_combined_outputs(self):
         with TemporaryDirectory() as tmpdir:
@@ -137,6 +137,10 @@ class UsableParameterAnnotationExportTests(unittest.TestCase):
             self.assertTrue((outdir / "usable_parameter_annotation_draft.jsonl").exists())
             self.assertTrue((outdir / "usable_parameter_annotation_sheet.csv").exists())
             self.assertTrue((outdir / "packets" / "10.1000_example" / "usable_parameters.csv").exists())
+            header = (outdir / "usable_parameter_annotation_sheet.csv").read_text(encoding="utf-8").splitlines()[0]
+            self.assertIn("annotation.status", header)
+            self.assertIn("annotation.error_tags", header)
+            self.assertIn("annotation.notes", header)
 
 
 if __name__ == "__main__":

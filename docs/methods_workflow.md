@@ -1,124 +1,34 @@
-# Methods Workflow
+# Implemented methods workflow
 
-This note is the paper-facing summary of the implemented system.
+The authoritative evaluation specification is [benchmark_protocol.md](benchmark_protocol.md).
+The runtime configuration example is `config.example.yaml`.
 
-## Problem Definition
+1. Discover DOIs from Scopus, explicit lists or local fulltext directories.
+2. Parse Elsevier XML into sections, tables, equations and references.
+3. Select relevant evidence and extract hierarchical v6.0.0 parameter claims.
+4. Apply extractor-first structure handling, units, material/model normalization,
+   equation binding and evidence linking. Legacy rewrite stages are skipped for
+   newer payloads.
+5. Run a configurable LLM evaluator; the current default is single_judge, with
+   committee mode available as an experimental variant.
+6. Optionally run deterministic quality checks (off by default), fuse confidence,
+   finalize claims and gate structured DB ingestion. Audit artifacts remain local.
+7. Store structured records, vectors, reference relations and evaluation records;
+   support hybrid retrieval, the chatbot and graph projections.
 
-The system targets automatic extraction of crystal plasticity parameters from literature and converts them into a searchable, evidence-grounded database suitable for:
-- parameter retrieval
-- RAG-based question answering
-- materials analytics
+## Validation status and reporting
 
-## Pipeline
+No general PDF fallback or universal successful grounding is asserted. Evidence
+references may be dangling and must be checked against actual source objects.
+Internal confidence and quality tiers are operational, not expert-calibrated truth.
 
-### 1. Literature Acquisition
+The paper-level evaluation universe is fixed before scoring. Matching is
+one-to-one, independent of values/units and generated claim IDs. Pending papers
+are not negatives. Field errors are scored only against actually reviewed labels.
+Explicit gate labels support false-admission/false-block rates; calibration/test
+DOIs must be disjoint. AI review remains a diagnostic tier.
 
-Candidate DOIs are gathered from:
-- Scopus search
-- manually configured DOI lists
-- local fulltext folders already present in `data/fulltext`
-
-### 2. Full-Text Parsing
-
-Elsevier XML is parsed into local evidence assets:
-- `paper.xml`
-- `sections/*.md`
-- `tables/*.md`
-- `references.json`
-
-### 3. Two-Stage LLM Extraction
-
-The extraction model operates in two stages:
-- file selection to choose the minimum relevant sections and tables
-- schema-constrained extraction into the CP JSON schema
-
-### 4. Deterministic Postprocessing
-
-The extracted JSON is refined by:
-- reference resolution
-- parameter normalization
-- unit normalization
-- provenance normalization
-- document metadata backfill
-- condition binding resolution
-
-### 5. Evidence Grounding
-
-Each extracted parameter is grounded back to local evidence.
-
-The system records:
-- matched file
-- char span
-- line span
-- matched snippet
-- table coordinates when relevant
-
-These are promoted into reusable `evidence_objects`.
-
-### 6. Multi-Agent Evaluation
-
-Evaluation is split into:
-- evidence judge
-- normalization judge
-- consistency judge
-- meta judge
-
-The evaluator emits parameter-level audits and a document-level verdict.
-
-### 7. Confidence Fusion And Tiering
-
-Rule-based quality signals and judge outputs are fused into:
-- parameter confidence
-- document confidence
-- quality tier: `gold`, `silver`, or `candidate`
-
-### 8. Claim Construction
-
-Each normalized parameter record is converted into a `parameter_claim`.
-
-A claim is the minimal trusted unit used for:
-- review queue generation
-- calibration analysis
-- provenance-aware downstream use
-
-### 9. Database Ingest And Gating
-
-Low-quality records may be blocked from formal structured ingestion based on:
-- evaluator verdict
-- document confidence threshold
-
-Audit artifacts are still preserved locally and in evaluation tables.
-
-## Evaluation Design
-
-The system is evaluated at three levels.
-
-### A. Extraction Correctness
-- field precision / recall / F1
-- numeric accuracy
-- unit normalization accuracy
-- provenance completeness proxy
-
-### B. Judge Correctness
-- agreement between reviewed queue adjudication and each judge
-- document-level meta-judge reliability
-- calibration metrics: Brier, ECE, risk-coverage
-
-### C. Database Utility
-- retrieval hit rate
-- QA grounding rate
-- analyst query success rate
-- downstream analytics consistency
-
-## Why This Matters
-
-The system is not only an extractor.
-
-It is a full evidence-grounded curation workflow that separates:
-- extraction
-- normalization
-- provenance grounding
-- uncertainty typing
-- quality-tiered database construction
-
-That separation is what makes the project suitable for both a database paper and a scientific information extraction paper.
+Historical corpus counts do not establish extraction accuracy. Final manuscript
+performance claims require an exhaustive expert gold set, a frozen test run,
+confidence/gate validation, complete ablation records and a reproducible source
+snapshot with versioned inputs.

@@ -113,6 +113,42 @@ class ModelEquationBindingTests(unittest.TestCase):
 
             self.assertEqual(["eq_0003", "eq_0004"], updated["models"][0]["equation_ids"])
 
+    def test_bind_model_equations_backfills_referenced_top_level_equations(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            eq_dir = Path(tmpdir) / "equations"
+            eq_dir.mkdir()
+            (eq_dir / "index.json").write_text(
+                json.dumps([
+                    {"equation_id": "eq_0004", "label": "(4)", "text": "hardening", "latex": "s=s0", "text_file": "equation_004.txt"},
+                ]),
+                encoding="utf-8",
+            )
+            extracted = {
+                "models": [
+                    {
+                        "model_id": "model_cp",
+                        "equation_ids": ["eq_0004"],
+                        "constitutive_branches": [
+                            {"branch_id": "branch_hardening", "governing_equation_ids": ["eq_0004"]}
+                        ],
+                    }
+                ],
+                "equations": [],
+                "parameter_claims": [
+                    {
+                        "claim_id": "claim_s0",
+                        "governing_equation_ids": ["eq_0004"],
+                        "applies_to": {"model_id": "model_cp"},
+                    }
+                ],
+            }
+
+            updated, report = bind_model_equations(extracted, paper_dir=tmpdir)
+
+            self.assertEqual(1, report["top_level_equations_added"])
+            self.assertEqual("eq_0004", updated["equations"][0]["equation_id"])
+            self.assertEqual("(4)", updated["equations"][0]["equation_label"])
+
     def test_bind_model_equations_resolves_inline_equation_labels(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             eq_dir = Path(tmpdir) / "equations"

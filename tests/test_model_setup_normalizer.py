@@ -4,7 +4,7 @@ from postprocess.model_setup_normalizer import normalize_model_setup
 
 
 class ModelSetupNormalizerTests(unittest.TestCase):
-    def test_backfills_new_model_setup_sections_from_explicit_context(self):
+    def test_links_systems_without_synthesizing_extractor_owned_setup(self):
         extracted = {
             "models": [
                 {
@@ -75,17 +75,15 @@ class ModelSetupNormalizerTests(unittest.TestCase):
         updated, report = normalize_model_setup(extracted)
 
         self.assertEqual(2, report["deformation_systems_added"])
-        self.assertEqual(1, report["simulation_geometries_added"])
-        self.assertEqual(1, report["orientation_inputs_added"])
+        self.assertEqual(0, report["simulation_geometries_added"])
+        self.assertEqual(0, report["orientation_inputs_added"])
         self.assertEqual(0, report["numerical_methods_added"])
         self.assertEqual(0, report["simulation_outputs_added"])
         self.assertEqual(0, report["model_evaluations_added"])
         self.assertEqual(["fam_basal"], updated["models"][0]["constitutive_description"]["slip_description"]["deformation_system_ids"])
         self.assertEqual(["fam_twin"], updated["models"][0]["constitutive_description"]["twinning"]["deformation_system_ids"])
-        self.assertEqual("voxel", updated["simulation_geometries"][0]["mesh_type"])
-        self.assertEqual("yes", updated["simulation_geometries"][0]["periodic_geometry"])
-        self.assertEqual("ebsd", updated["orientation_inputs"][0]["source"])
-        self.assertEqual("euler_angles", updated["orientation_inputs"][0]["representation"])
+        self.assertEqual([], updated.get("simulation_geometries", []))
+        self.assertEqual([], updated.get("orientation_inputs", []))
         self.assertEqual([], updated.get("numerical_methods", []))
         self.assertEqual([], updated.get("simulation_outputs", []))
         self.assertEqual([], updated.get("model_evaluations", []))
