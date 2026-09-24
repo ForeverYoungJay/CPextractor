@@ -9,21 +9,12 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-from common import load_json, load_jsonl, norm_text, prf
+from scripts.eval.common import load_json, load_jsonl, norm_text, prf
+from scripts.eval.benchmark_protocol import (POSITIVE, NEGATIVE, normalize_row, row_key, match_rows, value_equal, doi as normalize_doi)
 from scripts.eval.export_annotation_draft import _claim_rows_for_paper
 
 
-POSITIVE_STATUSES = {
-    "correct",
-    "accepted",
-    "wrong_value",
-    "wrong_unit",
-    "wrong_mapping",
-    "wrong_binding",
-    "wrong_provenance",
-    "insufficient_evidence",
-    "missing_from_prediction",
-}
+POSITIVE_STATUSES = POSITIVE
 
 ERROR_STATUSES = POSITIVE_STATUSES - {"correct", "accepted"}
 
@@ -87,17 +78,7 @@ def _scope_key(row: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
 
 
 def claim_match_key(row: Dict[str, Any]) -> Tuple[str, ...]:
-    doi = str(row.get("doi") or row.get("record_id") or "").strip()
-    claim_id = str(row.get("claim_id") or "").strip()
-    if claim_id:
-        return ("claim_id", doi, claim_id)
-    return (
-        "semantic",
-        doi,
-        norm_text(row.get("canonical_name")),
-        norm_text(row.get("symbol")),
-        *_scope_key(row),
-    )
+    return row_key(row)
 
 
 def gold_positive(row: Dict[str, Any]) -> bool:
@@ -120,71 +101,36 @@ def _field_equal_text(a: Any, b: Any) -> bool:
 
 
 def _field_equal_value(a: Any, b: Any, atol: float = 1e-9, rtol: float = 1e-4) -> bool:
-    af = _to_number(a)
-    bf = _to_number(b)
-    if af is None or bf is None:
-        return _field_equal_text(a, b)
-    return abs(af - bf) <= (atol + rtol * abs(bf))
+    return value_equal(a, b, rtol=rtol, atol=atol)
 
 
 def load_pred_claim_rows(pred_root: str | Path, source_name: str = "materials_extracted.json") -> List[Dict[str, Any]]:
     root = Path(pred_root)
     rows: List[Dict[str, Any]] = []
+    seen = set()
     for paper_dir in sorted(path for path in root.iterdir() if path.is_dir()):
-        rows.extend(_claim_rows_for_paper(paper_dir, source_name))
+        paper_rows = _claim_rows_for_paper(paper_dir, source_name)
+        if paper_rows:
+            paper_doi = normalize_doi(paper_rows[0].get("doi"))
+            if paper_doi in seen:
+                raise ValueError(f"Multiple prediction folders for DOI {paper_doi}; select one run per paper")
+            seen.add(paper_doi)
+        rows.extend(paper_rows)
     return rows
 
 
 def load_gold_claim_rows(path: str | Path) -> List[Dict[str, Any]]:
     rows = load_any_json(path)
     if isinstance(rows, dict):
-        return [rows]
-    return [r for r in rows if isinstance(r, dict)]
+        return [normalize_row(rows)]
+    return [normalize_row(r) for r in rows if isinstance(r, dict)]
 
 
 def match_gold_pred(
     gold_rows: List[Dict[str, Any]],
     pred_rows: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    pred_by_key = {claim_match_key(row): row for row in pred_rows}
-    gold_by_key = {claim_match_key(row): row for row in gold_rows}
-
-    tp = fp = fn = 0
-    matched_positive: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
-    unmatched_pred: List[Dict[str, Any]] = []
-    missing_gold_positive: List[Dict[str, Any]] = []
-    matched_spurious: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
-
-    for key, gold in gold_by_key.items():
-        pred = pred_by_key.get(key)
-        if gold_positive(gold):
-            if pred is not None:
-                tp += 1
-                matched_positive.append((gold, pred))
-            else:
-                fn += 1
-                missing_gold_positive.append(gold)
-        else:
-            if pred is not None:
-                fp += 1
-                matched_spurious.append((gold, pred))
-
-    for key, pred in pred_by_key.items():
-        gold = gold_by_key.get(key)
-        if gold is None:
-            fp += 1
-            unmatched_pred.append(pred)
-
-    return {
-        "tp": tp,
-        "fp": fp,
-        "fn": fn,
-        "prf": prf(tp, fp, fn),
-        "matched_positive": matched_positive,
-        "missing_gold_positive": missing_gold_positive,
-        "matched_spurious": matched_spurious,
-        "unmatched_pred": unmatched_pred,
-    }
+    return match_rows(gold_rows, pred_rows)
 
 
 def field_accuracy(matched_positive: Iterable[Tuple[Dict[str, Any], Dict[str, Any]]]) -> Dict[str, Any]:
@@ -218,11 +164,11 @@ def field_accuracy(matched_positive: Iterable[Tuple[Dict[str, Any], Dict[str, An
 
     out = {
         "matched_positive_count": total,
-        "canonical_name_accuracy": counters["canonical_name"] / total if total else 0.0,
-        "symbol_accuracy": counters["symbol"] / total if total else 0.0,
-        "value_accuracy": counters["value"] / total if total else 0.0,
-        "unit_accuracy": counters["unit"] / total if total else 0.0,
-        "grounding_annotation_coverage": grounding_annotated / total if total else 0.0,
+        "canonical_name_accuracy": counters["canonical_name"] / total if total else None,
+        "symbol_accuracy": counters["symbol"] / total if total else None,
+        "value_accuracy": counters["value"] / total if total else None,
+        "unit_accuracy": counters["unit"] / total if total else None,
+        "grounding_annotation_coverage": grounding_annotated / total if total else None,
         "grounding_accuracy": grounding_correct / grounding_annotated if grounding_annotated else None,
         "grounding_annotated_count": grounding_annotated,
     }
@@ -230,24 +176,16 @@ def field_accuracy(matched_positive: Iterable[Tuple[Dict[str, Any], Dict[str, An
 
 
 def bundle_metrics(gold_rows: List[Dict[str, Any]], pred_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
-    pred_keys = {claim_match_key(r) for r in pred_rows}
-    per_paper_total = Counter()
-    per_paper_matched = Counter()
-
-    for row in gold_rows:
-        if not gold_positive(row):
-            continue
-        doi = str(row.get("doi") or row.get("record_id") or "").strip()
-        per_paper_total[doi] += 1
-        if claim_match_key(row) in pred_keys:
-            per_paper_matched[doi] += 1
+    matched = match_gold_pred(gold_rows, pred_rows)
+    per_paper_total = Counter(normalize_doi(r.get("doi")) for r in gold_rows if gold_positive(r))
+    per_paper_matched = Counter(normalize_doi(g.get("doi")) for g, _ in matched["matched_positive"])
 
     rows = []
     scores = []
     for doi in sorted(per_paper_total):
         total = per_paper_total[doi]
         matched = per_paper_matched[doi]
-        completeness = matched / total if total else 0.0
+        completeness = matched / total if total else None
         scores.append(completeness)
         rows.append({
             "doi": doi,
@@ -277,12 +215,12 @@ def load_gate_rows(pred_root: str | Path) -> List[Dict[str, Any]]:
             gate.get("doi")
             or report.get("record_id")
             or _safe_dict(report.get("source_document")).get("doi")
-            or paper_dir.name.replace("_", "/")
+            or paper_dir.name.replace("_", "/", 1)
         )
         out.append({
-            "doi": doi,
+            "doi": normalize_doi(doi),
             "paper_dir": str(paper_dir),
-            "blocked": bool(gate.get("blocked")),
+            "blocked": gate.get("blocked") if isinstance(gate.get("blocked"), bool) else None,
             "decision": "gated" if gate.get("blocked") else "ingest",
             "document_confidence_score": gate.get("document_confidence_score"),
             "review_required_parameter_count": gate.get("review_required_parameter_count"),

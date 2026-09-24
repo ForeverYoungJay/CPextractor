@@ -54,6 +54,8 @@ JSONL_FIELDS = [
     "provenance.calibration_method",
     "provenance.target_type",
     "annotation.status",
+    "annotation.error_tags",
+    "annotation.notes",
 ]
 
 
@@ -75,6 +77,8 @@ CSV_FIELDS = [
     "evidence.snippet",
     "provenance.origin_type",
     "annotation.status",
+    "annotation.error_tags",
+    "annotation.notes",
 ]
 
 
@@ -449,7 +453,9 @@ def build_usable_parameter_rows(paper_dir: Path) -> List[Dict[str, Any]]:
                 "review_required": audit.get("review_required"),
             },
             "annotation": {
-                "status": "correct",
+                "status": "pending",
+                "error_tags": [],
+                "notes": "",
             },
         })
     return rows
@@ -510,6 +516,8 @@ def _write_packet_readme(path: Path) -> None:
         "- evidence summary",
         "- provenance origin",
         "- `annotation.status`",
+        "- `annotation.error_tags`",
+        "- `annotation.notes`",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
 

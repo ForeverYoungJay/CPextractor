@@ -63,6 +63,7 @@ COMPACT_FIELDS = [
     "evidence.column_name",
     "evidence.value_text",
     "annotation.status",
+    "annotation.error_tags",
     "annotation.notes",
 ]
 
@@ -160,7 +161,7 @@ def _write_packet_readme(path: Path, *, doi: str, title: str, claim_count: int, 
         "Suggested workflow:",
         "1. Edit `claims.csv`.",
         "2. Light annotation fields are: parameter name, symbol, value, unit, and table row/column context.",
-        "3. Use `annotation.status` and `annotation.notes` for simple corrections or comments.",
+        "3. Use `annotation.status` for the primary error class, with `annotation.error_tags` and `annotation.notes` for details.",
         "4. `claims.jsonl` keeps the full context if you need to inspect provenance or grounding later.",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")

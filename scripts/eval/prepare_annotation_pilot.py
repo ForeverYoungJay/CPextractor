@@ -78,7 +78,8 @@ def _write_packet_readme(path: Path, *, doi: str, title: str, record_count: int,
         "1. Review `usable_parameters.csv`.",
         "2. Focus on whether each record is scientifically reusable by another person.",
         "3. Check the six minimum-use blocks: material object, CP model, parameter body, scope, evidence, provenance.",
-        "4. Keep `annotation.status=correct` unless you want to manually change it to `incorrect`.",
+        "4. Keep `annotation.status=correct` for accepted records; otherwise choose the most specific error status.",
+        "5. Use `annotation.error_tags` and `annotation.notes` for finer error labels and correction details.",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -326,7 +327,8 @@ def _write_readme(path: Path, *, output_root: Path, selected_count: int) -> None
         "1. Annotate `usable_parameters.csv` in each packet folder.",
         "2. Review each record as a reusable parameter record, not just a raw extracted claim.",
         "3. Check the six blocks: material object, CP model, parameter body, scope, evidence, provenance.",
-        "4. Leave `annotation.status=correct` by default and only change it to `incorrect` when needed.",
+        "4. Keep `annotation.status=pending` until the source has been reviewed; explicitly mark accepted records correct.",
+        "5. For rejected records, choose the most specific error status and fill `annotation.error_tags` / `annotation.notes` when useful.",
         "",
         "Suggested next step:",
         "```bash",

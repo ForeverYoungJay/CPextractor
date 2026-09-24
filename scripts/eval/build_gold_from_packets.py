@@ -12,6 +12,7 @@ EDITABLE_FIELDS = [
     "value",
     "unit",
     "annotation.status",
+    "annotation.error_tags",
     "annotation.notes",
 ]
 
@@ -61,6 +62,19 @@ def _parse_scalar(raw: str) -> Any:
         return text
 
 
+def _parse_list(raw: str) -> List[str]:
+    text = raw.strip()
+    if not text:
+        return []
+    try:
+        value = json.loads(text)
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+    except Exception:
+        pass
+    return [part.strip() for part in text.split("|") if part.strip()]
+
+
 def _apply_csv_edits(base_rows: List[Dict[str, Any]], csv_rows: List[Dict[str, str]]) -> List[Dict[str, Any]]:
     if len(base_rows) != len(csv_rows):
         raise ValueError(f"Row count mismatch: claims.jsonl={len(base_rows)} claims.csv={len(csv_rows)}")
@@ -96,13 +110,18 @@ def _apply_csv_edits(base_rows: List[Dict[str, Any]], csv_rows: List[Dict[str, s
                 record["annotation"] = annotation
             if "annotation.status" in edited:
                 annotation["status"] = _parse_scalar(edited.get("annotation.status", ""))
+            if "annotation.error_tags" in edited:
+                annotation["error_tags"] = _parse_list(edited.get("annotation.error_tags", ""))
             if "annotation.notes" in edited:
                 annotation["notes"] = _parse_scalar(edited.get("annotation.notes", ""))
         else:
             for field in EDITABLE_FIELDS:
                 if field not in edited:
                     continue
-                value = _parse_scalar(edited.get(field, ""))
+                if field == "annotation.error_tags":
+                    value = _parse_list(edited.get(field, ""))
+                else:
+                    value = _parse_scalar(edited.get(field, ""))
                 _set_nested(record, field, value)
         merged.append(record)
     return merged

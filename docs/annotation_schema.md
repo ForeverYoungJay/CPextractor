@@ -147,7 +147,8 @@ Optional per-paper bundle file for completeness metrics:
    - `canonical_name` or `symbol` when the parameter label is wrong
    - `value`
    - `unit`
-   - `annotation.status`
+   - `annotation.status` for the primary error class
+   - `annotation.error_tags` for optional finer labels
    - `annotation.notes`
 3. Keep the CSV compact during first-pass review; use the full JSONL only when you need to inspect grounding or provenance.
 4. Add missing claims manually with `status = missing_from_prediction`.

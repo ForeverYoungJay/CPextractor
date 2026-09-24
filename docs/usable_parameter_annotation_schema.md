@@ -111,7 +111,9 @@ Support fields such as `doi`, `paper_dir`, `claim_id`, and `record_index` may al
     "notes": "Same calibration campaign as other CPFE parameters."
   },
   "annotation": {
-    "status": "correct"
+    "status": "correct",
+    "error_tags": [],
+    "notes": ""
   }
 }
 ```
@@ -223,16 +225,60 @@ Recommended additions:
 
 ## Annotation Fields
 
-The `annotation` block is intentionally minimal.
+The `annotation` block records the primary outcome plus optional finer labels. A record should not be marked only as generically incorrect when the failure can be assigned to a scientific block.
 
 ### `annotation.status`
 
 Recommended values:
 
 - `correct`
+- `wrong_material_object`
+- `wrong_cp_model`
+- `wrong_parameter_body`
+- `wrong_scope`
+- `wrong_evidence`
+- `wrong_provenance`
+- `insufficient_context`
+- `spurious_record`
+- `missing_record`
 - `incorrect`
 
-Draft exports should initialize this field as `correct`. During manual review, change it to `incorrect` only when the record should not be accepted as-is.
+Draft exports should initialize this field as `correct`. During manual review, change it to the most specific error class when the record should not be accepted as-is. Use `incorrect` only as a legacy or fallback label when a more specific category cannot be assigned.
+
+### `annotation.error_tags`
+
+Optional finer labels. Use an empty list for records that are accepted as-is.
+
+Recommended values:
+
+- `wrong_material_name`
+- `wrong_constituent`
+- `wrong_process_state`
+- `wrong_model_family`
+- `wrong_hardening_law`
+- `wrong_parameter_name`
+- `wrong_symbol`
+- `wrong_value`
+- `wrong_unit`
+- `missing_unit_allowed`
+- `wrong_scope_level`
+- `wrong_scope_target`
+- `wrong_condition`
+- `wrong_temperature`
+- `wrong_strain_rate`
+- `wrong_table`
+- `wrong_table_cell`
+- `wrong_text_evidence`
+- `unsupported_by_source`
+- `wrong_origin_type`
+- `wrong_reference`
+- `wrong_calibration_context`
+- `missing_required_context`
+- `duplicate_record`
+
+### `annotation.notes`
+
+Free-text reviewer notes. Use this for the correction, source pointer, or rationale when the status or tags are not self-explanatory.
 
 ## Packet Editing Recommendation
 
@@ -253,6 +299,8 @@ For spreadsheet-style editing, the recommended core columns are:
 - `evidence.snippet`
 - `provenance.origin_type`
 - `annotation.status`
+- `annotation.error_tags`
+- `annotation.notes`
 
 ## Scoring Direction
 

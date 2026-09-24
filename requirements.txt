@@ -1,0 +1,8 @@
+# Core pipeline and annotation environment. Offline benchmark uses only stdlib.
+openai==2.24.0
+PyYAML==6.0.3
+psycopg[binary]==3.3.3
+beautifulsoup4==4.14.3
+lxml==6.0.2
+requests==2.32.5
+openpyxl==3.1.5

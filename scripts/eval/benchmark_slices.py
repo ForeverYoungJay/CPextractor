@@ -53,11 +53,16 @@ def main() -> None:
     ap.add_argument("--pred-source", default="materials_extracted.json")
     ap.add_argument("--output", required=True)
     ap.add_argument("--output-csv", default="")
+    ap.add_argument("--manifest")
+    ap.add_argument("--split", choices=["development", "calibration", "test"])
+    ap.add_argument("--strict", action="store_true")
     args = ap.parse_args()
 
     gold_rows = load_gold_claim_rows(args.gold)
     pred_rows = load_pred_claim_rows(args.pred_root, args.pred_source)
-    pred_by_key = {claim_match_key(r): r for r in pred_rows}
+    from scripts.eval.benchmark_protocol import prepare_universe, read_manifest
+    manifest = read_manifest(args.manifest) if args.manifest else None
+    gold_rows, pred_rows, universe = prepare_universe(gold_rows, pred_rows, manifest, args.split, args.strict)
 
     paper_claim_counts = Counter(str(r.get("doi") or "") for r in gold_rows)
     count_values = sorted(v for v in paper_claim_counts.values() if v > 0)
@@ -68,9 +73,9 @@ def main() -> None:
         for name in _slice_name(row, paper_claim_counts, median_claim_count):
             grouped.setdefault(name, {"gold": [], "pred": []})
             grouped[name]["gold"].append(row)
-            pred = pred_by_key.get(claim_match_key(row))
-            if pred is not None:
-                grouped[name]["pred"].append(pred)
+    for row in pred_rows:
+        for name in _slice_name(row, paper_claim_counts, median_claim_count):
+            grouped.setdefault(name, {"gold": [], "pred": []})["pred"].append(row)
 
     out_rows = []
     for name, payload in sorted(grouped.items()):
@@ -92,7 +97,7 @@ def main() -> None:
             "grounding_annotation_coverage": field["grounding_annotation_coverage"],
         })
 
-    save_json(args.output, {"slices": out_rows, "median_claim_count_threshold": median_claim_count})
+    save_json(args.output, {"slices": out_rows, "median_claim_count_threshold": median_claim_count, "universe": universe, "policy": "Gold and predictions sliced independently; ambiguous matches remain errors."})
     if args.output_csv:
         save_csv(args.output_csv, out_rows)
     print(f"Saved slice benchmark -> {args.output}")

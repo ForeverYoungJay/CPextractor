@@ -66,77 +66,9 @@ def build_annotation_benchmark_summary(
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Run claim-level annotation benchmarks and produce a compact summary.")
-    ap.add_argument("--gold", required=True, help="gold_claims.jsonl")
-    ap.add_argument("--pred-root", required=True, help="Root with DOI paper folders")
-    ap.add_argument("--outdir", default="results/eval_annotation")
-    ap.add_argument("--pred-source", default="materials_extracted.json")
-    args = ap.parse_args()
-
-    eval_dir = Path(__file__).resolve().parent
-    outdir = Path(args.outdir)
-    metrics_dir = outdir / "metrics"
-    tables_dir = outdir / "tables"
-    metrics_dir.mkdir(parents=True, exist_ok=True)
-    tables_dir.mkdir(parents=True, exist_ok=True)
-
-    py = sys.executable
-    benchmark_claims_json = metrics_dir / "benchmark_claims.json"
-    benchmark_gate_json = metrics_dir / "benchmark_gate.json"
-    benchmark_slices_json = metrics_dir / "benchmark_slices.json"
-
-    _run([
-        py,
-        str(eval_dir / "benchmark_claims.py"),
-        "--gold",
-        args.gold,
-        "--pred-root",
-        args.pred_root,
-        "--pred-source",
-        args.pred_source,
-        "--output",
-        str(benchmark_claims_json),
-        "--by-paper-csv",
-        str(tables_dir / "table_bundle_completeness.csv"),
-    ])
-
-    _run([
-        py,
-        str(eval_dir / "benchmark_gate.py"),
-        "--gold",
-        args.gold,
-        "--pred-root",
-        args.pred_root,
-        "--output",
-        str(benchmark_gate_json),
-        "--by-paper-csv",
-        str(tables_dir / "table_gate_by_paper.csv"),
-    ])
-
-    _run([
-        py,
-        str(eval_dir / "benchmark_slices.py"),
-        "--gold",
-        args.gold,
-        "--pred-root",
-        args.pred_root,
-        "--pred-source",
-        args.pred_source,
-        "--output",
-        str(benchmark_slices_json),
-        "--output-csv",
-        str(tables_dir / "table_slice_results.csv"),
-    ])
-
-    summary = build_annotation_benchmark_summary(
-        _load_json(benchmark_claims_json),
-        _load_json(benchmark_gate_json),
-        _load_json(benchmark_slices_json),
-    )
-    summary_path = metrics_dir / "annotation_benchmark_summary.json"
-    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    print(f"Saved annotation benchmark summary -> {summary_path}")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.eval.evaluate_release import main as run_release
+    run_release()
 
 
 if __name__ == "__main__":

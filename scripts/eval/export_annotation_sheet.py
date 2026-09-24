@@ -57,6 +57,7 @@ COMPACT_FIELDS = [
     "evidence.column_name",
     "evidence.value_text",
     "annotation.status",
+    "annotation.error_tags",
     "annotation.notes",
 ]
 
