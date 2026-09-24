@@ -16,6 +16,9 @@ to a manuscript performance claim. `config.example.yaml` is the shareable defaul
 `config.yaml` is ignored and local. The source snapshot is a candidate and contains
 no literature corpus or provider credentials.
 
+When live API calls are unavailable, [historical_offline_experiments.md](historical_offline_experiments.md)
+documents the read-only paired run analysis and its limits.
+
 ## Current local implementation pass (2026-09-07)
 
 The prepared workspace is `output/benchmark_release/pilot50`. It contains 50
